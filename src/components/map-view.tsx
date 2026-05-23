@@ -4,7 +4,7 @@ import { useEffect, useRef, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyData } from '@/hooks/use-survey-data'
-import { useHierarchy } from '@/hooks/use-hierarchy'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const MapContainer = dynamic(
   () => import('react-leaflet').then((m) => m.MapContainer),
@@ -19,19 +19,30 @@ const SurveyMarkers = dynamic(
   { ssr: false }
 )
 
+const GOOGLE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3']
+
+const TILE_URLS = {
+  streets:   'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+  satellite: 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',
+}
+
 export function MapView() {
   const filters = useBillingStore((s) => s.filters)
+  const mapType = useBillingStore((s) => s.mapType)
   const { data, isLoading } = useSurveyData(filters)
-  const { data: hierarchy } = useHierarchy()
 
   const mapRef = useRef<HTMLDivElement>(null)
 
   const markers = useMemo(() => data?.data || [], [data])
+  const tileUrl = TILE_URLS[mapType]
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-        Loading map data...
+      <div className="w-full h-full flex items-center justify-center p-8">
+        <div className="text-center space-y-3">
+          <Skeleton className="h-64 w-full max-w-md rounded-lg" />
+          <Skeleton className="h-4 w-32 mx-auto" />
+        </div>
       </div>
     )
   }
@@ -45,8 +56,10 @@ export function MapView() {
         zoomControl={true}
       >
         <TileLayer
-          url="https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=nZQar50lMcyJprudBf8i"
-          attribution='<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
+          url={tileUrl}
+          subdomains={GOOGLE_SUBDOMAINS}
+          maxZoom={20}
+          attribution='&copy; Google'
         />
         <SurveyMarkers data={markers} />
       </MapContainer>

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { FilterState } from '@/types'
 
 type ActiveView = 'map' | 'list' | 'route' | 'stats' | 'detail'
+type MapType = 'streets' | 'satellite'
 
 interface BillingState {
   activeView: ActiveView
@@ -10,6 +11,7 @@ interface BillingState {
   selectedHouseId: string | null
   mapCenter: [number, number]
   mapZoom: number
+  mapType: MapType
 
   setView: (view: ActiveView) => void
   setFilters: (filters: Partial<FilterState>) => void
@@ -18,6 +20,7 @@ interface BillingState {
   selectHouse: (id: string | null) => void
   setMapCenter: (center: [number, number]) => void
   setMapZoom: (zoom: number) => void
+  setMapType: (type: MapType) => void
 }
 
 const defaultFilters: FilterState = {
@@ -37,6 +40,7 @@ export const useBillingStore = create<BillingState>((set) => ({
   selectedHouseId: null,
   mapCenter: [32.0836, 72.6712],
   mapZoom: 12,
+  mapType: 'streets',
 
   setView: (view) => set({ activeView: view, selectedHouseId: view === 'detail' ? undefined as unknown as string : null }),
   setFilters: (partial) => set((s) => ({ filters: { ...s.filters, ...partial } })),
@@ -45,4 +49,5 @@ export const useBillingStore = create<BillingState>((set) => ({
   selectHouse: (id) => set({ selectedHouseId: id, activeView: id ? 'detail' : 'map' }),
   setMapCenter: (center) => set({ mapCenter: center }),
   setMapZoom: (zoom) => set({ mapZoom: zoom }),
+  setMapType: (type) => set({ mapType: type }),
 }))

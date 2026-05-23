@@ -1,17 +1,26 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Outfit, Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { AuthInit } from "@/components/providers/auth-init";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const outfit = Outfit({
   subsets: ["latin"],
+  variable: "--font-outfit",
+  display: "swap",
+});
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-jakarta",
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
   subsets: ["latin"],
+  variable: "--font-geist-mono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -25,13 +34,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
-      <body className="min-h-full flex flex-col">
-        <QueryProvider>
-          <AuthInit>
-            {children}
-          </AuthInit>
-        </QueryProvider>
+    <html
+      lang="en"
+      className={`${outfit.variable} ${jakarta.variable} ${geistMono.variable} h-full`}
+      suppressHydrationWarning
+    >
+      <body className="h-full flex flex-col bg-background text-foreground" suppressHydrationWarning>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+          themes={["light", "dark", "vercel", "vercel-dark"]}
+        >
+          <QueryProvider>
+            <AuthInit>
+              {children}
+            </AuthInit>
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

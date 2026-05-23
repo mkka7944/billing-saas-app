@@ -1,0 +1,44 @@
+{
+    "hierarchy": {
+        "SARGODHA": {
+            "label": "Sargodha District",
+            "tehsils": {
+                "SARGODHA": {
+                    "label": "Sargodha City",
+                    "is_major_center": true
+                },
+                "BHALWAL": {
+                    "label": "Bhalwal City",
+                    "is_major_center": true
+                }
+            }
+        },
+        "KHUSHAB": {
+            "label": "Khushab District",
+            "tehsils": {
+                "KHUSHAB": {
+                    "label": "Khushab City",
+                    "is_major_center": true
+                }
+            }
+        }
+    },
+    "mapping_rules": {
+        "BHALWAL": {
+            "district": "SARGODHA",
+            "tehsil": "BHALWAL"
+        },
+        "SARGODHA": {
+            "district": "SARGODHA",
+            "tehsil": "SARGODHA"
+        },
+        "KHUSHAB": {
+            "district": "KHUSHAB",
+            "tehsil": "KHUSHAB"
+        }
+    },
+    "data_integrity": {
+        "enforce_strict_heirarchy": true,
+        "archive_threshold_months": 3
+    }
+}

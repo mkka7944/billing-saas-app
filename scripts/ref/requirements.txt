@@ -1,0 +1,20 @@
+# Core dependencies for modern-map.py
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Image processing for coordinate extraction
+opencv-python>=4.5.0
+Pillow>=8.0.0
+pytesseract>=0.3.10
+
+# Web API for coordinate extraction
+flask>=2.0.0
+flask-cors>=3.0.0
+requests>=2.25.0
+tqdm>=4.60.0
+
+# System requirements:
+# - Tesseract OCR must be installed separately
+#   Windows: https://github.com/UB-Mannheim/tesseract/wiki
+#   Ubuntu/Debian: sudo apt install tesseract-ocr
+#   macOS: brew install tesseract

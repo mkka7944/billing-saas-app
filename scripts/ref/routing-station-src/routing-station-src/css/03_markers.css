@@ -1,0 +1,276 @@
+.leaflet-container img.leaflet-tile {
+        outline: 1px solid transparent;
+}
+
+.leaflet-container * {
+        box-sizing: content-box;
+}
+
+path.leaflet-interactive:focus {
+        outline: none !important;
+}
+
+.leaflet-tooltip {
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        font-size: 11px;
+        font-weight: 700;
+        color: #1e293b;
+        padding: 4px 8px;
+        white-space: nowrap;
+        pointer-events: none !important;
+}
+
+.active-nav-tooltip {
+    background: #1e293b !important;
+    border: none !important;
+    color: white !important;
+    font-weight: 800 !important;
+    padding: 6px 12px !important;
+    border-radius: 8px !important;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.4) !important;
+    font-size: 12px !important;
+}
+
+.active-nav-tooltip:before {
+    border-top-color: #1e293b !important;
+}
+
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before {
+        border: none !important;
+}
+
+.marker-verified-square {
+        background: #8b5cf6;
+        border: 2px solid white;
+        border-radius: 4px;
+        box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000 !important;
+}
+
+.marker-verified-square::after {
+        content: 'V';
+        color: white;
+        font-size: 8px;
+        font-weight: 900;
+}
+
+body.picking-point .leaflet-container {
+        cursor: crosshair !important;
+}
+
+
+.pop-card {
+        background: white;
+        border-radius: 4px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+}
+
+.leaflet-popup-content-wrapper {
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+}
+
+.leaflet-popup-tip-container {}
+
+.leaflet-popup-tip {}
+
+.leaflet-popup-tip::after {}
+
+.leaflet-tooltip.custom-tooltip::before,
+.leaflet-tooltip.custom-tooltip::after {}
+
+.leaflet-tooltip-top.custom-tooltip {}
+
+/* Hide HTML5 Number Input Spinners */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+}
+
+input[type=number] {
+        -moz-appearance: textfield;
+}
+
+/* Allow clicks to pass through the transparent fill of routing polygons */
+.leaflet-routingPane-pane path {
+        pointer-events: stroke !important;
+}
+
+.v6-card-body {
+        flex: 1;
+        min-width: 0;
+}
+
+.v6-card-title {
+        font-weight: 700;
+        font-size: 11px;
+        color: #1e293b;
+        line-height: 1.2;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        white-space: normal;
+}
+
+.v6-card-sub {
+        font-size: 8.5px;
+        color: #64748b;
+        line-height: 1.1;
+}
+
+.v6-action-btn {
+
+        .marker-card-img-container {
+                height: 260px !important;
+                /* Slightly reduced as requested */
+        }
+
+        .marker-card-title {
+                font-size: 18px;
+        }
+
+        .marker-card-sub {
+                font-size: 12px;
+        }
+
+}
+
+.marker-card-title {
+        font-size: 20px;
+        font-weight: 900;
+        color: #ffffff;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.marker-card-sub {
+        font-size: 13px;
+        color: #e2e8f0;
+        font-weight: 600;
+        line-height: 1.3;
+}
+
+.marker-card-mc-tag {
+        font-size: 10px;
+        color: #94a3b8;
+        font-family: monospace;
+        font-weight: 800;
+        text-transform: uppercase;
+}
+
+/* Floating Buttons Overlay */
+.marker-card-actions {}
+
+.marker-btn-float-close {}
+
+.marker-btn-float-close:hover {
+        background: rgba(0, 0, 0, 0.8);
+}
+
+.marker-btn {}
+
+.marker-btn-verify {
+        background: #f97316;
+        color: white;
+}
+
+.marker-btn-verify:hover {
+        background: #ea580c;
+        transform: translateY(-2px);
+}
+
+.marker-btn-verify:disabled {
+        background: #475569;
+        color: #94a3b8;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+}
+
+#routing-resize-handle {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        width: 20px;
+        height: 20px;
+        cursor: nwse-resize;
+        z-index: 10001;
+        background: linear-gradient(135deg, transparent 50%, rgba(0, 0, 0, 0.1) 50%);
+        border-radius: 0 0 12px 0;
+}
+
+/* Pinning Mode Animations */
+@keyframes pulsing-pin-anim {
+        0% {
+                transform: scale(1);
+                opacity: 0.8;
+        }
+
+        50% {
+                transform: scale(1.5);
+                opacity: 0.4;
+        }
+
+        100% {
+                transform: scale(1);
+                opacity: 0.8;
+        }
+}
+
+.pulsing-pin {
+        animation: pulsing-pin-anim 1.5s infinite ease-in-out;
+}
+
+@keyframes pinning-hud-slide {
+        from {
+                transform: translate(-50%, 100px);
+                opacity: 0;
+        }
+
+        to {
+                transform: translate(-50%, 0);
+                opacity: 1;
+        }
+}
+
+#pinning-hud {
+        animation: pinning-hud-slide 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#map-crosshair {
+        animation: fadeIn-pin 0.3s ease-out;
+}
+
+@keyframes fadeIn-pin {
+        from {
+                opacity: 0;
+        }
+
+        to {
+                opacity: 1;
+        }
+}
+
+.spinning {
+        animation: rotate-sync 1.2s linear infinite;
+}
+
+@keyframes rotate-sync {
+        from {
+                transform: rotate(0deg);
+        }
+
+        to {
+                transform: rotate(360deg);
+        }
+}

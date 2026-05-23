@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyData } from '@/hooks/use-survey-data'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -19,8 +20,17 @@ export function SurveyList() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-        Loading...
+      <div className="p-4 space-y-3">
+        <div className="space-y-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <Skeleton className="h-4 flex-1" />
+              <Skeleton className="h-4 w-24 hidden md:block" />
+              <Skeleton className="h-4 w-16 hidden sm:block" />
+              <Skeleton className="h-5 w-14 rounded" />
+            </div>
+          ))}
+        </div>
       </div>
     )
   }

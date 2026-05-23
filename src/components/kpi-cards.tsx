@@ -2,6 +2,7 @@
 
 import { useBillingStats } from '@/hooks/use-billing-stats'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Users, Receipt, PiggyBank, Target } from 'lucide-react'
 
 export function KpiCards() {
@@ -9,8 +10,21 @@ export function KpiCards() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-        Loading stats...
+      <div className="p-4 space-y-4 overflow-y-auto">
+        <Skeleton className="h-5 w-24" />
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-7 w-7 rounded" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-7 w-24" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     )
   }
@@ -49,7 +63,7 @@ export function KpiCards() {
   ]
 
   return (
-    <div className="p-4 space-y-4 overflow-y-auto">
+    <div className="p-3 md:p-4 space-y-4 overflow-y-auto animate-in fade-in duration-500">
       <h2 className="text-sm font-semibold">Dashboard</h2>
       <div className="grid grid-cols-2 gap-3">
         {cards.map((card) => (

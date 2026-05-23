@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <title>TMT Billing Dept App [v2026.04.20.1201]</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    
+    <!-- PWA Settings -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="BSP">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="theme-color" content="#1e293b">
+    <meta name="screen-orientation" content="portrait">
+    <meta name="x5-orientation" content="portrait">
+    
+    <!-- Scripts (Critical ones first, non-critical deferred) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+    /* __CSS_BUNDLE__ */
+    </style>
+</head>
+<body>
+    %dev_mode% <!-- Handled via script injection -->
+    <div id="login-overlay" style="position:fixed; inset:0; background:linear-gradient(135deg, #1e293b 0%, #0f172a 100%); z-index:999999; display:flex; align-items:center; justify-content:center; padding:20px; transition: opacity 0.5s ease;">
+        <div style="background:white; padding:40px; border-radius:24px; width:100%; max-width:400px; text-align:center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
+            <div style="background:linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); width:72px; height:72px; border-radius:20px; display:flex; align-items:center; justify-content:center; margin:0 auto 24px; box-shadow: 0 10px 20px rgba(37, 99, 235, 0.3);">
+                <span class="material-icons-round" style="font-size:36px; color:white;">analytics</span>
+            </div>
+            <h1 style="margin:0 0 8px; font-size:26px; font-weight:800; color:#1e293b; letter-spacing:-0.5px;">TMT Billing Dept App <span style="font-size:12px; color:#2563eb; background:#eff6ff; padding:2px 8px; border-radius:12px; vertical-align:middle;">V8 PWA</span></h1>
+            <p style="margin:0 0 32px; font-size:14px; color:#64748b; font-weight:600;">Routing Station Pro &bull; Spatial Intelligence & Recovery</p>
+            
+            <div id="g_id_onload"
+                 data-client_id="1039864656694-57q2kbgrpc9fivodbqj7kaffh1kr3fql.apps.googleusercontent.com"
+                 data-context="signin"
+                 data-ux_mode="popup"
+                 data-callback="handleCredentialResponse"
+                 data-auto_select="true"
+                 data-itp_support="true">
+            </div>
+            <div class="g_id_signin"
+                 data-type="standard"
+                 data-shape="pill"
+                 data-theme="outline"
+                 data-text="signin_with"
+                 data-size="large"
+                 data-logo_alignment="left">
+            </div>
+            
+            <div id="auth-status" style="margin-top:24px; font-size:13px; min-height:20px;"></div>
+            
+            <div style="margin-top:32px; padding-top:24px; border-top:1px solid #f1f5f9; display:none;">
+            </div>
+        </div>
+    </div>
+
+<div id="sidebar">
+    <!-- Compact Header -->
+    <div class="sidebar-header-padding">
+        <div>
+            <div style="font-weight: 700; font-size: 16px;">TMT Billing Dept</div>
+            <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-top:2px;">
+                Updated: {{ LAST_UPDATED }} 
+                <span style="color:var(--primary); margin-left:4px;">[% data_version %]</span>
+            </div>
+        </div>
+        
+        <div style="text-align: right;">
+            <div id="zoom-level-text" style="font-size: 12px; color: #64748b; font-weight: 500;">Z: 13</div>
+            <div style="font-size: 10px; color: #94a3b8; font-weight: 500;">Kashif Khalil <span style="font-size: 9px;">™</span></div>
+        </div>
+    </div>
+
+    <!-- PWA Install Button (Hidden by default, shown via beforeinstallprompt listener) -->
+    <div id="sidebar-install-btn" onclick="App.triggerInstall()" style="display:none; margin: 10px var(--spacer); padding: 12px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border-radius: 12px; align-items: center; gap: 12px; color: white; cursor: pointer; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); transition: transform 0.2s ease;">
+        <div style="background: rgba(255,255,255,0.2); width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+            <span class="material-icons-round" style="font-size: 20px;">download_for_offline</span>
+        </div>
+        <div style="flex: 1;">
+            <div style="font-weight: 700; font-size: 13px;">Install App</div>
+            <div style="font-size: 10px; opacity: 0.9; font-weight: 500;">Run Fullscreen & Offline</div>
+        </div>
+        <span class="material-icons-round" style="font-size: 18px; opacity: 0.7;">chevron_right</span>
+    </div>
+    
+    <div id="sidebar-scroll" style="flex:1; overflow-y:auto; overflow-x: hidden; padding-bottom: 20px;">
+        <div class="filters" style="padding: 8px var(--spacer) 80px var(--spacer);">
+            <!-- Tools: Saved Routes -->
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:var(--warning); font-size:20px;">route</span>
+                    <span class="filter-label" style="flex:1;">Route <span id="designed-routes-total" style="color:darkorange; font-weight:bold; font-size:10px; margin-left:4px;"></span></span>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0; margin-left:auto;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div class="filter-content" style="padding: 4px 12px 12px 12px;">
+                    <div id="side-route-list" style="display:flex; flex-direction:column; gap:8px;">
+                        <div style="text-align:center; padding:12px; color:#94a3b8; font-size:11px;">No saved routes found</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:var(--primary); font-size:20px;">public</span>
+                    <span class="filter-label" id="lbl-dist" style="flex:1">Districts</span>
+                    <div class="selection-badge" id="badge-f-dist" style="display:none">0</div>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0; margin-left:8px;">
+                        <i class="material-icons-round">expand_less</i>
+                    </button>
+                </div>
+                <div id="f-dist" class="multi-select-container"></div>
+            </div>
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:var(--primary); font-size:20px;">location_city</span>
+                    <span class="filter-label" id="lbl-tehsil" style="flex:1">Tehsils</span>
+                    <div class="selection-badge" id="badge-f-tehsil" style="display:none">0</div>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0; margin-left:8px;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div id="f-tehsil" class="multi-select-container"></div>
+            </div>
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:var(--primary); font-size:20px;">map</span>
+                    <span class="filter-label" id="lbl-mc" style="flex:1">MC/UC Areas</span>
+                    <div class="filter-actions" style="border:none; padding:0; margin-right:8px;">
+                        <button class="select-all-btn" onclick="event.stopPropagation(); App.toggleAll('f-mc', true)">All</button>
+                        <button class="select-all-btn unselect" onclick="event.stopPropagation(); App.toggleAll('f-mc', false)">None</button>
+                    </div>
+                    <div class="selection-badge" id="badge-f-mc" style="display:none">0</div>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0; margin-left:8px;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div id="f-mc" class="multi-select-container"></div>
+            </div>
+
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:var(--primary); font-size:20px;">calendar_month</span>
+                    <span class="filter-label" style="flex:1">Date Range</span>
+                    <button class="select-all-btn unselect" onclick="event.stopPropagation(); App.clearDates()" style="margin-left:auto; margin-right:8px;">Clear</button>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div class="filter-content" style="padding: 12px 16px; display:flex; gap:12px;">
+                    <div style="flex:1">
+                        <input type="text" id="f-start" class="filter-select" placeholder="Start Date" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0; font-size:13px; font-weight:500; width:100%;">
+                    </div>
+                    <div style="flex:1">
+                        <input type="text" id="f-end" class="filter-select" placeholder="End Date" style="padding:10px; border-radius:8px; border:1px solid #e2e8f0; font-size:13px; font-weight:500; width:100%;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recently Verified Layer -->
+            <div class="filter-group collapsed admin-only">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)" style="display:flex; align-items:center; gap:8px;">
+                    <span class="material-icons-round" style="color:#10b981; font-size:20px;">verified</span>
+                    <span class="filter-label" style="flex:1;">Verified</span>
+                    <button id="btn-refresh-verified" onclick="event.stopPropagation(); Settings.fetchGlobalVerifications(true)" style="background:none; border:none; cursor:pointer; color:#8b5cf6; padding:0; display:flex;" title="Refresh Data">
+                        <span class="material-icons-round" style="font-size:16px;">sync</span>
+                    </button>
+                    <button class="select-all-btn unselect" onclick="event.stopPropagation(); VerifiedLayer.toggleAll(false)" style="margin-left:auto; margin-right:8px;">None</button>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div class="filter-content" style="padding: 12px 16px;">
+                    <div class="verified-search-box">
+                        <input type="text" id="v-search-sid" placeholder="Search Survey ID..." onkeyup="if(event.key==='Enter') VerifiedLayer.search()">
+                        <button onclick="VerifiedLayer.search()">
+                            <span class="material-icons-round" style="font-size:14px;">search</span>
+                        </button>
+                    </div>
+
+                    <div style="font-size:10px; color:#64748b; margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
+                        <span>SELECT MC TO BROWSE</span>
+                        <div style="display:flex; gap:8px;">
+                            <span style="cursor:pointer; color:var(--primary); font-weight:800;" onclick="VerifiedLayer.toggleAll(true)">All</span>
+                            <span style="cursor:pointer; color:var(--primary); font-weight:800;" onclick="VerifiedLayer.toggleAll(false)">None</span>
+                        </div>
+                    </div>
+                    
+                    <div id="f-verified-mc" class="sidebar-mc-list">
+                        <!-- Populated by JS -->
+                    </div>
+
+                    <div class="multi-option" onclick="VerifiedLayer.toggleGhost()" style="margin: 10px 0; padding: 10px; background: #f8faff; border-radius: 8px; border: 1px solid #edf2ff;">
+                        <input type="checkbox" id="f-verified-show-base">
+                        <span style="font-size:12px; font-weight:600; color:#4338ca;">Show Connection Lines (Mapping)</span>
+                    </div>
+
+                    <button id="btn-verified-audit" class="audit-mode-btn" onclick="VerifiedLayer.toggleAudit()">
+                        <span class="material-icons-round" style="font-size:18px;">analytics</span>
+                        START VERIFIED AUDIT
+                    </button>
+                </div>
+            </div>
+
+
+
+
+
+
+            <!-- Tools: Surveyors -->
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:#f59e0b; font-size:20px;">engineering</span>
+                    <span class="filter-label">Surveyors</span>
+                    <span class="selection-badge" id="badge-f-surveyor" style="display:none">0</span>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0; margin-left:8px;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div id="f-surveyor" class="filter-content multi-select-container" style="padding: 4px 12px 12px 12px; max-height:240px; overflow-y:auto; background:#fafafa; border-radius:0 0 8px 8px;">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+
+            <!-- Tools: Bills & Payments -->
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:#22c55e; font-size:20px;">payments</span>
+                    <span class="filter-label">Bills & Payments</span>
+                    <span class="selection-badge" id="badge-paid-count" style="display:none">0</span>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0; margin-left:8px;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div class="filter-content" style="padding: 4px 12px 12px 12px; display:flex; flex-direction:column; gap:4px;">
+                    <div class="nested-content" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
+                        <div class="sub-tool-item admin-only" onclick="PaidBills.open()">
+                            <span class="material-icons-round">dashboard</span>
+                            <span>Dashboard</span>
+                        </div>
+                        <div class="sub-tool-item" onclick="BillVerifier.open()">
+                            <span class="material-icons-round">verified_user</span>
+                            <span>Verify Bill</span>
+                        </div>
+                    </div>
+                    
+                    <div id="f-pay" class="multi-select-container" style="padding: 8px 4px; border-top: 1px solid #f1f5f9; background: #fafafa; border-radius: 8px;">
+                        <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; margin-bottom:6px; padding-left:4px;">Payment Filter</div>
+                        <div style="display:flex; flex-direction:column; gap:4px;">
+                            <div class="multi-option" data-value="paid" onclick="App.handleMultiClick(event, 'f-pay', 'apply')">
+                                <input type="checkbox" onchange="App.handleMultiChange(event, 'f-pay', 'apply')">
+                                <span class="pill paid" style="font-size:10px;">Paid</span>
+                            </div>
+                            <div class="multi-option" data-value="unpaid" onclick="App.handleMultiClick(event, 'f-pay', 'apply')">
+                                <input type="checkbox" onchange="App.handleMultiChange(event, 'f-pay', 'apply')">
+                                <span class="pill unpaid" style="font-size:10px;">Unpaid</span>
+                            </div>
+                            <div class="multi-option" data-value="not-billed" onclick="App.handleMultiClick(event, 'f-pay', 'apply')">
+                                <input type="checkbox" onchange="App.handleMultiChange(event, 'f-pay', 'apply')">
+                                <span class="pill not-billed" style="font-size:10px;">Not Billed</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Boundary Layers (KML) -->
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:#f59e0b; font-size:20px;">map</span>
+                    <span class="filter-label" style="flex:1">Boundary Layers</span>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div class="filter-content" style="padding: 12px; display:flex; flex-direction:column; gap:8px;">
+                    <div id="sidebar-kml-container" style="display:flex; flex-direction:column; gap:8px; max-height: 250px; overflow-y: auto; padding-right: 4px;">
+                        <div style="padding:10px; text-align:center; color:#94a3b8; font-size:11px;">Loading boundary data...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tools: Staff Report -->
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:var(--primary); font-size:20px;">assignment_ind</span>
+                    <span class="filter-label">Staff Report Section</span>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0; margin-left:8px;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div class="filter-content" style="padding: 4px 12px 12px 12px;">
+                    <div class="nested-content" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;">
+                        <div class="sub-tool-item" onclick="Stats.open()" style="background:#f8fafc; border:1px solid #e2e8f0; justify-content:center; flex-direction:column; gap:4px; padding:12px; height: 72px; box-sizing: border-box;">
+                            <span class="material-icons-round" style="color:#f59e0b;">leaderboard</span>
+                            <span style="font-size:10px; font-weight:700;">Leaderboard</span>
+                        </div>
+                        <div class="sub-tool-item" onclick="PerformanceLog.open()" style="background:#f8fafc; border:1px solid #e2e8f0; justify-content:center; flex-direction:column; gap:4px; padding:12px; height: 72px; box-sizing: border-box;">
+                            <span class="material-icons-round" style="color:#8b5cf6;">assignment_turned_in</span>
+                            <span style="font-size:10px; font-weight:700;">Performance</span>
+                        </div>
+                        <div class="sub-tool-item" id="btn-rotate-map" onclick="MapRotation.toggle()" style="background:#f8fafc; border:1px solid #e2e8f0; justify-content:center; flex-direction:column; gap:4px; padding:12px; cursor:pointer; display:flex; align-items:center; height: 72px; box-sizing: border-box;">
+                            <span class="material-icons-round" style="color:#10b981;">rotate_right</span>
+                            <span style="font-size:10px; font-weight:700;">Rotate</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- View & Sync Tools (Consolidated) -->
+            <div class="filter-group collapsed">
+                <div class="panel-header-premium" onclick="App.toggleFilterGroup(this)">
+                    <span class="material-icons-round" style="color:#8b5cf6; font-size:20px;">settings_suggest</span>
+                    <span class="filter-label" style="flex:1">View & Sync Tools</span>
+                    <button class="toggle-group-btn" style="border:none; background:none; padding:0;">
+                        <i class="material-icons-round">expand_more</i>
+                    </button>
+                </div>
+                <div class="filter-content" style="padding: 12px; display:flex; flex-direction:column; gap:12px;">
+                    <!-- List View Toggle -->
+                    <div class="sub-tool-item" onclick="ViewSwitcher.toList()" style="background:#f8fafc; border:1px solid #e2e8f0; justify-content:flex-start; height:48px; padding:0 16px; border-radius:10px; cursor:pointer; display:flex; align-items:center; gap:12px;">
+                        <span class="material-icons-round" style="color:#06b6d4; font-size:22px;">view_list</span>
+                        <span style="font-weight:700; font-size:13px; color:#1e293b;">Switch to List View</span>
+                        <span class="material-icons-round" style="font-size:18px; color:#94a3b8; margin-left:auto;">chevron_right</span>
+                    </div>
+
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.5px;">Map Categories</div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                            <div class="multi-option selected" data-value="domestic" onclick="App.toggleQuickFilter('domestic', event)" style="margin:0; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; justify-content:center;">
+                                <input type="checkbox" checked id="q-domestic" onchange="App.handleQuickFilterChange('domestic', event)" style="margin-right:8px;"> <span style="font-size:12px; font-weight:700; color:#334155;">Domestic</span>
+                            </div>
+                            <div class="multi-option selected" data-value="commercial" onclick="App.toggleQuickFilter('commercial', event)" style="margin:0; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; justify-content:center;">
+                                <input type="checkbox" checked id="q-commercial" onchange="App.handleQuickFilterChange('commercial', event)" style="margin-right:8px;"> <span style="font-size:12px; font-weight:700; color:#334155;">Commercial</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; flex-direction:column; gap:8px; padding-top:12px; border-top:1px solid #f1f5f9;">
+                         <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.5px;">Cloud Options</div>
+                            <div id="sync-server-badge-sidebar" class="sync-status-badge" style="background:#fefce8; color:#ca8a04; border-color:#fde68a; cursor:pointer;" onclick="event.stopPropagation(); DriveSync.fetchAllSyncedData(true)">
+                                <span style="font-size:8px;">⏳ SYNC...</span>
+                            </div>
+                         </div>
+                         <div id="f-drive" class="multi-option" onclick="App.handleMultiClick(event, 'f-drive', 'apply')" style="margin:0; padding:12px; background:#ecfdf5; border:1px solid #d1fae5; border-radius:10px; width:100%; box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;">
+                            <div style="display:flex; align-items:center;">
+                                <input type="checkbox" id="f-drive-only" onchange="App.handleMultiChange(event, 'f-drive', 'apply')" style="margin-right:10px;">
+                                <span style="font-weight:700; color:#065f46; font-size:12px;">Show Drive Images Only</span>
+                            </div>
+                            <div class="selection-badge" id="badge-f-drive" style="display:none">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
+    <!-- Live Totals badge (Repositioned above footer) -->
+    <div class="stat-badge" onclick="Sidebar.close(); event.stopPropagation();">
+        <small id="stat-label" style="font-weight:700; color:#64748b; text-transform:uppercase; font-size:9px;">Live Survey Data</small>
+        <span id="stat-count" style="font-weight:800; color:var(--primary); font-size:14px;">0</span>
+    </div>
+    
+    <!-- Fixed Sidebar Footer -->
+    <div class="sidebar-footer">
+        <div class="footer-btn apply" onclick="App.apply()">
+            <span class="material-icons-round">done</span> Apply
+        </div>
+        <div class="footer-btn reset" onclick="App.resetFilters()">
+            <span class="material-icons-round">refresh</span> Reset
+        </div>
+    </div>
+</div>
+
+
+<div id="main-stage">
+    <div id="mobile-unsent-banner" class="mobile-only" style="display:none; position:fixed; top:75px; left:50%; transform:translateX(-50%); z-index:1000; background:rgba(254, 243, 199, 0.65); backdrop-filter:blur(4px); color:#d97706; padding:6px 12px; border-radius:20px; border:1px solid rgba(252, 211, 77, 0.4); font-size:11px; font-weight:800; box-shadow:0 4px 12px rgba(217,119,6,0.1); align-items:center; gap:6px; cursor:pointer; flex-direction:row; white-space:nowrap; flex-wrap:nowrap;" onclick="DriveSync.openSyncModal()">
+        <span class="material-icons-round" style="font-size:14px; flex-shrink:0;">warning</span>
+        <span style="flex-shrink:0;">You have <span id="mobile-unsent-count" style="color:#dc2626; font-size:12px; font-weight:900;">0</span> Unsent images</span>
+    </div>
+    <div id="map-pager" class="map-nav" style="display: none;">
+        <button onclick="MapNavigator.move(-1)" class="gal-btn" style="background:white; color:var(--text); box-shadow:0 2px 4px rgba(0,0,0,0.05);"><span class="material-icons-round" style="font-size:20px;">chevron_left</span></button>
+        <span class="map-nav-text">Record <span id="map-nav-idx">0</span> of <span id="map-nav-total">0</span></span>
+        <button onclick="MapNavigator.move(1)" class="gal-btn" style="background:white; color:var(--text); box-shadow:0 2px 4px rgba(0,0,0,0.05);"><span class="material-icons-round" style="font-size:20px;">chevron_right</span></button>
+    </div>
+    <button id="sidebar-toggle" onclick="Sidebar.toggleDesktop()" title="Toggle Sidebar">
+        <i class="material-icons-round">keyboard_arrow_left</i>
+    </button>
+    <div id="info-card" class="minimized">
+         <!-- Populated by JS -->
+    </div>
+
+    <!-- Nearby Markers Popup -->
+    <div id="nearby-markers-popup" style="display:none; position:fixed; left:calc(var(--sidebar-w, 320px) + 20px); bottom:200px; z-index:15001; padding:4px; background:#fff; width:auto; min-width:80px; max-width:160px; border-radius:8px; border:1px solid #e2e8f0; box-shadow:0 4px 16px rgba(0,0,0,0.12); overflow:hidden; flex-direction:column;">
+        <div id="nearby-popup-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; border-bottom:1px solid #e2e8f0; padding-bottom:3px; cursor:grab;">
+            <span style="font-weight:700; font-size:9px; color:#475569; user-select:none;">Nearby</span>
+            <button onclick="App.closeNearbyMarkersPopup()" title="Close" style="background:none; border:none; color:#64748b; cursor:pointer; padding:2px;">
+                <span class="material-icons-round" style="font-size:12px;">close</span>
+            </button>
+        </div>
+        <div id="nearby-markers-list"></div>
+    </div>
+
+
+    <div id="map-container">
+        <div id="user-session" class="user-session-badge" style="display:none" onclick="Auth.toggle()">
+            <img id="sess-pic" class="user-avatar" style="display:none">
+            <div id="sess-avatar-fallback" class="user-avatar">
+                <i class="material-icons-round">person</i>
+            </div>
+            <div class="user-details-wrapper">
+                <div class="user-info">
+                    <div id="sess-name" class="user-name">User</div>
+                    <div id="sess-role" class="user-role">Role</div>
+                </div>
+                <button class="logout-btn" onclick="event.stopPropagation(); Auth.logout()" title="Logout">
+                    <i class="material-icons-round">power_settings_new</i>
+                </button>
+            </div>
+        </div>
+        <div id="map"></div>
+        <!-- Fixed Center Crosshair (Relative to Map Container) -->
+        <div id="map-crosshair" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); z-index:20000; pointer-events:none; flex-direction:column; align-items:center; justify-content:center;">
+            <div style="width:40px; height:40px; border:2px solid #8b5cf6; border-radius:50%; position:relative; display:flex; align-items:center; justify-content:center;">
+                <div style="width:2px; height:60px; background:#8b5cf6; position:absolute;"></div>
+                <div style="width:60px; height:2px; background:#8b5cf6; position:absolute;"></div>
+                <div style="width:6px; height:6px; background:#8b5cf6; border-radius:50%; border:2px solid white;"></div>
+            </div>
+        </div>
+    </div>
+        
+<div class="map-controls">
+            <div id="extra-ctrls" class="control-group">
+                <button class="float-btn" onclick="ViewSwitcher.toList()" title="List View">
+                    <span class="material-icons-round" style="color:#06b6d4">view_list</span>
+                </button>
+                <button class="float-btn" onclick="UniversalSearch.open()" title="Universal Search" style="background:var(--primary); color:white;">
+                    <span class="material-icons-round">search</span>
+                </button>
+                <button id="btn-nav-toggle" class="float-btn" onclick="MapNavigator.toggle()" title="Map Navigation">
+                    <span class="material-icons-round">explore</span>
+                </button>
+                <button class="float-btn" id="btn-routing-station" onclick="SpatialRouter.toggleUI()" title="Routing Station Pro">
+                    <span class="material-icons-round" style="color:var(--warning)">route</span>
+                </button>
+                <button class="float-btn" onclick="App.toggleLayer()" title="Toggle Satellite">
+                    <span class="material-icons-round" id="layer-icon">satellite_alt</span>
+                </button>
+                <button class="float-btn admin-only" onclick="Settings.open()" title="Settings">
+                    <span class="material-icons-round" style="color:#10b981">settings</span>
+                </button>
+                <button class="float-btn" onclick="QRScanner.open()" title="Scan QR Code">
+                    <span class="material-icons-round" style="color:#6366f1">qr_code_scanner</span>
+                </button>
+            </div>
+            <button id="btn-cloud-sync-floating" class="routing-tool-btn" onclick="DriveSync.openSyncModal()" title="Sync Offline Images" style="position:fixed; bottom:110px; left:calc(var(--sidebar-w, 320px) + 60px); z-index:10000; width:32px; height:32px; border-radius:50%; min-width:32px; background:#fef3c7; border:1px solid #fcd34d; display:flex; align-items:center; justify-content:center;">
+                <span class="material-icons-round" style="color:#d97706; font-size:18px;">cloud_off</span>
+                <span id="cloud-sync-dot-floating" style="display:none; position:absolute; top:2px; right:2px; width:6px; height:6px; background:#dc2626; border-radius:50%;"></span>
+            </button>
+            <button id="btn-cluster-toggle" class="routing-tool-btn" onclick="App.toggleClustering()" title="Toggle Marker Clustering" style="position:fixed; bottom:70px; left:calc(var(--sidebar-w, 320px) + 20px); z-index:10000; width:32px; height:32px; border-radius:50%; min-width:32px; display:flex; align-items:center; justify-content:center;">
+                <span class="material-icons-round" style="font-size:18px;">hub</span>
+            </button>
+            <button id="btn-show-all-markers" class="routing-tool-btn" onclick="App.showAllMarkersInView()" title="Show All Markers in Current View" style="position:fixed; bottom:70px; left:calc(var(--sidebar-w, 320px) + 60px); z-index:10000; width:32px; height:32px; border-radius:50%; min-width:32px; display:flex; align-items:center; justify-content:center;">
+                <span class="material-icons-round" style="font-size:18px;">visibility</span>
+            </button>
+            <button class="float-btn mobile-only" onclick="Sidebar.toggle()" title="Menu">
+                <span class="material-icons-round">menu</span>
+            </button>
+            <button id="toggle-ctrls-btn" class="float-btn primary" onclick="UIInteractions.toggleExtraCtrls()" title="Collapse Toolbar" style="margin-top: 8px;">
+                <span class="material-icons-round">expand_more</span>
+            </button>
+        </div>
+        
+        <!-- Map Rotation HUD -->
+        <div id="map-rotation-hud" style="display:none; position:fixed; bottom:80px; left:50%; transform:translateX(-50%); z-index:15000; background:rgba(15,23,42,0.9); backdrop-filter:blur(8px); border-radius:12px; padding:8px 12px; align-items:center; gap:10px; box-shadow:0 4px 16px rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.1);">
+            <button onclick="MapRotation.step(-15)" title="-15°" style="background:none; border:none; color:white; cursor:pointer; padding:4px;">
+                <span class="material-icons-round" style="font-size:20px;">rotate_left</span>
+            </button>
+            <span id="rotation-angle-display" style="color:white; font-weight:700; font-size:12px; min-width:40px; text-align:center;">0°</span>
+            <button onclick="MapRotation.step(15)" title="+15°" style="background:none; border:none; color:white; cursor:pointer; padding:4px;">
+                <span class="material-icons-round" style="font-size:20px;">rotate_right</span>
+            </button>
+            <div style="width:1px; height:20px; background:rgba(255,255,255,0.2);"></div>
+            <button onclick="MapRotation.toggleLock()" id="btn-rotation-lock" title="Lock Rotation" style="background:none; border:none; color:#94a3b8; cursor:pointer; padding:4px;">
+                <span class="material-icons-round" style="font-size:18px;">lock_open</span>
+            </button>
+            <button onclick="MapRotation.reset()" title="Reset to 0°" style="background:none; border:none; color:#ef4444; cursor:pointer; padding:4px;">
+                <span class="material-icons-round" style="font-size:18px;">restart_alt</span>
+            </button>
+            <button onclick="MapRotation.toggle()" title="Close" style="background:none; border:none; color:#94a3b8; cursor:pointer; padding:4px;">
+                <span class="material-icons-round" style="font-size:18px;">close</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Routing Station Pro Overlay -->
+        <div id="routing-station-overlay" style="display:none;">
+                <!-- Header Handle -->
+                <div id="routing-header" style="flex:0 0 auto;">
+                    <div id="routing-drag-handle" style="padding:10px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; background:#f8fafc; cursor:move;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span class="material-icons-round" onclick="SpatialRouter.dumpDiagnostics()" style="color:var(--primary); font-size:18px; cursor:help;" title="Click for System Diagnostics (Console)">route</span>
+                            <span style="font-weight:700; font-size:13px; color:#1e293b; letter-spacing: -0.2px;">TMT Billing Dept</span>
+                            <span style="font-size:10px; color:#2563eb; background:#eff6ff; padding:1px 6px; border-radius:8px; margin-left:4px;">V8 PWA</span>
+                            <div id="sync-server-badge" class="sync-status-badge" style="margin-left:8px; background:#fefce8; color:#ca8a04; border-color:#fde68a;">
+                                <span style="font-size:8px;">⏳ SYNC...</span>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:4px;">
+                            <button onclick="event.stopPropagation(); SpatialRouter.toggleSize()" title="Minimize" style="background:none; border:none; color:#94a3b8; cursor:pointer; padding:4px;">
+                                 <span class="material-icons-round" id="btn-minimize-icon" style="font-size:18px;">remove</span>
+                            </button>
+                            <button onclick="event.stopPropagation(); SpatialRouter.toggleUI()" title="Close" style="background:none; border:none; color:#94a3b8; cursor:pointer; padding:4px;">
+                                <span class="material-icons-round" style="font-size:18px;">close</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- TAB NAVIGATION -->
+                    <div class="v6-tabs" id="routing-tabs-container" style="border-bottom:3px solid #22c55e; background:#fefce8; flex: 0 0 50px; display:flex; min-height:50px; width:100%;">
+                        <button onclick="SpatialRouter.switchTab('editor')" id="tab-editor" class="v6-tab active" style="display:flex; padding:12px 20px; flex:1; background:#22c55e; font-weight:800; color:#fff; border-radius:8px 8px 0 0;">EDITOR</button>
+                        <button onclick="SpatialRouter.switchTab('manager')" id="tab-manager" class="v6-tab" style="display:flex; padding:12px 20px; flex:1; background:#e2e8f0; font-weight:700; color:#475569; border-radius:8px 8px 0 0;">ROUTES</button>
+                    </div>
+
+                    <!-- Unified Action Toolbar (Persistent) -->
+                    <div id="routing-toolbar-row" class="v6-toolbar" style="padding:4px 8px; display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid #e2e8f0; background:#fff; flex: 0 0 auto;">
+                        <button onclick="event.stopPropagation(); SpatialRouter.startDrawing('append')" class="routing-tool-btn gated-tool" id="btn-draw-append" title="Draw Area (Append to selection)">
+                            <span class="material-icons-round">crop_square</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.startDrawing('new')" class="routing-tool-btn gated-tool" id="btn-draw-fresh" title="Start Fresh Area (Clear selection)">
+                            <span class="material-icons-round">add_location_alt</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.clearActiveRoute()" class="routing-tool-btn gated-tool" id="btn-clear-route" title="Clear Active Route & Map">
+                            <span class="material-icons-round" style="color:#ef4444;">layers_clear</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.finishDrawing()" class="routing-tool-btn" id="btn-finish-draw" title="Finish Drawing" style="display:none; color:#10b981;">
+                            <span class="material-icons-round">done</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.cancelDrawing()" class="routing-tool-btn" id="btn-cancel-draw" title="Cancel Drawing" style="display:none; color:#ef4444;">
+                            <span class="material-icons-round">close</span>
+                        </button>
+                        
+                        <div style="width:1px; background:#e2e8f0; margin:0 2px;"></div>
+
+                        <button onclick="event.stopPropagation(); SpatialRouter.selectAll()" class="routing-tool-btn gated-tool" id="btn-select-all" title="Number All (by Survey ID)">
+                            <span class="material-icons-round">checklist</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.deselectAll()" class="routing-tool-btn gated-tool" id="btn-deselect-all" title="Remove All Numbers">
+                            <span class="material-icons-round">deselect</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.toggleLock()" class="routing-tool-btn gated-tool" id="btn-lock-seq" title="Lock/Unlock Sequence">
+                            <span class="material-icons-round">lock_open</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.undo()" class="routing-tool-btn gated-tool" id="btn-undo" title="Undo (up to 20)">
+                            <span class="material-icons-round">undo</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.redo()" class="routing-tool-btn gated-tool" id="btn-redo" title="Redo">
+                            <span class="material-icons-round">redo</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.saveRoute(true)" class="routing-tool-btn gated-tool" id="btn-save-as" title="Save As (Download)" style="color:#64748b;">
+                            <span class="material-icons-round">download</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.saveRoute(false)" class="routing-tool-btn gated-tool" id="btn-save-sync" title="Quick Save (Sync Server)" style="color:#16a34a;">
+                            <span class="material-icons-round">save</span>
+                        </button>
+
+                        <div style="width:1px; background:#e2e8f0; margin:0 2px;"></div>
+
+                        <button onclick="event.stopPropagation(); SpatialRouter.sortBySequenceNumber()" class="routing-tool-btn gated-tool" id="btn-sort-seq" title="Sort by Sequence #">
+                            <span class="material-icons-round">sort</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.sortByID('asc')" class="routing-tool-btn gated-tool" id="btn-sort-id-asc" title="Sort ID Asc">
+                            <span class="material-icons-round">arrow_upward</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.sortByID('desc')" class="routing-tool-btn gated-tool" id="btn-sort-id-desc" title="Sort ID Desc">
+                            <span class="material-icons-round">arrow_downward</span>
+                        </button>
+
+                        <div style="width:1px; background:#e2e8f0; margin:0 2px;"></div>
+
+                        <button onclick="event.stopPropagation(); SpatialRouter.pickStart()" class="routing-tool-btn gated-tool" id="btn-pick-start" title="Set Start Point">
+                            <span class="material-icons-round" style="color:#10b981">flag</span>
+                        </button>
+                        <button onclick="event.stopPropagation(); SpatialRouter.pickEnd()" class="routing-tool-btn gated-tool" id="btn-pick-end" title="Set End Point">
+                            <span class="material-icons-round" style="color:#ef4444">flag</span>
+                        </button>
+
+                        <div style="width:1px; background:#e2e8f0; margin:0 2px;"></div>
+
+                        <button onclick="event.stopPropagation(); SpatialRouter.clear(true)" class="routing-tool-btn gated-tool" id="btn-reset-all" title="Reset All" style="color:#ef4444;">
+                            <span class="material-icons-round">delete_sweep</span>
+                        </button>
+                    </div>
+                </div> <!-- END routing-header correctly here -->
+
+
+                <!-- Panels Container (The Content Area) -->
+                <div id="v4-panels-container" style="flex:1; overflow:hidden; background:white; display:flex; flex-direction:column; min-height: 0;">
+                    
+                    <!-- EDITOR TAB PANEL (Pure Flex Layout) -->
+                    <div id="routing-editor-panel" style="display:none; flex-direction:column; background:white; height:100%; width:100%; overflow:hidden;">
+                        
+                        <!-- Header Area (Fixed Height) -->
+                        <div style="flex:0 0 auto; background:white; border-bottom:1px solid #e2e8f0;">
+                            <!-- Row 1: Manual Entry -->
+                            <div style="padding:8px; background:#f8fafc; display:flex; gap:6px;">
+                                <input type="text" id="manual-id-input" placeholder="Survey ID..." 
+                                    style="flex:1; padding:0 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; height:34px; outline:none;"
+                                    onkeydown="if(event.key === 'Enter') { SpatialRouter.addManualID(this.value); this.value = ''; }">
+                                <button onclick="event.stopPropagation(); SpatialRouter.addManualID(document.getElementById('manual-id-input').value); document.getElementById('manual-id-input').value = '';"
+                                    style="width:34px; height:34px; background:var(--primary); color:white; border:none; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+                                    <span class="material-icons-round" style="font-size:20px;">add</span>
+                                </button>
+                            </div>
+
+
+                            <!-- Row 2: Stats Bar -->
+                            <div id="route-stats" style="display:none; padding:8px 12px; background:#eff6ff; border-bottom:1px solid #dbeafe; justify-content:space-between; align-items:center;">
+                                <div id="route-count" style="font-size:12px; font-weight:700; color:#1e40af;">0 Items</div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <button onclick="event.stopPropagation(); SpatialRouter.moveInSequence(-1)" class="nav-mini-btn"><span class="material-icons-round">chevron_left</span></button>
+                                    <span id="route-nav-text" style="font-size:11px; font-weight:700; color:var(--primary);">0/0</span>
+                                    <button onclick="event.stopPropagation(); SpatialRouter.moveInSequence(1)" class="nav-mini-btn"><span class="material-icons-round">chevron_right</span></button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Scrollable Content (Flex 1) -->
+                        <div id="route-list-container" class="custom-scrollbar" style="flex:1; position:relative; overflow-y:auto; background:#f1f5f9; pointer-events:auto; min-height: 0;">
+                            <!-- Initial State -->
+                            <div id="route-initial-state" style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; color:#94a3b8; text-align:center; pointer-events:none; z-index:1;">
+                                <span class="material-icons-round" style="font-size:48px; opacity:0.1; margin-bottom:12px;">map_draw</span>
+                                <div style="font-size:13px; font-weight:600;">No active route</div>
+                                <div style="font-size:11px; margin-top:4px;">Draw area / Add IDs</div>
+                            </div>
+                            <!-- Actual List -->
+                            <div id="route-list" class="v6-list" style="position:relative; z-index:2; padding-bottom: 20px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- MANAGER TAB PANEL -->
+                    <div id="routing-manager-panel" style="display:flex; flex-direction:column; background:#f8fafc; height:100%; width:100%; overflow:hidden;">
+                        <div style="flex:0 0 auto; padding:8px; background:white; border-bottom:1px solid #e2e8f0; display:flex; flex-direction:column; gap:6px;">
+                            <!-- Row 1: Selection + Clean + Sync -->
+                            <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
+                                <button onclick="event.stopPropagation(); SpatialRouter.toggleSelectAllRoutes(true, 'export')" style="padding:3px 6px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:4px; font-size:8px; font-weight:800; color:#64748b; cursor:pointer;" title="Select All Export">ALL X</button>
+                                <button onclick="event.stopPropagation(); SpatialRouter.toggleSelectAllRoutes(false, 'export')" style="padding:3px 6px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:4px; font-size:8px; font-weight:800; color:#64748b; cursor:pointer;" title="Deselect All Export">0 X</button>
+                                <div style="width:1px; height:20px; background:#e2e8f0;"></div>
+                                <button onclick="event.stopPropagation(); SpatialRouter.toggleSelectAllRoutes(true, 'display')" style="padding:3px 6px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:4px; font-size:8px; font-weight:800; color:#16a34a; cursor:pointer;" title="Select All Display">ALL D</button>
+                                <button onclick="event.stopPropagation(); SpatialRouter.toggleSelectAllRoutes(false, 'display')" style="padding:3px 6px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:4px; font-size:8px; font-weight:800; color:#16a34a; cursor:pointer;" title="Deselect All Display">0 D</button>
+                                <div style="flex:1;"></div>
+                                <button onclick="event.stopPropagation(); SpatialRouter.loadRoutes(null, true)" style="padding:4px 8px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:4px; color:#64748b; cursor:pointer; display:flex; align-items:center;" title="Sync Routes">
+                                    <span class="material-icons-round" style="font-size:16px;">refresh</span>
+                                </button>
+                                <button onclick="event.stopPropagation(); SpatialRouter.clearMapDisplay()" style="padding:4px 8px; background:white; border:1px solid #fca5a5; border-radius:4px; color:#ef4444; cursor:pointer; display:flex; align-items:center; gap:3px; font-size:10px; font-weight:700;" title="Clear displayed routes from map">
+                                    <span class="material-icons-round" style="font-size:14px;">layers_clear</span>Clean
+                                </button>
+                            </div>
+                            <!-- Row 2: Display / Export -->
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px;">
+                                <button onclick="event.stopPropagation(); SpatialRouter.batchLoadDisplay()" style="padding:6px; background:#f0fdf4; border:1px solid #16a34a; border-radius:5px; font-size:10px; font-weight:700; color:#16a34a; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;" title="Display Selected">
+                                    <span class="material-icons-round" style="font-size:14px;">visibility</span>Display
+                                </button>
+                                <button onclick="event.stopPropagation(); SpatialRouter.batchExport()" style="padding:6px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:5px; font-size:10px; font-weight:700; color:#2563eb; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;" title="Export Selected">
+                                    <span class="material-icons-round" style="font-size:14px;">download</span>Export
+                                </button>
+                            </div>
+                        </div>
+                        <div id="route-manager-list" class="custom-scrollbar" style="flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:8px;"></div>
+                    </div>
+                </div>
+            
+            <!-- Resize Grip -->
+            <div id="routing-resize-handle">
+                <span class="material-icons-round" style="font-size:14px; color:#64748b; transform: rotate(0deg); pointer-events:none;">south_east</span>
+            </div>
+        </div>
+
+    <!-- Persistent List View -->
+    <div id="list-view-stage">
+        <div class="list-nav">
+            <div style="display:flex; gap:8px;">
+                <button onclick="Sidebar.toggle()" class="gal-btn mobile-sidebar-toggle" style="background:#eff6ff; color:var(--primary);" title="Filters"><span class="material-icons-round">tune</span></button>
+            </div>
+            <div style="font-weight:700">Record <span id="lv-idx">1</span> of <span id="lv-total">0</span></div>
+            <div style="display:flex; gap:8px;">
+                <button onclick="ListView.prev()" class="gal-btn" style="background:#f1f5f9; color:var(--text);"><span class="material-icons-round">chevron_left</span></button>
+                <button onclick="ListView.next()" class="gal-btn" style="background:#f1f5f9; color:var(--text);"><span class="material-icons-round">chevron_right</span></button>
+                <button onclick="ViewSwitcher.toMap()" class="gal-btn" style="background:var(--primary); color:white; margin-left:8px;" title="Go to Map"><span class="material-icons-round">map</span></button>
+            </div>
+        </div>
+        <div class="record-card-container" style="flex:1; position:relative; overflow:hidden; display:flex; flex-direction:column;">
+            <div id="lv-search-container" style="position:relative; margin: 12px auto; width: 96%; max-width: 560px; z-index:1002;"></div>
+            <div id="lv-content" class="record-card"></div>
+        </div>
+    </div>
+
+    <!-- Route Pager -->
+    <div id="route-pager-container" style="display:none;">
+        <div class="route-pager-header">
+            <div id="map-route-watermark" title="Route Name">
+                <span class="material-icons-round" style="font-size:18px; flex-shrink:0;">route</span> 
+                <span id="route-watermark-text">Route Name</span>
+            </div>
+            <button id="btn-clear-active-route" onclick="SpatialRouter.clearMapDisplay()" title="Clear Map">
+                <span class="material-icons-round" style="font-size:16px;">close</span>
+            </button>
+        </div>
+        
+        <div class="route-pager-controls">
+            <button class="rp-btn" id="rp-prev" onclick="SpatialRouter.changePage(-1)" title="Previous 25 Nodes">
+                <span class="material-icons-round">skip_previous</span>
+            </button>
+            <button class="rp-btn" id="rp-prev-marker" onclick="SpatialRouter.changeMarker(-1)" title="Previous Marker">
+                <span class="material-icons-round">navigate_before</span>
+            </button>
+            <div id="rp-info">
+                <div class="rp-info-main">Marker 1 / 1</div>
+                <div class="rp-info-sub">CHUNK 1 OF 1</div>
+            </div>
+            <button class="rp-btn" id="rp-next-marker" onclick="SpatialRouter.changeMarker(1)" title="Next Marker">
+                <span class="material-icons-round">navigate_next</span>
+            </button>
+            <button class="rp-btn" id="rp-next" onclick="SpatialRouter.changePage(1)" title="Next 25 Nodes">
+                <span class="material-icons-round">skip_next</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal Marker Card -->
+    <div id="modal-marker-card" style="display:none;" onclick="if(event.target === this) SpatialRouter.closeMarkerCard()">
+        <div class="marker-card-content">
+            <button class="marker-card-close-btn" onclick="SpatialRouter.closeMarkerCard()" title="Close Details">
+                <span class="material-icons-round">close</span>
+            </button>
+            <div class="marker-card-img-container">
+                <img id="marker-card-img" class="marker-card-img" 
+                     src="https://placehold.co/400x400?text=No+Structure+Image" 
+                     alt="Structure Image" 
+                     onerror="this.onerror=null; this.src='https://placehold.co/400x400?text=Image+Load+Error'" 
+                     title="Click to view full image gallery">
+                
+                <div class="marker-card-header">
+                    <div class="marker-card-header-top">
+                        <div id="marker-card-surveyor" class="marker-card-surveyor">Surveyor</div>
+                        <div id="marker-card-mc" class="marker-card-mc-tag">MC-Area</div>
+                    </div>
+                    <div id="marker-card-date-time" class="marker-card-date-time">Date | Time</div>
+                    <button class="marker-card-pin-header-btn" id="btn-manual-pin" title="Manual Pinpoint">
+                        <span class="material-icons-round">edit_location_alt</span>
+                        <span>Manual Pin</span>
+                    </button>
+                </div>
+
+                <div class="marker-card-overlay">
+                    <div id="marker-card-title" class="marker-card-title">#SID</div>
+                    <div id="marker-card-sub" class="marker-card-sub">Consumer Name &bull; Address</div>
+                </div>
+
+                <!-- Action buttons as overlay -->
+                <div class="marker-card-actions-overlay">
+                    <div id="marker-card-status-container" style="display:flex; align-items:center; gap:8px;">
+                        <!-- Status Badge (Read-only) -->
+                        <div id="marker-card-status-badge" class="v6-status-badge">
+                            <span class="material-icons-round" style="font-size:14px;">history</span>
+                            <span id="marker-status-text">Unverified</span>
+                        </div>
+                        
+                        <!-- Delivery Indicator (Static) -->
+                        <div id="btn-delivery-modal" class="marker-static-btn" title="Delivery Status">
+                            <span class="material-icons-round">local_shipping</span>
+                        </div>
+                    </div>
+                    
+                    <button class="marker-btn-list" id="btn-modal-list-view">
+                        <span class="material-icons-round">view_list</span> List
+                    </button>
+                </div>
+        </div>
+    </div>
+</div>
+<!-- Modals & Overlays -->
+<div id="modal-stats" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:30000; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:white; border-radius:16px; width:100%; max-width:850px; height:90vh; display:flex; flex-direction:column;">
+        <div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; background:#f8fafc;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <h3 style="margin:0; font-size:18px;" id="stats-title">Staff Workflow Leaderboard</h3>
+                <div style="display:flex; gap:8px; margin-left:12px;">
+                    <button onclick="Stats.exportSummary()" class="btn-premium-sidebar admin-only" style="height:32px; padding:0 12px; font-size:11px; background:#10b981; color:white; border:none; border-radius:6px; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                        <span class="material-icons-round" style="font-size:16px;">summarize</span> Export Summary
+                    </button>
+                    <button onclick="Stats.exportDetailed()" class="btn-premium-sidebar admin-only" style="height:32px; padding:0 12px; font-size:11px; background:#6366f1; color:white; border:none; border-radius:6px; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                        <span class="material-icons-round" style="font-size:16px;">receipt_long</span> Export Detailed
+                    </button>
+                </div>
+            </div>
+            <button onclick="Stats.close()" style="background:#f1f5f9; border:none; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#64748b;">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+        <div id="stats-body" class="stats-table-container" style="flex:1; overflow-y:auto; padding:0;"></div>
+    </div>
+</div>
+
+<!-- Offline Image Sync Modal -->
+<div id="modal-offline-sync" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.8); z-index:30000; align-items:center; justify-content:center; padding:12px;">
+    <div style="background:white; border-radius:16px; width:100%; max-width:500px; max-height:80vh; display:flex; flex-direction:column; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); overflow:hidden;">
+        <div style="padding:16px 20px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; background:#f8fafc;">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="material-icons-round" style="color:#d97706; font-size:24px;">cloud_off</span>
+                <h3 style="margin:0; font-size:16px; font-weight:700; color:#1e293b;">Offline Sync Queue</h3>
+            </div>
+            <button onclick="document.getElementById('modal-offline-sync').style.display='none'" style="background:#f1f5f9; border:none; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#64748b;">
+                <span class="material-icons-round" style="font-size:18px;">close</span>
+            </button>
+        </div>
+        
+        <div id="offline-sync-gallery" style="flex:1; overflow-y:auto; padding:16px; display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; background:#f1f5f9;">
+        </div>
+
+        <div style="padding:16px; background:white; border-top:1px solid #e2e8f0; display:flex; flex-direction:column; gap:8px;">
+            <div id="bulk-sync-progress" style="display:none; text-align:center; font-size:12px; font-weight:800; color:#2563eb; padding:4px 0;">
+                <span id="bulk-sync-progress-text">Uploading...</span>
+            </div>
+            <button id="btn-execute-bulk-sync" onclick="DriveSync.startBulkUpload()" style="background:linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color:white; border:none; padding:14px; border-radius:12px; font-weight:800; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 4px 12px rgba(37, 99, 235, 0.2);">
+                <span class="material-icons-round">cloud_upload</span>
+                <span>SYNC ALL IMAGES NOW</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="modal-verify-bill" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:30000; align-items:center; justify-content:center; padding:10px;">
+    <div style="background:white; border-radius:16px; width:100%; max-width:1000px; height:90vh; display:flex; flex-direction:column; box-shadow: 0 20px 50px rgba(0,0,0,0.3); overflow:hidden;">
+        <div style="padding:16px 24px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center; background:#fafafa;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span class="material-icons-round" style="color:var(--primary); font-size:28px;">verified_user</span>
+                <div>
+                    <h3 style="margin:0; font-size:18px;">Verify Bill Status</h3>
+                    <div id="verify-psid-label" style="font-size:11px; color:#64748b; font-weight:700;">EXTERNAL: SUTHRA PUNJAB</div>
+                </div>
+            </div>
+            <button onclick="BillVerifier.close()" style="background:#f1f5f9; border:none; border-radius:50%; width:40px; height:40px; display:flex; align-items:center; justify-content:center; cursor:pointer;"><span class="material-icons-round">close</span></button>
+        </div>
+        <div style="flex:1; background:#f8fafc; position:relative;">
+            <div id="verify-loader" style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:white; z-index:1;">
+                <span class="material-icons-round rotate" style="font-size:48px; color:var(--primary); margin-bottom:12px;">sync</span>
+                <div style="font-weight:700; color:#64748b;">Loading Verification Portal...</div>
+            </div>
+            <iframe id="verify-iframe" src="about:blank" style="width:100%; height:100%; border:none;" onload="document.getElementById('verify-loader').style.display='none'"></iframe>
+        </div>
+    </div>
+</div>
+
+<!-- Advanced Paid Dashboard Stage (v7.2.1) -->
+<div id="paid-dashboard-stage" class="admin-only">
+    <div class="dashboard-header" style="padding: 12px 20px; background: white; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100;">
+        <div style="display:flex; align-items:center; gap:16px;">
+            <button onclick="PaidBills.toggleSidebar()" class="btn-premium-sidebar" style="background:#f8fafc; color:#64748b; width:40px; height:40px; border-radius:12px; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                <span class="material-icons-round">menu_open</span>
+            </button>
+            <div style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color:white; width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">
+                <span class="material-icons-round" style="font-size:24px;">analytics</span>
+            </div>
+            <div>
+                <h2 style="margin:0; font-size:18px; color: #1e293b; letter-spacing: -0.5px;">Paid Analytics <span style="color: #6366f1; font-weight: 800;">Hub</span></h2>
+                <div style="font-size:9px; color:#94a3b8; font-weight:800; text-transform: uppercase; letter-spacing: 1px; margin-top:2px;">Real-Time Recovery Insights</div>
+            </div>
+        </div>
+        
+        <div class="dash-header-controls" style="display:flex; align-items:center; gap:12px;">
+            <div class="dash-type-toggle" style="display:flex; background: #f1f5f9; padding: 4px; border-radius: 12px; gap: 4px;">
+                <button onclick="PaidBills.setType('domestic')" class="dash-type-btn" data-type="domestic" style="background:transparent; border:none; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;">
+                    <span class="material-icons-round" style="font-size: 16px;">home</span> DOMESTIC
+                </button>
+                <button onclick="PaidBills.setType('commercial')" class="dash-type-btn" data-type="commercial" style="background:transparent; border:none; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;">
+                    <span class="material-icons-round" style="font-size: 16px;">business</span> COMMERCIAL
+                </button>
+                <button id="pb-all-records-btn" onclick="PaidBills.reset()" class="active" style="background:white; border:none; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 800; color: #6366f1; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <span class="material-icons-round" style="font-size: 16px;">history</span> ALL
+                </button>
+            </div>
+            
+            <div style="width: 1px; height: 24px; background: #e2e8f0; margin: 0 4px;"></div>
+            
+            <button onclick="PaidBills.exportCSV()" class="btn-premium-sidebar admin-only" style="background:#10b981; border:none; height:36px; padding:0 14px; border-radius:10px; display:flex; align-items:center; gap:8px; cursor:pointer; color:white; font-weight: 800; font-size: 11px;">
+                <span class="material-icons-round" style="font-size: 18px;">file_download</span> EXPORT
+            </button>
+            
+            <button onclick="PaidBills.close()" style="background:#f1f5f9; border:none; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#94a3b8; transition: all 0.2s;">
+                <span class="material-icons-round">close</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="dash-layout" id="dash-layout">
+        <!-- Unified Dashboard Sidebar -->
+        <div class="dash-sidebar" id="dash-sidebar" style="background: #f8fafc; border-right: 1px solid #f1f5f9; padding: 16px; width: 280px; display: flex; flex-direction: column; gap: 20px;">
+            <!-- Advanced Filters -->
+            <div class="dash-sidebar-panel" style="background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 16px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color: #1e293b;">
+                    <span class="material-icons-round" style="font-size: 18px; color: #6366f1;">tune</span>
+                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Advanced Filters</span>
+                </div>
+                
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <div>
+                        <label style="display:block; font-size:9px; font-weight:800; color:#94a3b8; text-transform:uppercase; margin-bottom:4px;">City / Office</label>
+                        <select id="pb-city" onchange="PaidBills.render()" style="width:100%; padding:8px; border-radius:8px; border:1px solid #e2e8f0; font-size:12px; font-weight:700; color:#475569; background:#f8fafc;"></select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:9px; font-weight:800; color:#94a3b8; text-transform:uppercase; margin-bottom:4px;">Category</label>
+                        <select id="pb-type" onchange="PaidBills.render()" style="width:100%; padding:8px; border-radius:8px; border:1px solid #e2e8f0; font-size:12px; font-weight:700; color:#475569; background:#f8fafc;">
+                            <option value="all">All Categories</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:9px; font-weight:800; color:#94a3b8; text-transform:uppercase; margin-bottom:4px;">ID Status</label>
+                        <select id="pb-id-status" onchange="PaidBills.render()" style="width:100%; padding:8px; border-radius:8px; border:1px solid #e2e8f0; font-size:12px; font-weight:700; color:#475569; background:#f8fafc;">
+                            <option value="all">Global (All IDs)</option>
+                            <option value="deleted">Deleted IDs Only</option>
+                            <option value="active">Active IDs Only</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Area Distribution -->
+            <div class="dash-sidebar-panel" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color: #1e293b; padding: 0 4px;">
+                    <span class="material-icons-round" style="font-size: 18px; color: #6366f1;">location_on</span>
+                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Area Distribution</span>
+                </div>
+                <div id="pb-uc-summary" class="analytics-list" style="flex: 1; overflow-y: auto; padding-right: 4px;">
+                    <!-- Dynamic Content -->
+                </div>
+            </div>
+            
+            <!-- Categorical Split -->
+            <div class="dash-sidebar-panel" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color: #1e293b; padding: 0 4px;">
+                    <span class="material-icons-round" style="font-size: 18px; color: #6366f1;">pie_chart</span>
+                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Categorical Split</span>
+                </div>
+                <div id="pb-category-summary" class="analytics-list" style="flex: 1; overflow-y: auto; padding-right: 4px;">
+                    <!-- Dynamic Content -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Central Pane -->
+        <div class="dash-main-content" style="flex:1; background: #fdfdfe; display: flex; flex-direction: column; overflow-y: auto;">
+            <!-- Stats Grid -->
+            <div class="dashboard-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 20px;">
+                <div class="dash-stat-card" style="background: white; border: 1px solid #f1f5f9; padding: 20px; border-radius: 16px; display: flex; align-items: center; gap: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <div style="background: #eef2ff; color: #6366f1; width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                        <span class="material-icons-round" style="font-size: 28px;">account_balance_wallet</span>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Paid Amount</div>
+                        <div id="pb-total-amount" style="font-size: 20px; font-weight: 900; color: #1e293b;">Rs. 0</div>
+                    </div>
+                </div>
+                
+                <div class="dash-stat-card" style="background: white; border: 1px solid #f1f5f9; padding: 20px; border-radius: 16px; display: flex; align-items: center; gap: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <div style="background: #ecfdf5; color: #10b981; width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                        <span class="material-icons-round" style="font-size: 28px;">history_edu</span>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Bills Recovered</div>
+                        <div id="pb-total-count" style="font-size: 20px; font-weight: 900; color: #1e293b;">0</div>
+                    </div>
+                </div>
+                
+                <div class="dash-stat-card" style="background: white; border: 1px solid #f1f5f9; padding: 20px; border-radius: 16px; display: flex; align-items: center; gap: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <div style="background: #fff7ed; color: #f59e0b; width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                        <span class="material-icons-round" style="font-size: 28px;">query_stats</span>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Avg Recovery</div>
+                        <div id="pb-avg-amount" style="font-size: 20px; font-weight: 900; color: #1e293b;">Rs. 0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Date Filter -->
+            <div style="padding: 0 20px 16px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap;">
+                <div style="display:flex; align-items:center; gap:8px; background:#f8fafc; border:1px solid #e2e8f0; padding:6px 12px; border-radius:10px;">
+                    <span style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase;">From:</span>
+                    <input type="text" id="pb-date-start" placeholder="YYYY-MM-DD" style="border:none; background:transparent; font-size:12px; font-weight:700; color:#475569; width:90px; outline:none;">
+                    <div style="width:1px; height:16px; background:#e2e8f0; margin: 0 4px;"></div>
+                    <span style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase;">To:</span>
+                    <input type="text" id="pb-date-end" placeholder="YYYY-MM-DD" style="border:none; background:transparent; font-size:12px; font-weight:700; color:#475569; width:90px; outline:none;">
+                </div>
+                
+                <button onclick="PaidBills.render()" style="background:#6366f1; color:white; border:none; height:34px; padding:0 16px; border-radius:10px; font-weight:700; font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer; box-shadow:0 4px 12px rgba(99,102,241,0.2);">
+                    <span class="material-icons-round" style="font-size:16px;">sync</span> REFRESH
+                </button>
+            </div>
+
+            <div class="paid-table-container">
+                <table class="paid-table">
+                    <thead>
+                        <tr>
+                            <th>Sr#</th>
+                            <th>Survey ID</th>
+                            <th>PSID</th>
+                            <th>City</th>
+                            <th>Month</th>
+                            <th>Office</th>
+                            <th>UC</th>
+                            <th>Category</th>
+                            <th>Due Amt</th>
+                            <th>Fine</th>
+                            <th>Channel</th>
+                            <th style="min-width:100px">Paid Date</th>
+                            <th>Paid Amt</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pb-table-body"></tbody>
+                </table>
+            </div>
+
+            <div class="dash-footer">
+                <div style="display:flex; align-items:center; gap:16px;">
+                    <span>Rows: <select id="pb-rows-per-page" class="rows-per-page" onchange="PaidBills.setRows(this.value)">
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select></span>
+                    <span id="pb-record-range">Showing 0-0</span>
+                </div>
+                <div class="pagination-controls">
+                    <button onclick="PaidBills.changePage(-1)" id="pb-prev" class="pagination-btn"><span class="material-icons-round">chevron_left</span></button>
+                    <div id="pb-page-info" class="pagination-info">Page 1 of 1</div>
+                    <button onclick="PaidBills.changePage(1)" id="pb-next" class="pagination-btn"><span class="material-icons-round">chevron_right</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Universal Search Modal (v6.0) -->
+<div id="modal-search" onclick="if(event.target===this) UniversalSearch.close()">
+    <div class="search-container">
+        <div class="search-input-wrapper">
+            <span class="material-icons-round" style="color:var(--primary); font-size:28px;">search</span>
+            <input type="text" id="universal-search-input" placeholder="Search across all records..." oninput="UniversalSearch.handleInput(this.value)">
+            <button onclick="UniversalSearch.close()" style="background:#f1f5f9; border:none; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+                <span class="material-icons-round" style="font-size:20px;">close</span>
+            </button>
+        </div>
+        <div class="search-categories" style="display:flex; flex-wrap:wrap; gap:12px; padding:10px 20px; border-bottom:1px solid #f1f5f9; background:#fafafa;">
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#64748b; cursor:pointer;"><input type="checkbox" class="search-cat" data-field="id"> ID</label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#64748b; cursor:pointer;"><input type="checkbox" class="search-cat" data-field="psid"> PSID</label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#64748b; cursor:pointer;"><input type="checkbox" class="search-cat" data-field="name"> Name</label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#64748b; cursor:pointer;"><input type="checkbox" class="search-cat" data-field="addr"> Address</label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#64748b; cursor:pointer;"><input type="checkbox" class="search-cat" data-field="surveyor"> Surveyor</label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#64748b; cursor:pointer;"><input type="checkbox" class="search-cat" data-field="mcuc"> MC/UC</label>
+            <div style="width:1px; height:16px; background:#e2e8f0; margin:0 4px;"></div>
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:800; color:var(--primary); cursor:pointer;" title="Limit search to currently active sidebar filters">
+                <input type="checkbox" id="search-local-toggle" onchange="State.searchLocalOnly = this.checked; UniversalSearch.performSearch(document.getElementById('universal-search-input').value)">
+                Search within filters
+            </label>
+        </div>
+        <div class="search-dropdowns" style="padding:15px 24px; display:flex; gap:12px; flex-wrap:wrap; border-bottom:1px solid #f1f5f9; background:#fff;">
+            <div id="search-tehsil" style="flex:1; min-width:140px;"></div>
+            <div id="search-mcuc" style="flex:1; min-width:140px;"></div>
+            <div id="search-surveyor" style="flex:1; min-width:140px;"></div>
+        </div>
+        <div id="search-results-list" class="search-results">
+            <div style="text-align:center; padding:40px; color:#94a3b8;">
+                <span class="material-icons-round" style="font-size:48px; opacity:0.3; margin-bottom:8px;">manage_search</span>
+                <div>Type to search across all records...</div>
+            </div>
+        </div>
+        <div style="padding:10px 20px; background:#f8fafc; border-top:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;">
+            <div id="search-count" style="font-size:11px; font-weight:700; color:#94a3b8;">0 RECORDS FOUND</div>
+            <div style="font-size:10px; color:#cbd5e1; font-weight:500;">PRESS ESC TO CLOSE</div>
+        </div>
+    </div>
+</div>
+
+<div id="modal-log" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:30000; align-items:center; justify-content:center; padding:15px;">
+    <div style="background:white; border-radius:16px; width:100%; max-width:980px; height:90vh; display:flex; flex-direction:column; box-shadow: 0 20px 50px rgba(0,0,0,0.2); overflow: hidden;">
+        <!-- Header -->
+        <div class="perf-modal-header" style="padding:12px 20px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center; background: #f8fafc; flex-wrap: wrap; gap: 10px; position: relative;">
+            <div class="perf-header-title" style="display:flex; align-items:center; gap:10px; flex: 1; min-width: 180px;">
+                <div style="background:#8b5cf6; color:white; width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <span class="material-icons-round" style="font-size: 18px;">assignment_turned_in</span>
+                </div>
+                <div>
+                    <h3 style="margin:0; font-size:15px; color:#1e293b; white-space: nowrap;">Performance Log</h3>
+                    <div id="log-subtitle" style="font-size:10px; color:#64748b; font-weight:700;">Summary</div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="perf-controls" style="display:flex; align-items:center; gap:8px; flex-wrap: wrap;">
+                <div class="date-range-box" style="display:flex; align-items:center; background:white; border:1px solid #e2e8f0; padding:2px 8px; border-radius:8px; font-size:11px;">
+                    <span style="color:#94a3b8; font-weight:800; margin-right:4px;">From:</span>
+                    <input type="date" id="att-start-date" onchange="PerformanceLog.updateDate(this.value, 'start')" style="border:none; outline:none; font-family:inherit; font-weight:700; color:#475569; width:115px; cursor:pointer; font-size: 11px; padding: 4px 0;">
+                    <div style="width:1px; height:14px; background:#e2e8f0; margin:0 6px;"></div>
+                    <span style="color:#94a3b8; font-weight:800; margin-right:4px;">To:</span>
+                    <input type="date" id="att-end-date" onchange="PerformanceLog.updateDate(this.value, 'end')" style="border:none; outline:none; font-family:inherit; font-weight:700; color:#475569; width:115px; cursor:pointer; font-size: 11px; padding: 4px 0;">
+                </div>
+                
+                <button onclick="PerformanceLog.toggleRules()" class="admin-only btn-premium-sidebar" style="background:white; border:1px solid #e2e8f0; height:32px; padding:0 10px; border-radius:8px; display:flex; align-items:center; gap:6px; cursor:pointer; color:#64748b;">
+                    <span class="material-icons-round" style="font-size:16px;">tune</span>
+                    <span style="font-weight:800; font-size:11px;">Rules</span>
+                </button>
+
+                <button onclick="PerformanceLog.exportCSV()" class="admin-only btn-premium-sidebar" style="background:#10b981; border:none; height:32px; padding:0 12px; border-radius:8px; display:flex; align-items:center; gap:6px; cursor:pointer; color:white;">
+                    <span class="material-icons-round" style="font-size:16px;">file_download</span>
+                    <span style="font-weight:800; font-size:11px;">Export</span>
+                </button>
+            </div>
+
+            <button onclick="PerformanceLog.close()" class="perf-close-btn" style="background:#f1f5f9; border:none; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#94a3b8;">
+                <span class="material-icons-round" style="font-size: 18px;">close</span>
+            </button>
+        </div>
+
+        <!-- Admin Rules Panel -->
+        <div id="perf-rules-panel" class="admin-only" style="display:none; padding:12px 20px; background:#f1f5f9; border-bottom:1px solid #e2e8f0; gap:16px; flex-wrap:wrap;">
+            <!-- Performance Rules -->
+            <div style="display:flex; align-items:center; gap:12px; border-right:2px solid #e2e8f0; padding-right:16px;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <label style="font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase;">Target:</label>
+                    <input type="number" id="rule-target" onchange="PerformanceLog.updateRule('target', this.value)" style="width:50px; padding:4px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:11px;">
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <label style="font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase;">PM:</label>
+                    <input type="number" id="rule-pm" onchange="PerformanceLog.updateRule('pm', this.value)" style="width:50px; padding:4px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:11px;">
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <label style="font-size:9px; font-weight:800; color:#64748b; text-transform:uppercase;">Idle:</label>
+                    <input type="number" id="rule-idle" onchange="PerformanceLog.updateRule('idle', this.value)" style="width:50px; padding:4px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:11px;">
+                </div>
+            </div>
+
+            <!-- Geo Filters -->
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap: wrap;">
+                <select id="perf-filter-dist" onchange="PerformanceLog.updateFilter('dist', this.value)" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:11px; color:#475569; background:white;"></select>
+                <select id="perf-filter-tehsil" onchange="PerformanceLog.updateFilter('tehsil', this.value)" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:11px; color:#475569; background:white;"></select>
+                <select id="perf-filter-mc" onchange="PerformanceLog.updateFilter('mc', this.value)" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:4px; font-weight:700; font-size:11px; color:#475569; background:white;"></select>
+            </div>
+        </div>
+
+        <!-- Table Container -->
+        <div id="log-body" class="stats-table-container" style="flex:1; overflow-y:auto; padding:0;"></div>
+    </div>
+</div>
+
+<!-- QR Scanner Modal -->
+<div id="modal-qr" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:30000; flex-direction:column; align-items:center; justify-content:center;">
+    <div style="position:absolute; top:20px; right:20px; z-index:12001; display:flex; gap:12px;">
+        <button onclick="QRScanner.switchCamera()" title="Switch Camera" style="background:rgba(255,255,255,0.2); border:none; color:white; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+            <span class="material-icons-round" style="font-size:28px">flip_camera_android</span>
+        </button>
+        <button onclick="QRScanner.close()" style="background:rgba(255,255,255,0.2); border:none; color:white; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+            <span class="material-icons-round" style="font-size:32px">close</span>
+        </button>
+    </div>
+    <div style="width:100%; max-width:500px; padding:20px;">
+        <div id="qr-reader" style="width:100%; border-radius:16px; overflow:hidden; border:2px solid rgba(255,255,255,0.3);"></div>
+        <div style="text-align:center; color:white; margin-top:20px; font-weight:600;">Point camera at Survey ID QR Code</div>
+    </div>
+</div>
+
+<div id="gallery" class="gallery-overlay">
+    <div class="gal-header" style="padding: 20px 30px; display: flex; justify-content: flex-end; align-items: center; gap: 24px;">
+        <div id="gal-counter" style="color:white; font-weight:700; background:rgba(255,255,255,0.1); padding:8px 18px; border-radius:30px; font-size:15px; backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 15px rgba(0,0,0,0.2);">1 / 1</div>
+        <button onclick="Gallery.close()" style="background:none; border:none; color:white; cursor:pointer; display:flex; align-items:center; opacity:0.8; transition:opacity 0.2s;"><span class="material-icons-round" style="font-size:42px">close</span></button>
+    </div>
+    <div class="gal-viewport" id="gal-vp">
+        <img id="gal-img" class="gal-img" style="cursor: default;">
+    </div>
+    <div class="gal-controls">
+        <button class="gal-btn" onclick="Gallery.rotate()" title="Rotate (R)"><span class="material-icons-round">rotate_right</span></button>
+        <button class="gal-btn" onclick="Gallery.zoomOut()" title="Zoom Out (-)"><span class="material-icons-round">remove</span></button>
+        <button class="gal-btn" onclick="Gallery.reset()" title="Reset Screen"><span class="material-icons-round">refresh</span></button>
+        <button class="gal-btn" onclick="Gallery.zoomIn()" title="Zoom In (+)"><span class="material-icons-round">add</span></button>
+    </div>
+</div>
+
+
+
+<div id="modal-settings" onclick="if(event.target===this) Settings.close()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:30000; align-items:center; justify-content:center; padding:20px;">
+    <div class="modal-content" style="background:white; border-radius:16px; width:100%; max-width:640px; max-height: 85vh; height: auto; display:flex; flex-direction:column; box-shadow: 0 20px 50px rgba(0,0,0,0.2); overflow: hidden; position: relative;">
+        <div style="padding:14px 20px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center; background: #fafafa;">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span class="material-icons-round" style="color:#10b981; font-size:24px;">settings_suggest</span>
+                <h3 style="margin:0; font-size: 16px; font-weight: 800; letter-spacing: -0.5px;">Advanced Settings</h3>
+            </div>
+            <button onclick="Settings.close()" style="background:#f1f5f9; border:none; border-radius: 50%; width: 32px; height: 32px; display:flex; align-items:center; justify-content:center; cursor:pointer; color: #64748b;">
+                <span class="material-icons-round" style="font-size: 18px;">close</span>
+            </button>
+        </div>
+        <div id="settings-layers-container" style="flex:1; display:flex; flex-direction:column; overflow:hidden; position:relative;">
+             <!-- Populated by JS (Stats, Marker Limit, and KML Tabs) -->
+        </div>
+    </div>
+</div>
+
+<!-- Pinning Mode HUD (Mobile Optimized) -->
+<div id="pinning-hud" style="display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:25000; background:rgba(15,23,42,0.95); backdrop-filter:blur(12px); border-radius:16px; padding:12px; align-items:center; gap:12px; box-shadow:0 8px 32px rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); width:90%; max-width:440px;">
+    <div style="display:flex; flex-direction:column; gap:8px; flex:1;">
+        <div style="display:flex; align-items:center; gap:6px;">
+            <div style="width:8px; height:8px; background:#8b5cf6; border-radius:50%; animation: pulse 1.5s infinite;"></div>
+            <span id="pinning-sid-display" style="color:white; font-size:11px; font-weight:900; letter-spacing:0.5px;"></span>
+        </div>
+        <div style="color:#94a3b8; font-size:10px; font-weight:700;">Aim crosshair at the house location</div>
+    </div>
+    
+    <div style="display:flex; gap:8px;">
+        <button onclick="SpatialRouter.cancelManualPin()" style="background:rgba(255,255,255,0.05); color:#94a3b8; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:8px 12px; font-weight:800; font-size:11px; cursor:pointer;">Cancel</button>
+        <button onclick="SpatialRouter.confirmManualPin()" style="background:#8b5cf6; color:white; border:none; border-radius:10px; padding:8px 16px; font-weight:900; font-size:11px; cursor:pointer; box-shadow:0 4px 12px rgba(139, 92, 246, 0.3);">Confirm Location</button>
+    </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+
+        
+
+<script>
+    // __JS_BUNDLE__
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            if (window.DriveSync) DriveSync.loadOfflineQueue();
+        }, 1500); 
+    });
+</script>
+
+<!-- Safe PWA Service Worker Registration -->
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js?v=8.1')
+                .then(registration => {
+                    console.log('SW registered successfully:', registration.scope);
+                })
+                .catch(err => {
+                    console.log('SW registration failed:', err);
+                });
+        });
+    }
+</script>
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('RSP Service Worker registered:', reg.scope))
+                    .catch(err => console.error('RSP Service Worker registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

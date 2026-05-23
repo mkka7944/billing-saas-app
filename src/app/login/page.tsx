@@ -6,6 +6,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Building2, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -19,7 +21,25 @@ export default function LoginPage() {
     if (initialized && user) router.replace('/map')
   }, [initialized, user, router])
 
-  if (!initialized || user) return null
+  if (!initialized) {
+    return (
+      <div className="flex flex-1 items-center justify-center bg-muted/30 p-4">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <Skeleton className="h-8 w-32 mx-auto mb-2" />
+            <Skeleton className="h-4 w-40 mx-auto" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (user) return null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,9 +53,14 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-1 items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm animate-in fade-in duration-500">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">TMT Billing</CardTitle>
+          <div className="flex justify-center mb-3">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Building2 className="h-8 w-8 text-primary" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold font-display">TMT Billing</CardTitle>
           <CardDescription>Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>
@@ -50,7 +75,11 @@ export default function LoginPage() {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={submitting || isLoading}>
-              {submitting ? 'Signing in...' : 'Sign in'}
+              {submitting ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in...</>
+              ) : (
+                'Sign in'
+              )}
             </Button>
           </form>
         </CardContent>
