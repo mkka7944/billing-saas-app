@@ -97,6 +97,7 @@ export interface FilterState {
   paymentStatus: 'all' | 'paid' | 'unpaid' | 'overdue'
   unitType: string | null
   search: string
+  billMonth: string | null
 }
 
 export interface FinanceSummary {

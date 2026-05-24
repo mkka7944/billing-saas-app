@@ -1,0 +1,46 @@
+{
+  "lifecycle": {
+    "psid": "Biller PSID",
+    "survey_id": "Survey ID",
+    "amount_due": "Total Payable",
+    "arrears": "Arrears",
+    "monthly_fee": "Monthly Fee",
+    "billing_category": "Billing Category",
+    "uc_name": "UC",
+    "city": ["City Name", "City", "District"],
+    "deleted_in_portal": "Deleted in Portal",
+    "is_issued": "PDF Issued",
+    "start_month": "Start Month",
+    "route_name": "Route Segment",
+    "route_seq": "Route Seq"
+  },
+  "payment": {
+    "psid": "PSID",
+    "bill_month": "Month",
+    "amount_paid": "Paid Amount",
+    "paid_date": "Paid Date",
+    "payment_method": "Channel",
+    "payment_status": "Status",
+    "fine": "Fine"
+  },
+  "survey": {
+    "survey_id": ["Survey ID", "SurveyID", "SID"],
+    "surveyor_name": ["Surveyor Name", "Surveyor"],
+    "latitude": ["Latitude", "Lat"],
+    "longitude": ["Longitude", "Lng", "Long"],
+    "district": ["District", "City"],
+    "tehsil": "Tehsil",
+    "uc_name": ["Union Council", "UC", "Area"],
+    "uc_type": ["UC Type", "Type"],
+    "consumer_name": ["Name", "Consumer"],
+    "address": "Address",
+    "house_type": "House Type",
+    "unit_type": ["Consumer Type", "Unit Type"],
+    "survey_date": ["Survey Date", "Date"],
+    "survey_time": ["Survey Time", "Time"],
+    "image_url_1": ["Image URL 1", "URL 1"],
+    "image_url_2": ["Image URL 2", "URL 2"],
+    "image_url_3": ["Image URL 3", "URL 3"],
+    "image_url_4": ["Image URL 4", "URL 4"]
+  }
+}

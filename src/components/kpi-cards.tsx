@@ -63,7 +63,7 @@ export function KpiCards() {
   ]
 
   return (
-    <div className="p-3 md:p-4 space-y-4 overflow-y-auto animate-in fade-in duration-500">
+    <div className="p-3 space-y-3 overflow-y-auto">
       <h2 className="text-sm font-semibold">Dashboard</h2>
       <div className="grid grid-cols-2 gap-3">
         {cards.map((card) => (

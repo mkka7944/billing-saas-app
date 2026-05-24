@@ -1,120 +1,171 @@
 'use client'
 
+import { useState } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyById, useSurveyPayments } from '@/hooks/use-survey-data'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { X, MapPin, Copy, Camera } from 'lucide-react'
+import { shortenMCName } from '@/lib/mc-utils'
+import { cn } from '@/lib/utils'
+import { X, MapPin, Copy, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
 
 export function HouseDetailSheet() {
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
-  const selectHouse = useBillingStore((s) => s.selectHouse)
-  const setView = useBillingStore((s) => s.setView)
+  const goBack = useBillingStore((s) => s.goBack)
+  const setMapCenter = useBillingStore((s) => s.setMapCenter)
+  const setMapZoom = useBillingStore((s) => s.setMapZoom)
 
   const { data: survey } = useSurveyById(selectedHouseId)
-  const { data: payments } = useSurveyPayments(selectedHouseId)
+  const { data: billData } = useSurveyPayments(selectedHouseId)
+
+  const [imgIdx, setImgIdx] = useState(0)
 
   if (!survey) return null
 
-  const copyToClipboard = (text: string) => navigator.clipboard.writeText(text)
+  const bill = billData?.bill
+  const payments = billData?.payments
 
-  const openGoogleMaps = (lat: number, lng: number) => {
-    window.open(`https://www.google.com/maps?q=${lat},${lng}`, '_blank')
+  const images = survey.image_urls?.filter(Boolean) || []
+  const currentImage = images[imgIdx] || null
+
+  const openOnMap = (lat: number, lng: number) => {
+    setMapCenter([lat, lng])
+    setMapZoom(18)
+    goBack()
   }
+
+  const isPaid = bill?.payment_status?.toLowerCase() === 'paid'
 
   return (
     <div className="absolute inset-0 bg-background z-10 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold truncate">{survey.consumer_name || 'Unknown'}</h2>
-          <p className="text-xs text-muted-foreground">{survey.survey_id}</p>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => copyToClipboard(survey.survey_id)}>
-            <Copy className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => selectHouse(null)}>
+      {/* Header — only name + ID + close */}
+      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 min-h-[44px]">
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={() => goBack()} className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0" aria-label="Close">
             <X className="h-4 w-4" />
-          </Button>
+          </button>
+          <div className="min-w-0">
+            <p className="text-xs font-bold truncate">{survey.consumer_name || 'Unknown'}</p>
+            <p className="text-[10px] font-mono text-muted-foreground">#{survey.survey_id}</p>
+          </div>
         </div>
+        <button onClick={() => navigator.clipboard.writeText(survey.survey_id)} className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0" title="Copy ID">
+          <Copy className="h-4 w-4" />
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          {survey.address && (
-            <div className="col-span-2">
-              <p className="text-xs text-muted-foreground">Address</p>
-              <p className="text-sm">{survey.address}</p>
-            </div>
-          )}
-          <div>
-            <p className="text-xs text-muted-foreground">Tehsil</p>
-            <p className="text-sm">{survey.tehsil || '-'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">UC</p>
-            <p className="text-sm">{survey.uc_name || '-'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Unit Type</p>
-            <p className="text-sm">{survey.unit_type || '-'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Category</p>
-            <p className="text-sm">{survey.billing_category || '-'}</p>
-          </div>
-          {survey.monthly_fee > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground">Monthly Fee</p>
-              <p className="text-sm font-semibold">Rs. {survey.monthly_fee}</p>
-            </div>
-          )}
-          {survey.surveyor_name && (
-            <div>
-              <p className="text-xs text-muted-foreground">Surveyor</p>
-              <p className="text-sm">{survey.surveyor_name}</p>
-            </div>
-          )}
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Consumer name + address hero */}
+        <div className="px-3 pt-3 pb-2">
+          <h1 className="text-base font-bold leading-tight">{survey.consumer_name || 'Unknown'}</h1>
+          {survey.address && <p className="text-xs text-muted-foreground mt-0.5">{survey.address}</p>}
         </div>
 
-        {survey.lat && survey.lng && (
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => openGoogleMaps(survey.lat!, survey.lng!)}>
-              <MapPin className="h-4 w-4 mr-1" /> Open Maps
-            </Button>
-            <Button variant="outline" size="sm">
-              <Camera className="h-4 w-4 mr-1" /> Capture Photo
-            </Button>
+        {/* Quick info strip */}
+        <div className="flex items-center gap-2 px-3 pb-3 flex-wrap">
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{shortenMCName(survey.uc_name)}</span>
+          <span className="text-[10px] text-muted-foreground">{survey.unit_type || '-'}</span>
+          {survey.monthly_fee > 0 && <span className="text-[10px] font-bold">Rs.{survey.monthly_fee}/mo</span>}
+          <span className="text-[10px] text-muted-foreground">{survey.tehsil || '-'}</span>
+        </div>
+
+        {/* Image section */}
+        {images.length > 0 ? (
+          <div className="relative bg-muted">
+            <img src={currentImage!} alt="" className="w-full h-44 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+            {images.length > 1 && (
+              <>
+                {imgIdx > 0 && (
+                  <button onClick={() => setImgIdx(imgIdx - 1)} className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer">
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                )}
+                {imgIdx < images.length - 1 && (
+                  <button onClick={() => setImgIdx(imgIdx + 1)} className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer">
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                )}
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                  {images.map((_, i) => (
+                    <button key={i} onClick={() => setImgIdx(i)} className={cn('h-1.5 rounded-full transition-all cursor-pointer', i === imgIdx ? 'w-4 bg-white' : 'w-1.5 bg-white/50')} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="bg-muted h-24 flex items-center justify-center">
+            <Camera className="h-6 w-6 text-muted-foreground/40" />
           </div>
         )}
 
-        <Separator />
-
-        <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Payment History</h3>
-          {payments?.length ? (
-            <div className="space-y-1">
-              {payments.slice(0, 6).map((p: any, i: number) => (
-                <div key={`${p.psid}-${p.bill_month || i}`} className="flex items-center justify-between py-1">
-                  <div>
-                    <p className="text-xs font-medium">{p.bill_month}</p>
-                    <p className="text-xs text-muted-foreground">{p.payment_method || '-'}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs">Rs. {Number(p.amount_paid || 0).toLocaleString()}</p>
-                    <Badge variant={p.payment_status?.toLowerCase() === 'paid' ? 'default' : 'secondary'} className="text-[10px]">
-                      {p.payment_status || 'UNPAID'}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+        {/* Bill + payments */}
+        <div className="p-3 space-y-2.5">
+          {bill && (
+            <div className="rounded-lg border border-border bg-muted/30 p-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">Current Bill</span>
+                <Badge variant={isPaid ? 'default' : 'secondary'} className="text-[10px]">{bill.payment_status || 'UNPAID'}</Badge>
+              </div>
+              <div className="text-xs">
+                <span className="text-muted-foreground">Due: </span>
+                <span className="font-bold">Rs.{Number(bill.amount_due || 0).toLocaleString()}</span>
+                {Number(bill.amount_paid || 0) > 0 && (
+                  <span className="ml-3 text-muted-foreground">Paid: </span>
+                )}
+                {Number(bill.amount_paid || 0) > 0 && (
+                  <span className="font-bold">Rs.{Number(bill.amount_paid).toLocaleString()}</span>
+                )}
+                {Number(bill.arrears || 0) > 0 && (
+                  <span className="ml-3 text-destructive">Arrears: Rs.{Number(bill.arrears).toLocaleString()}</span>
+                )}
+              </div>
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground py-4 text-center">No payment history</p>
           )}
+
+          <div>
+            <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Payments</p>
+            {payments?.length ? (
+              <div className="space-y-0.5">
+                {payments.slice(0, 3).map((p: any, i: number) => (
+                  <div key={`${p.psid}-${p.bill_month || i}`} className="flex items-center justify-between py-0.5">
+                    <span className="text-xs font-mono">{p.bill_month}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold">Rs.{Number(p.amount_paid || 0).toLocaleString()}</span>
+                      <Badge variant={p.payment_status?.toLowerCase() === 'paid' ? 'default' : 'secondary'} className="text-[9px]">{p.payment_status || '—'}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground py-2 text-center">No payments</p>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Fixed bottom bar */}
+      {survey.lat && survey.lng && (
+        <div className="border-t border-border p-2 shrink-0">
+          <div className="flex gap-2">
+            <button
+              onClick={() => openOnMap(survey.lat!, survey.lng!)}
+              className="flex-1 h-10 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <MapPin className="h-4 w-4" />
+              Show on Map
+            </button>
+            {images.length > 0 && (
+              <button className="h-10 px-4 text-xs font-bold rounded-lg border border-border hover:bg-muted flex items-center gap-1.5 transition-colors cursor-pointer">
+                <Camera className="h-4 w-4" />
+                {images.length}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+

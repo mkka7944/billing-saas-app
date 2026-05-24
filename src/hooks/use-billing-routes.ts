@@ -11,7 +11,7 @@ export function useBillingRoutes(userId?: string) {
       const supabase = createClient()
       let query = supabase
         .from('saved_routes')
-        .select('*')
+        .select('id, route_name, created_by, created_at, route_data')
         .order('created_at', { ascending: false })
 
       if (userId) query = query.eq('created_by', userId)

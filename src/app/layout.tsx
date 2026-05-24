@@ -40,13 +40,12 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="h-full flex flex-col bg-background text-foreground" suppressHydrationWarning>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-          themes={["light", "dark", "vercel", "vercel-dark"]}
-        >
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="vercel"
+            disableTransitionOnChange
+            themes={["vercel", "vercel-dark"]}
+          >
           <QueryProvider>
             <AuthInit>
               {children}

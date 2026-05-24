@@ -1,5 +1,5 @@
 # Billing & Recovery — Master Plan
-**Generated:** 2026-05-23 | **Stack:** Next.js 16 + Supabase + Tailwind v4 + Zustand + TanStack Query  
+**Generated:** 2026-05-24 | **Stack:** Next.js 16 + Supabase + Tailwind v4 + Zustand + TanStack Query  
 **Project:** Billing SaaS App — Field staff bill delivery & verification system  
 **Scale:** ~350K households, ~70 field staff, 3 cities (Bhalwal/Khushab/Sargodha)
 > This file is the single source of truth. All prior plan documents are archived to `docs/archive/`.  
@@ -7,24 +7,33 @@
 ---
 ## Table of Contents
 1. [Project Identity & Architecture](#1-project-identity--architecture)
-2. [Lifecycle Data Pipeline](#2-lifecycle-data-pipeline)
-3. [Billing Module — Done](#3-billing-module--done)
-4. [Billing Module — Remaining (Phases A–E)](#4-billing-module--remaining-phases-a-e)
-5. [Data Model](#5-data-model)
-6. [Monthly Data Workflow](#6-monthly-data-workflow)
-7. [Performance Rules (Must Follow)](#7-performance-rules-must-follow)
-8. [Session Log](#8-session-log)
-9. [Changelog](#9-changelog)
+2. [User Experience: Two Modes](#2-user-experience-two-modes)
+3. [Visual Design System](#3-visual-design-system)
+4. [Route Structure](#4-route-structure)
+5. [Lifecycle Data Pipeline](#5-lifecycle-data-pipeline)
+6. [Data Model](#6-data-model)
+7. [Monthly Data Workflow](#7-monthly-data-workflow)
+8. [Performance Rules](#8-performance-rules)
+9. [Edge Case Decisions](#9-edge-case-decisions)
+10. [Implementation Phases](#10-implementation-phases)
+11. [Implementation Workflow](#11-implementation-workflow)
+12. [Session Log](#12-session-log)
+13. [File Inventory](#13-file-inventory)
+14. [Changelog](#14-changelog)
 ---
 ## 1. Project Identity & Architecture
-### 1.1 The Core Mission
-Replace paper-based bill delivery with a digital system: lifecycle data → PDF generation → staff assignment → GPS-tracked delivery with photo proof → performance tracking.
-### 1.2 Scale
+### 1.1 Company Context
+We are a sanitation contract company working under **SWMC** (Solid Waste Management Company), a government agency. We survey households and deliver bills issued through the SWMC portal.
+### 1.2 The Core Mission
+A digital system forcing accountability: lifecycle data → PDF generation → staff assignment → GPS-tracked delivery with mandatory photo proof → performance tracking. Every bill delivery requires timestamped photo evidence. Staff performance tracked per delivery, with auto-routing derived from actual delivery timestamps.
+
+**We do NOT collect payments.** Payment data comes from the SWMC govt portal (daily CSV export). Our system tracks recovery rates by matching our delivery data against portal payment data.
+### 1.3 Scale
 - **Households:** ~350K across 3 cities
 - **Field Staff:** ~70 delivery staff
 - **Monthly Bills:** ~30K–70K printed per month
 - **Free Tier Commitment:** Optimized for Supabase (500MB DB, 1GB Storage) and Vercel (100GB Bandwidth) free tiers
-### 1.3 Technology Stack
+### 1.4 Technology Stack
 - **Framework:** Next.js 16 (App Router) with `src/` directory
 - **Language:** TypeScript (strict type-safety)
 - **Database:** Supabase (PostgreSQL) — project `qrxbsoqepfaryolwcedk`
@@ -37,518 +46,534 @@ Replace paper-based bill delivery with a digital system: lifecycle data → PDF 
 - **PDF:** PyMuPDF (fitz) + qrcode + python-barcode (local engine)
 - **Data Pipeline:** Python (pandas + openpyxl + PyMuPDF) for lifecycle XLSX → DB
 - **CLI Dependencies:** `fitz`, `pandas`, `openpyxl`, `python-dotenv`, `supabase-py`
-### 1.4 Route Structure
-/                          → redirects /map
-/map                       → leaflet map with survey markers
-/list                      → survey list view (future)
-/route                     → route management — loads from saved_routes table
-/stats                     → delivery statistics (future)
-/login                     → auth
-/settings                  → appearance + account
+
 ### 1.5 Key Architecture Decisions
 | Decision | Rationale |
 |----------|-----------|
 | **Standalone app** | Separate Supabase project (not HR), separate Vercel deploy |
 | **Google Maps tiles** | Internal office tool, not commercial SaaS — better satellite resolution than MapTiler |
 | **Photos via GAS webhook** | Reuse proven routing station endpoint. Zero Supabase Storage egress costs |
-| **No RPCs** | All aggregation in TypeScript services (matching HR app rule) |
+| **Reference tables for filters** | Small `hierarchy`, `surveyors`, `bill_months` tables replace `SELECT DISTINCT` on 212K rows. Never hit PostgREST 1000-row limit. Populated once, maintained by import scripts + triggers. |
+| **No RPCs for client features** | RPCs banned for client-facing features (prevents N+1). **EXCEPTION:** RPCs allowed for admin-only aggregate queries — Data Insight, admin dashboards. See `scripts/sql/007-data-insight-rpcs.sql` for approved RPCs. |
+| **SSR API routes for all client data** | All survey/billing/payment data fetched via Next.js API routes (`/api/surveys`, `/api/billing-stats`) — NOT direct client-side Supabase queries. Reduces egress, hides service role, enables server-side JOINs. |
+| **DB triggers for data integrity** | `bill_items.tehsil` auto-populated on INSERT via trigger. `payment_summary` auto-refreshed on payment_history changes. Hierarchy reference table upserted on survey_units changes. |
 | **Explicit column selects** | Never `select('*')` — egress cost control |
 | **Manual monthly processing** | pdf-bill-printer.py runs manually on 19-20th each month (handles PDF gen) |
-| **import-lifecycle-data.py** | Separate script replicating pdf-bill-printer's data pipeline, saves to DB instead of generating PDFs |
 | **Offline photo queue** | Photos stored in IndexedDB when offline, upload when online |
-| **pdf-bill-printer.py untouched** | Original script NOT modified — a separate DB-only script handles data import |
+
 ### 1.6 Maps
 - **Streets:** `https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}`
 - **Satellite hybrid:** `https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}`
 - **Subdomains:** `mt0,mt1,mt2,mt3` | **MaxZoom:** 20
+
 ---
-## 2. Lifecycle Data Pipeline
-### 2.1 Overview
-The core data flow starts at the **Government Portal** which provides monthly lifecycle XLSX files. These contain every household's billing data. The pipeline processes this data for two purposes: (1) printing physical bills, and (2) populating the database for digital tracking.
-### 2.2 Source Data Locations
-| Path | Purpose |
-|------|---------|
-| `F:\qoder\billing-system\01_Local_Engine\outputs\processed_pdfs\` | Lifecycle XLSX files (18 city/month files + 5 combined masters) |
-| `F:\Original_pdfs\{city_code}\{month}\` | Source A4 PDFs from gov portal — scanned for PSID extraction |
-| `F:\qoder\billing-system\01_Local_Engine\inputs\Batch_Routes_Export_2026-02-25.csv` | Route definition CSV (used for route totals) |
-| `F:\Final_print\{Month}-Final-Print\` | Output of pdf-bill-printer.py — generated A5 print PDFs |
-### 2.3 Lifecycle XLSX Files
+## 2. User Experience: Two Modes
+
+The app has two distinct user modes, each with a different interface:
+
+### 2.1 Field Staff Mode (Mobile-First)
+**Primary device:** Phone browser
+**Goal:** Navigate assigned bills, capture photo proof, finish daily chunk
+
+| Element | Design |
+|---------|--------|
+| **Home screen** | Map fills screen. Bottom sheet shows daily progress (Delivered X/Y) + next house name. |
+| **Map** | Full-screen Leaflet. Markers only for today's assigned bills. Green=delivered, blue=pending, red=missed. |
+| **List** | Swipeable card list. Each card: house name, address snippet, delivery status badge, photo count. Pull-to-refresh. |
+| **Photo capture** | One tap opens camera (native `capture="environment"`). Auto-compress. Queued in IndexedDB if offline. |
+| **Navigation** | Tap marker → show house detail bottom sheet → "Deliver" button → camera → done. Swipe to next. |
+| **Progress** | Persistent progress bar at top: "12/25 delivered today" + time elapsed. |
+| **Theme** | Light mode only (sunlight readability). High contrast. Huge touch targets (48px+). Bold sans-serif font. |
+| **Bottom nav** | Map | List | Today's Stats |
+| **Data** | Staff sees ONLY assigned bills via `daily_assignments` join. No hierarchy filters. No admin controls. |
+
+### 2.2 Admin Mode (Desktop-First, Mobile-Available)
+**Primary device:** Desktop browser (also works on tablet/phone)
+**Goal:** Manage assignments, view analytics, configure filters, oversee operations
+
+| Element | Design |
+|---------|--------|
+| **Home screen** | Map with all ACTIVE survey markers (colored by UC). Sidebar with filter options. |
+| **Map** | Desktop: map fills content area next to sidebar. Mobile: full-screen map with floating filter button. |
+| **Filter bar** | Desktop: inline chips (District / Tehsil / MC-UC / Month / Surveyor / Status). Mobile: bottom sheet accordions. |
+| **List** | Desktop: table view with sortable columns, page-size control. Mobile: card list. |
+| **Data Insight** | Desktop-only: KPI grid + aggregation table with row grouping (district→tehsil→UC drill-down). |
+| **Assignments** | Desktop: UC list with totals → click → staff picker → count → create. Mobile: simplified same flow. |
+| **Theme** | Dark mode available. Compact data-dense layouts. Monospace for numbers. |
+
+### 2.3 Routing Logic
+- `/` → checks role → redirects staff to `/deliver`, admin to `/map`
+- Future: role-based route groups prevent staff from accessing admin pages
+
+---
+## 3. Visual Design System
+### 3.1 Field Staff (Mobile)
+- **Background:** White `#ffffff` — maximum sunlight contrast
+- **Primary:** `#0072f5` (Vercel blue) — action buttons, progress bars
+- **Success:** `#16a34a` (green-600) — delivered badges
+- **Warning:** `#d97706` (amber-600) — pending markers
+- **Danger:** `#dc2626` (red-600) — missed badges
+- **Cards:** White, 8px radius, subtle border `#e5e7eb`, no shadow
+- **Typography:** Inter/Plus Jakarta Sans, 16px body (readability on phone)
+- **Touch targets:** Minimum 48px height on all buttons, 44px on icons
+- **Safe areas:** Respects notch/home indicator with `env(safe-area-inset-*)`
+- **Animations:** Slide-up bottom sheets, map marker transitions only. No decorative animations.
+
+### 3.2 Admin (Desktop)
+- **Background:** `#fafafa` (muted gray)
+- **Cards:** White, 8px radius, flat (no shadow)
+- **Typography:** 13px body, 11px captions, 10px data (compact density)
+- **Tables:** Compact rows (h-9), sticky headers, monospace data columns
+- **Sidebar:** Collapsible to icon-only mode. 240px expanded, 60px collapsed.
+- **Filter bar:** Inline chip-style dropdowns. No full-width filters.
+- **Theme options:** Light / Dark / Vercel / Vercel-Dark via Settings page
+
+### 3.3 Shared Rules
+- No decorative shadows or gradients
+- No page-load animations (spinners only for data loading)
+- Font: Plus Jakarta Sans (body), Geist Mono (data/monospace), Outfit (headings)
+- Border radius: 0.5rem (8px) throughout
+- Primary color: `#0072f5` in all themes
+
+---
+## 4. Route Structure
+| Route | Access | Description |
+|-------|--------|-------------|
+| `/` | All | Redirects based on role |
+| `/login` | All | Email/password auth |
+| `/map` | Admin | Full map with all survey markers + filters |
+| `/list` | Admin | Survey table view with filters |
+| `/deliver` | Staff | Mobile delivery dashboard: assigned bills, map, progress |
+| `/route` | Admin | Route management from `saved_routes` |
+| `/assignments` | Admin | UC list → staff assignment creation |
+| `/stats` | Admin | Performance dashboard, staff tracking |
+| `/data-insight` | Admin | Aggregated KPI cards + hierarchy table |
+| `/settings` | All | Theme, account info |
+
+---
+## 5. Lifecycle Data Pipeline
+### 5.1 Overview
+The core data flow starts at the **SWMC Portal** which provides:
+- **Biller list CSVs** (available ~16th each month) — contains PSIDs, Survey IDs, amounts, household info
+- **Original A4 PDF bills** — scanned PDFs containing 20-digit PSIDs embedded in pages
+
+Your local Python scripts process these into two outputs: (1) the **lifecycle XLSX** (master reference file), and (2) **A5 print PDFs** for field staff delivery.
+
+**Important: The lifecycle XLSX is YOUR processed output, not a raw portal download.** It already has the Survey ID ↔ PSID linkage baked in by `pdf-psid-extractor.py`.
+
+### 5.2 Script Pipeline (3 scripts)
+
+#### Script 1: pdf-psid-extractor.py (runs 16th–20th monthly)
+- Reads raw A4 PDFs from the portal
+- Uses PyMuPDF (fitz) to extract 20-digit PSIDs via regex `\b(\d{20})\b`
+- Matches extracted PSIDs with the biller list CSV
+- Cross-references with survey data to identify `Deleted in Portal` flag
+- **Output:** `test_lifecycle_Biller_{City}_{Month}.xlsx` — the enriched lifecycle file (~57+ columns per row)
+
+#### Script 2: pdf-bill-printer.py (runs 19th–20th monthly, ~1305 lines)
+- Reads the lifecycle XLSX + original A4 PDFs
+- Two-filter system: `Deleted in Portal != 'Yes'` AND `psid found in source PDF`
+- Groups by UC, sorts by route, assigns Bill# per UC (`#1/50`, `#2/50`, ...)
+- Generates A5 print PDFs with QR codes, barcodes, and metadata overlays
+- **Output:** Final A5 print PDFs at `F:\Final_print\{Month}-Final-Print\`
+
+#### Script 3: bill-extractor-v4.py (runs daily, multiple times)
+- Fetches payment data from the SWMC portal
+- **Output:** `COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv` — all paid PSIDs with amount, date, channel
+- Used for daily payment tracking in Excel
+
+### 5.3 Lifecycle XLSX Files
 **Pattern:** `test_lifecycle_Biller_{City}_{Month}.xlsx` (e.g. `test_lifecycle_Biller_Sargodha_May2026.xlsx`)
 - **3 cities:** Sargodha (sgd), Khushab (ksb), Bhalwal (bhl)
-- **6 months:** Dec 2025 → May 2026
-- **18 files total** + 5 combined master XLSX (~17MB → ~42MB, grows monthly)
-- **~57+ columns** per file including: `Biller PSID`, `Survey ID`, `Deleted in Portal`, `Route Segment`, `Route Seq`, `Route Total`, `Monthly Fee`, `Arrears`, `Total Payable`, `Surveyor Name`, `Survey Date`, `Survey Time`, `UC`, `District`, `Tehsil`, and per-month `PDF Issued` columns
-### 2.4 pdf-bill-printer.py Pipeline (Original Script — 1305 lines)
-Located at: `F:\qoder\billing-system\01_Local_Engine\scripts\pdf-bill-printer.py`
-**Flow (step by step):**
-1. **City selection** (interactive menu: All / Sargodha / Khushab / Bhalwal) or CLI args
-2. **Find latest XLSX** for selected city + month using `find_latest_city_excel()` — matches `test_lifecycle_Biller_{City}_{Month}*.xlsx`
-3. **Map source PDFs** via `map_source_pdfs()`:
-   - Scans `F:\Original_pdfs\{city_code}\{month}\` for all PDFs
-   - Opens each PDF with PyMuPDF (fitz)
-   - Finds solid divider lines (`find_solid_divider()`) at ~5.85 inches (splits A4 into top/bottom halves)
-   - Extracts 20-digit PSIDs using regex `\b(\d{20})\b` from each half-page
-   - Builds `psid_map`: `{psid: {path, page, rect, split_y, pos}}`
-   - Caches to JSON index file for faster subsequent runs
-4. **Filter:** `Deleted in Portal != 'Yes'` — removes records the gov portal has deleted
-5. **Group by UC** (Union Council column, auto-detected via `smart_find_uc_column()`)
-6. **Sort** by Route Segment (numeric) → Route Seq → Survey ID
-   - Route number extracted from "MC-1_Route_17_RafiPark" → 17
-   - Unrouted gets priority 999999 so they sort last
-7. **Process each UC:** For each PSID in lifecycle data:
-   - Check if PSID exists in `psid_map` — if not, log as "Missing" and skip
-   - If found, increment `bill_count` and build metadata
-   - **Bill#** = `#{bill_count}/{total_bills_in_uc}` (print sequence per UC)
-   - Build `batch_items[{psid, survey_id, left_meta, right_meta, lat, lng, source}]`
-8. **Optimize batches** via `optimize_batches()` — small UCs (< 200 bills) are merged into batch folders
-9. **Generate merged PDFs** via `generate_merged_pdf()`:
-   - Creates A5 pages (595×421 pts) from source A4
-   - Applies overlays via `apply_bill_overlays()`:
-     - Survey metadata text (SID, surveyor, date, status, print seq)
-     - Route metadata text
-     - Barcode (PSID — Code128)
-     - QR code (survey_id → scanner URL)
-10. **Save Final_Run_Report.xlsx** with multi-tab stats
-### 2.5 The Two-Filter System
-A bill only gets a bill# (print sequence) if it passes **both** checks:
-1. `Deleted in Portal != 'Yes'` — not marked as deleted by the gov portal
-2. `psid in psid_map` — PSID was found in a source A4 PDF (verifies the physical bill exists)
-### 2.6 import-lifecycle-data.py (New Script — Phase A2)
-Located at: `C:\billing-saas-app\scripts\import-lifecycle-data.py`
-**Purpose:** Mirrors pdf-bill-printer.py's data pipeline but saves to DB instead of generating PDFs.
-**Full pipeline (same as pdf-bill-printer except where noted):**
-| Step | pdf-bill-printer.py | import-lifecycle-data.py |
-|------|-------------------|------------------------|
-| City selection | Interactive menu + CLI | Same |
-| Read lifecycle XLSX | `find_latest_city_excel()` | Same |
-| Map source PDFs | `map_source_pdfs()` → psid_map | Same (needed for bill#) |
-| Filter Deleted in Portal | `Deleted in Portal != 'Yes'` | Same |
-| Group by UC | `df_active.groupby(uc_col)` | Same |
-| Sort by route | Route Segment → Route Seq → Survey ID | Same |
-| Build batch_items + metadata | ✅ | ✅ |
-| optimize_batches() | ✅ | ✅ (for batch_folder name) |
-| Generate merged PDFs | ✅ | ❌ SKIP |
-| Save Final_Run_Report | ✅ | ❌ SKIP |
-| Insert bill_documents | ❌ | ✅ |
-| Upsert bills table | ❌ | ✅ |
-| Save routes to saved_routes | ❌ | ✅ |
-| Print summary | Report XLSX | Console summary only |
-**CLI interface:**
-```bash
-# Interactive mode (same as pdf-bill-printer)
-python scripts/import-lifecycle-data.py
-# CLI mode
-python scripts/import-lifecycle-data.py --city Sargodha --month May-2026 --dry-run
-Dependencies: PyMuPDF (fitz), pandas, openpyxl, python-dotenv, supabase-py
-Credentials: Reads SUPABASE_SERVICE_ROLE_KEY + NEXT_PUBLIC_SUPABASE_URL from .env.local
-2.7 Route Data from Lifecycle Files
-Routes are embedded in the lifecycle XLSX as Route Segment and Route Seq columns. Not all MCs/UCs have routes defined. Routes are saved to the saved_routes table:
-{
-  "uc_name": "MC-1",
-  "city": "Sargodha",
-  "bill_month": "May-2026",
-  "route_segment": "MC-1_Route_17_RafiPark",
-  "psid_list": ["PSID1", "PSID2", "..."]   // ordered by Route Seq
-}
-The Route tab (/route) loads from saved_routes, grouped by city → UC → route.
-3. Billing Module — Done
-3.1 Infrastructure & Setup
-- Supabase project initialized (qrxbsoqepfaryolwcedk) — 8 tables, indexes, RLS
-- Next.js project initialized at C:\billing-saas-app
-- GitHub repo: github.com/mkka7944/billing-saas-app
-- Vercel deployment: billing-saas-app.vercel.app
-- Supabase Auth configured with admin-created accounts
-- Superadmin created: kashifkhalil74@gmail.com (ID: ace31830-1476-4acd-9c19-5e7054d6584a)
-- .env.local configured with API keys
-- Shadcn UI components installed
-- AGENTS.md with performance rules
-3.2 Visual Harmonization (HR App Sync)
-- globals.css synced with HR's Neutral-based theme tokens (:root/.dark)
-- Vercel themes (.vercel/.vercel-dark) CSS blocks added
-- Typography base layer: text-caption, text-secondary, text-mono-data
-- Card shadow removal (flat design)
-- Fonts: Plus Jakarta Sans + Outfit + Geist Mono (next/font/google)
-- ThemeProvider wrapping root layout with 4 themes (light/dark/vercel/vercel-dark)
-- Skeleton loading states replacing "Loading..." text
-- Page animations: animate-in fade-in duration-500
-- Login skeleton + Loader2 spinner
-3.3 Responsive Layout
-- AppShell: Responsive layout with sidebar (lg+) / bottom tabs (mobile)
-- BillingSidebar: Collapsible (icon-only mode), nav groups (Map/List/Route/Stats + Settings)
-- User profile card in sidebar: avatar initials + email + logout
-- Theme toggle in sidebar (light/dark only)
-- Version footer in sidebar
-- Hamburger menu for mobile overlay
-- Satellite view toggle in top bar (Layers button)
-3.4 State Management
-- billing-ui-store: Zustand + persist for sidebar state (open/collapsed/pageIdentity)
-- billing-store: mapType toggle (streets/satellite)
-3.5 Pages Built
-- /map — Leaflet map with Google tiles, auth guard, AppShell wrapper
-- /login — Auth form with skeleton pre-auth + spinner
-- /settings — Appearance card (5-button theme grid), Account card with user info, collapsible sections
-- / — Redirects to /map
-3.6 Data Sources Analyzed
-- Lifecycle XLSX files cataloged: 18 files (3 cities × 6 months: Dec 2025 → May 2026)
-- Combined master XLSX files: 5 files growing ~17MB → ~42MB month-over-month
-- pdf-bill-printer.py analyzed (1305 lines): generates PDFs with QR/barcode/metadata overlays
-- migrate_to_supabase.py analyzed: chunked upsert (500/batch), dedup by PSID
-- migrate_life_cycle.py analyzed: reads Combined XLSX + survey + payment CSVs
-3.7 Documentation
-- docs/MASTER.md — single source of truth (this file)
-- docs/archive/ — plans/, sql/, reports/ subdirectories
-- AGENTS.md — development rules with workflow context
-4. Billing Module — Remaining (Phases 0b, A–E)
-4.0 Phase 0b: Historical Data Migration
-**Purpose:** Populate empty survey_units + bills tables from local CSV/XLSX dumps (Oct 2025 → May 2026)
-**Script:** scripts/run_historical_migration.py (new, ~300 lines)
+- **8 months:** Sep/Oct 2025 → May 2026 (18 files total)
+- **5 combined master XLSX** (~17MB → ~42MB, grows monthly)
+- **~57+ columns** including: `Biller PSID`, `Survey ID`, `Deleted in Portal`, `Route Segment`, `Route Seq`, `Route Total`, `Monthly Fee`, `Arrears`, `Total Payable`, `Surveyor Name`, `Survey Date`, `Survey Time`, `UC`, `District`, `Tehsil`, and per-month `PDF Issued` columns
 
-**Data sources (4 total):**
-| # | Source | Authority |
-|---|--------|-----------|
-| 1 | Survey CSVs (3 files in scripts/data/scraped_data/) | Household identity, GPS, images |
-| 2 | Biller CSVs (18 files in scripts/data/excel_dumps/Biller_{City}_{Month}.csv) | PSID, financial snapshot, Survey ID linkage |
-| 3 | Payment History CSV (scripts/data/scraped_data/COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv) | Per-PSID per-month payment details (amounts, dates, methods) |
-| 4 | Lifecycle XLSX (18 files in scripts/data/processed_pdfs/) | Enrichment: is_issued, arrears, deleted_in_portal |
+### 5.4 Routes
+Route data is embedded in the lifecycle XLSX (Route Segment, Route Seq columns). Some UCs/MCs have routes from a separate route CSV exported from the Routing Station app. Staff can also assign custom route numbers via the House Intel module (Routing Station Pro). These custom routes are also used in final print sorting. Route enrichment into lifecycle is handled during the pdf-psid-extractor step.
 
-**Merge order:** Survey CSVs (base record) → Biller CSVs (enrich financials via Survey ID) → Payment CSV (per-PSID monthly records) → Lifecycle XLSX (enrich is_issued, arrears, deleted_in_portal)
-
-**Key decisions:**
-- Payment CSV is authoritative for payment data; lifecycle per-month Paid columns are Yes/No flags only — ignored
-- `Biller_{City}_{Month}.csv` is the correct biller source; `biller_data_*` files lack PSID — not used
-- Lifecycle XLSX used only for enrichment (is_issued per month PDF Issued column, arrears, deleted_in_portal)
-- Uses SUPABASE_SERVICE_ROLE_KEY from .env.local for bulk upsert (bypass RLS)
-
+### 5.5 import-lifecycle-data.py
+**Purpose:** Reads the lifecycle XLSX (already produced by pdf-psid-extractor.py) and populates the database.
+**Insert targets:**
+- `bill_items` — one row per PSID (current month snapshot). Includes `tehsil` from lifecycle XLSX `Tehsil` column. DB trigger `trg_bill_items_set_tehsil` provides fallback from `survey_units` if column is missing.
+- `survey_units.monthly_fee` + `billing_category` — enriched from lifecycle
+- `saved_routes` — route data per UC/MC
+- `hierarchy`, `surveyors`, `bill_months` — upsert reference tables for filter dropdowns
+**Does NOT:** generate PDFs, modify pdf-bill-printer.py
 **CLI:**
 ```bash
-python scripts/run_historical_migration.py              # Full migration
-python scripts/run_historical_migration.py --fast        # Incremental (skip existing IDs)
-python scripts/run_historical_migration.py --reset       # Purge tables first
+python scripts/import-lifecycle-data.py
+python scripts/import-lifecycle-data.py --city Sargodha --month May-2026 --dry-run
 ```
-4.1 Phase A: Data Model + Lifecycle Import Script
-#	Task
-A1	SQL migration: 5 new tables (bill_documents, bill_assignments, bill_assignment_items, staff_daily_stats, staff_performance_logs)
-A2	Create scripts/import-lifecycle-data.py — full pipeline matching pdf-bill-printer: reads lifecycle XLSX, maps source PDFs (PSID matching via PyMuPDF), filters Deleted in Portal != 'Yes', groups by UC, sorts by route, assigns print seq #{n}/{total}, then saves to bill_documents, upserts bills, saves routes to saved_routes. Does NOT generate output PDFs.
-A3	Route tab (/route) loads from saved_routes table (grouped by city → UC → route, shows name + bill count + created date)
-4.2 Phase B: Admin Assignment UI
-#	Task
-B1	UC Bills page at /assignments — list UCs with total/assigned/remaining counts
-B2	Assign flow: select UC → see sorted unassigned bills → pick staff → set count N → first N unassigned bills auto-assigned → creates bill_assignments + items
-B3	Assignment management: view active assignments per staff, revoke
-4.3 Phase C: Field Staff Delivery
-#	Task	Est.	Status
-C1	Staff dashboard at /deliver — today's assigned bills, progress bar, timer	2h	⏳
-C2	Navigation: house-to-house routing via saved route order or sequential	2h	⏳
-C3	Photo capture: camera → WebP compress → IndexedDB queue (offline) → GAS webhook → Drive URL	4h	⏳
-C4	Status marking: delivered (photo+GPS) or missed (photo+reason+GPS) — both require photo	2h	⏳
-C5	Photo list view: timestamps, GPS coords, clickable Drive links, spoof reference	2h	⏳
-4.4 Phase D: Performance Dashboard
-#	Task	Est.	Status
-D1	Staff daily stats auto-calculated from bill_assignment_items (assigned vs delivered vs missed)	2h	⏳
-D2	Admin performance logs: filter by staff/date, add notes + rating (1–5)	2h	⏳
-D3	Delivery completion dashboard at /stats	2h	⏳
-4.5 Phase E: PDF Bill Number Display
-#	Task	Est.	Status
-E1	Display bill_documents metadata in house detail sheet (map click on /map page)	1h	⏳
-5. Data Model
-5.1 Current Tables (8)
-Table	Key	Purpose
-app_settings	key	Key-value config store
-survey_units	survey_id	Household survey data (name, address, GPS, images)
-bills	psid + bill_month	Monthly bill records (due, paid, arrears, issued status)
-profiles	id (auth.users)	User profiles with role + permissions
-staff	id (auth.users)	Field staff metadata (city, UC assignment, status)
-saved_routes	id	Saved route data (JSON) for navigation
-verified_houses	id	GPS-verified house locations (can track deliveries)
-staff_sync_logs	id	Staff photo sync logging
-5.2 New Tables (Phase A — 004-bill-verification-system.sql)
-bill_documents — Metadata from lifecycle processing (populated by import-lifecycle-data.py)
-CREATE TABLE public.bill_documents (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  psid text NOT NULL,
-  bill_month text NOT NULL,
-  survey_id text REFERENCES survey_units(survey_id),
-  uc_name text,
-  city text,
-  pdf_filename text,
-  route_name text,
-  route_seq integer DEFAULT 0,
-  print_seq text,                 -- e.g. "#1/50"
-  left_meta text,                 -- PDF metadata text from printer
-  right_meta text,
-  batch_folder text,              -- optimized folder name it would go into
-  deleted_in_portal text,         -- raw value from lifecycle
-  generated_at timestamptz DEFAULT now()
-);
-bill_assignments — Admin creates per-staff-per-day
-CREATE TABLE public.bill_assignments (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  staff_id uuid REFERENCES staff(id),
+
+### 5.6 Biller CSVs — SKIPPED
+All 21 `Biller_{City}_{Month}.csv` files (8 months × 3 cities) are **redundant**. The lifecycle XLSX already contains the Survey ID ↔ PSID linkage and all financial columns. The Biller CSVs were only needed as a bridge; the lifecycle XLSX is the authoritative source.
+
+---
+## 6. Data Model
+### 6.1 Tables
+
+| Table | Key | Purpose | Size |
+|-------|-----|---------|------|
+| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category | ~212K |
+| `bill_items` | psid | Current month PSID snapshot — one row per PSID from lifecycle XLSX | ~70K/mo |
+| `payment_history` | id | All payments — one row per (PSID, month) from daily Payment CSV | ~122K |
+| `payment_summary` | bill_month | Pre-computed monthly totals (paid count + collected amount) | ~10 |
+| `profiles` | id (auth.users) | User profiles with role + permissions | ~10 |
+| `staff` | id (auth.users) | Field staff metadata (city, UC assignment) | ~70 |
+| `saved_routes` | id | Saved route data (JSON) for navigation | ~50 |
+| `verified_houses` | id | GPS-verified house locations | ~5K |
+| `staff_sync_logs` | id | Staff photo sync logging | ~1K |
+| `app_settings` | key | Key-value config store | ~5 |
+| `hierarchy` | id | Reference: distinct (city_district, tehsil, uc_name) for ACTIVE units | ~500 |
+| `surveyors` | id | Reference: distinct surveyor names for ACTIVE units | ~70 |
+| `bill_months` | month | Reference: distinct months in bill_items | ~10 |
+| *(future)* `daily_assignments` | id | Admin creates per-staff-per-day chunk | Phase A |
+| *(future)* `assignment_items` | id | Individual PSID delivery tracking | Phase B |
+
+**Dropped:** `bills` (replaced by `bill_items` + `payment_history`)
+
+### 6.2 Reference Tables (New)
+
+```sql
+-- hierarchy: Filter dropdown reference. Populated once, upserted by import scripts + trigger.
+CREATE TABLE public.hierarchy (
+  id SERIAL PRIMARY KEY,
+  city_district text NOT NULL,
+  tehsil text NOT NULL,
   uc_name text NOT NULL,
-  assigned_date date NOT NULL DEFAULT CURRENT_DATE,
-  bill_count integer NOT NULL,
-  status text DEFAULT 'active' CHECK (status IN ('active', 'completed')),
   created_at timestamptz DEFAULT now(),
-  completed_at timestamptz
+  UNIQUE (city_district, tehsil, uc_name)
 );
-bill_assignment_items — Individual PSIDs within an assignment
-CREATE TABLE public.bill_assignment_items (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  assignment_id uuid REFERENCES bill_assignments(id) ON DELETE CASCADE,
-  psid text NOT NULL,
-  bill_month text NOT NULL,
-  sequence_no integer,
-  status text DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'missed')),
-  photo_urls text[],
-  photo_timestamps timestamptz[],
-  gps_lat numeric,
-  gps_lng numeric,
-  delivered_at timestamptz,
-  reason text                     -- null for delivered, dropdown reason for missed
-);
-staff_daily_stats — Auto-calculated counters
-CREATE TABLE public.staff_daily_stats (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  staff_id uuid REFERENCES staff(id),
-  date date NOT NULL,
-  assigned_count integer DEFAULT 0,
-  delivered_count integer DEFAULT 0,
-  missed_count integer DEFAULT 0,
-  total_negative_marks integer DEFAULT 0,
-  UNIQUE (staff_id, date)
-);
-staff_performance_logs — Admin notes + ratings
-CREATE TABLE public.staff_performance_logs (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  staff_id uuid REFERENCES staff(id),
-  date date NOT NULL,
-  notes text,
-  rating integer CHECK (rating >= 1 AND rating <= 5),
-  reviewer_id uuid REFERENCES staff(id),
+
+-- surveyors: Filter dropdown + assignment target reference.
+CREATE TABLE public.surveyors (
+  id SERIAL PRIMARY KEY,
+  name text NOT NULL UNIQUE,
+  is_active boolean DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
-Indexes: All tables get indexes on filtered columns (psid+bill_month, assignment_id, staff_id+date, uc_name, etc.)
-RLS: All 5 tables get select_all policy (SELECT for all authenticated users) — same pattern as existing 8 tables.
-5.3 Bill# Generation
-The bill# is the print sequence number assigned per UC during processing:
-seq_text = f"#{bill_count}/{total_bills_in_uc}"
-Where bill_count resets to 0 for each UC. So bill# = #1/50, #2/50, etc. within a UC.
-This is NOT a globally unique bill number — it's a human-readable print sequence. The globally unique identifier is the PSID (20-digit number).
-5.4 Pipeline Summary: import-lifecycle-data.py
-- Input: test_lifecycle_Biller_{City}_{Month}.xlsx from processed_pdfs/
-- Source PDF mapping: map_source_pdfs() → scans F:\Original_pdfs\{city_code}\{month}\ for 20-digit PSIDs
-- Filter: Deleted in Portal != 'Yes' + PSID must be in psid_map
-- Group/sort: By UC → Route Segment → Route Seq → Survey ID
-- Bill#: #{n}/{total_in_uc} print sequence per UC
-- DB outputs: bill_documents rows (one per PSID), bills upserts, saved_routes entries
-- Does NOT: Generate A5 PDFs, add barcodes/QR, modify original pdf-bill-printer.py
-### 5.5 Historical Data Sources — Field Mapping
-#### Source 1: Survey CSVs (scripts/data/scraped_data/)
-| CSV column | DB column |
+
+-- bill_months: Month filter dropdown. Populated from bill_items.
+CREATE TABLE public.bill_months (
+  month text PRIMARY KEY,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+These three tables never exceed 1000 rows total. All filter dropdown queries are simple `.select('*')` — zero PostgREST row limit issues, no RPCs needed.
+
+### 6.3 Core Schema
+
+```sql
+-- bill_items: Current month snapshot, populated from lifecycle XLSX
+CREATE TABLE public.bill_items (
+  psid text PRIMARY KEY,
+  survey_id text REFERENCES survey_units(survey_id),
+  bill_month text NOT NULL,
+  amount_due numeric,
+  arrears numeric DEFAULT 0,
+  monthly_fee integer DEFAULT 0,
+  billing_category text,
+  uc_name text,
+  city text,
+  tehsil text,                     -- Populated via trigger from survey_units
+  deleted_in_portal text,          -- "Yes"/"No" — critical filter for staff delivery
+  is_issued boolean DEFAULT false,
+  start_month text,
+  route_name text,
+  route_seq integer DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+-- payment_history: All payments, upserted daily from Payment CSV
+CREATE TABLE public.payment_history (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  psid text NOT NULL,
+  bill_month text NOT NULL,
+  amount_paid numeric DEFAULT 0,
+  paid_date date,
+  payment_method text,
+  payment_status text,
+  fine numeric DEFAULT 0,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (psid, bill_month)
+);
+```
+
+Indexes: `bill_items(survey_id)`, `bill_items(deleted_in_portal)`, `bill_items(tehsil)`, `bill_items(city)`, `bill_items(uc_name)`, `bill_items(bill_month)`, `payment_history(psid)`, `payment_history(psid, bill_month)`, `payment_history(bill_month)`, `survey_units(status)`
+
+### 6.4 Database Triggers
+
+| Trigger | Table | Event | Purpose |
+|---------|-------|-------|---------|
+| `trg_bill_items_set_tehsil` | `bill_items` | BEFORE INSERT | Auto-populates `tehsil` from `survey_units` via `survey_id` FK. Allows override if `tehsil` is explicitly provided. |
+| `trg_payment_history_refresh_summary` | `payment_history` | AFTER INSERT/UPDATE/DELETE | Recomputes `payment_summary` for the affected `bill_month`. |
+| `trg_survey_units_upsert_hierarchy` | `survey_units` | AFTER INSERT/UPDATE/DELETE | Upserts `hierarchy` reference table when city_district/tehsil/uc_name/status changes. |
+
+### 6.5 Data Sources → Field Mapping
+
+#### Survey CSVs (3 files) → `survey_units`
+| CSV column | DB field |
 |---|---|
-| Survey ID | survey_units.survey_id |
-| Name | survey_units.consumer_name |
-| Address | survey_units.address |
-| Latitude / Longitude | survey_units.lat / lng |
-| District / Tehsil / Union Council | survey_units.city_district / tehsil / uc_name |
-| UC Type | survey_units.uc_type |
-| Surveyor Name / Date / Time | survey_units.surveyor_name / survey_date / survey_time |
-| House Type | survey_units.house_type |
-| Consumer Type | survey_units.unit_type |
-| Image URL 1–4 | survey_units.image_urls[] |
-#### Source 2: Biller CSVs (scripts/data/excel_dumps/Biller_{City}_{Month}.csv)
-| CSV column | DB column |
+| Survey ID | survey_id (PK) |
+| Name / Consumer | consumer_name |
+| Address | address |
+| Latitude / Longitude | lat / lng |
+| District / City | city_district (normalized via geography.json) |
+| Tehsil | tehsil |
+| Union Council / UC / Area | uc_name |
+| UC Type / Type | uc_type |
+| Consumer Type / Unit Type | unit_type |
+| House Type | house_type |
+| Surveyor Name / Surveyor | surveyor_name |
+| Survey Date / Date | survey_date |
+| Survey Time / Time | survey_time |
+| Image URL 1–4 / URL 1–4 | image_urls[] |
+| *(from lifecycle)* | monthly_fee, billing_category (enriched) |
+
+#### Lifecycle XLSX (current month, 3 files) → `bill_items` + `survey_units` enrichment
+| XLSX column | DB field |
 |---|---|
-| Survey ID | → joins survey_units → bills |
-| Biller PSID | bills.psid |
-| Monthly Fee | survey_units.monthly_fee |
-| Billing Category | survey_units.billing_category |
-| Current Bill / Balance / Total Payable | bills.current_bill / bills.amount_due / bills.total_payable |
-| **Note:** `biller_data_*` files (lowercase) lack PSID — NOT used. |
-#### Source 3: Payment History CSV (scripts/data/scraped_data/COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv)
-| CSV column | DB column |
+| Biller PSID | bill_items.psid |
+| Survey ID | bill_items.survey_id (→ survey_units FK) |
+| Total Payable | bill_items.amount_due |
+| Arrears | bill_items.arrears |
+| Monthly Fee | survey_units.monthly_fee (enrichment) |
+| Billing Category | survey_units.billing_category (enrichment) |
+| Deleted in Portal | bill_items.deleted_in_portal |
+| Start Month | bill_items.start_month |
+| per-month PDF Issued column | bill_items.is_issued |
+| Route Segment / Route Seq | bill_items.route_name / route_seq |
+| UC, City | bill_items.uc_name, city |
+| Tehsil | bill_items.tehsil — fallback: trigger auto-populates from `survey_units` |
+
+#### Payment CSV (1 combined file) → `payment_history`
+| CSV column | DB field |
 |---|---|
-| PSID | bills.psid |
-| Month | bills.bill_month |
-| Paid Amount | bills.amount_paid |
-| Paid Date | bills.paid_date |
-| Channel | bills.payment_method |
-| Status | bills.payment_status |
-| **Note:** Lifecycle XLSX per-month Paid columns are Yes/No only. Payment CSV is the sole truth for payment records. |
-#### Source 4: Lifecycle XLSX (scripts/data/processed_pdfs/)
-| XLSX column | DB column |
-|---|---|
-| Biller PSID + per-month PDF Issued columns | bills.is_issued (for each month) |
-| Arrears | bills.arrears |
-| Deleted in Portal | bills.deleted_in_portal |
-| Start Month | bills.start_month |
-| Route Segment / Route Seq / Route Total | → saved_routes (used in A2 import-lifecycle-data.py) |
-6. Monthly Data Workflow
-Monthly (19-20th) — Manual
-1. Gov portal → lifecycle XLSX downloaded to processed_pdfs/
-2. Admin runs python pdf-bill-printer.py (original script, untouched) — generates A5 print PDFs with overlays
-3. Admin runs python scripts/import-lifecycle-data.py --city <city> --month <Month-YYYY> — reads same lifecycle XLSX + maps source PDFs → saves to DB
-4. Script inserts into bill_documents + upserts bills + saves routes to saved_routes
-5. Both scripts are independent — can run in any order (import is idempotent: upserts by psid+bill_month)
-Daily — Admin
-1. Opens app → /assignments → sees UCs with remaining bill counts
-2. Selects UC → sees sorted unassigned bill list (by route)
-3. Creates assignment: pick staff → set count N → first N unassigned bills auto-assigned
-4. Creates bill_assignments + bill_assignment_items
-Daily — Field Staff
-1. Opens app → /deliver → sees today's assigned bills
-2. Navigates house-to-house (saved route order or sequential)
-3. For each bill:
-- Captures photo → WebP compress → IndexedDB (offline) or GAS webhook (online)
-- GPS captured automatically
-- Marks delivered (or missed + reason — photo required for both)
-- Status saved to bill_assignment_items
-4. Photos sync when internet returns (IndexedDB queue)
-7. Performance Rules (Must Follow)
- 1. Never select('*') — name explicit columns (egress cost)
- 2. Push filters to the server — .eq(), .in(), .gte(), not JS .filter()
- 3. No N+1 sequential queries — use Promise.all for independent queries
- 4. No RPCs — all aggregation in TypeScript server-side services
- 5. staleTime > 0 — 5min for billing data (daily updates), 10min for static
- 6. gcTime > staleTime — keep cached data for back-navigation
- 7. Explicit column selects on every query
- 8. Index every filtered column in Supabase
- 9. No client-side .filter() / .find() / .sort() on large datasets (use server-side)
-10. useMemo on all derived data in render components
-8. Session Log
-Each session appends a log entry here. Format:
-### YYYY-MM-DD (HH:MM-HH:MM) — Location: [Home/Office]
-**Focus:** [short description]
+| PSID | psid |
+| Month | bill_month |
+| Paid Amount | amount_paid |
+| Paid Date | paid_date |
+| Channel | payment_method |
+| Status | payment_status |
+
+**Note:** Lifecycle XLSX per-month Paid columns are Yes/No flags only. Payment CSV is the sole truth for payment amounts/dates.
+
+### 6.6 Archived / Orphan Records
+Survey IDs found in lifecycle data but missing from Survey CSVs get stubs in `survey_units` with `status='ARCHIVED'`, `consumer_name='Archived Biller Data'`. These preserve the linkage without requiring a full survey record.
+
+### 6.7 Migration Order
+Run these in order in the Supabase SQL Editor:
+1. `006-payment-summary.sql` — creates `payment_summary` table, seeds from historical data
+2. `007-data-insight-rpcs.sql` — creates RPCs for Data Insight admin page
+3. `008-add-tehsil-to-bill-items.sql` — adds `tehsil` column, backfills from `survey_units`, creates index
+4. `009-triggers-and-automation.sql` — creates triggers for ongoing data integrity
+5. `010-reference-tables.sql` — creates `hierarchy`, `surveyors`, `bill_months` + maintenance trigger
+
+---
+## 7. Monthly Data Workflow
+
+### Monthly (16th–20th)
+1. **16th:** SWMC portal provides biller list CSV + original A4 PDFs
+2. **16th–18th:** `pdf-psid-extractor.py` reads PDFs, extracts PSIDs, matches with biller list + survey data → generates `test_lifecycle_Biller_{City}_{Month}.xlsx`
+3. **19th–20th:** `pdf-bill-printer.py` runs → generates A5 print PDFs with overlays
+4. **18th–20th:** `import-lifecycle-data.py` runs → populates `bill_items`, enriches `survey_units`, upserts reference tables (`hierarchy`, `surveyors`, `bill_months`)
+
+### Daily
+1. **Admin:** Runs `bill-extractor-v4.py` → fetches updated payment CSV → upserts `payment_history`
+   - Trigger `trg_payment_history_refresh_summary` auto-refreshes `payment_summary`
+2. **Admin:** Opens `/assignments` → creates daily staff assignments per UC/MC
+3. **Field Staff:** Opens `/deliver` → sees assigned bills only
+4. **Staff:** Navigates house-to-house, captures photo, marks delivered/missed
+5. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL
+
+---
+## 8. Performance Rules (Must Follow)
+1. Never `select('*')` — name explicit columns (egress cost)
+2. Push filters to the server — `.eq()`, `.in()`, `.gte()`, not JS `.filter()`
+3. No N+1 sequential queries — use `Promise.all` for independent queries
+4. No RPCs for client-facing features — admin-only aggregate queries (Data Insight, dashboards) may use RPCs from `scripts/sql/007-data-insight-rpcs.sql`
+5. **Reference tables for filter dropdowns** — never query 212K tables for filter options. Use `hierarchy`, `surveyors`, `bill_months` tables (all <1000 rows).
+6. `staleTime > 0` — 5min for billing data (daily updates), 30min for hierarchy (rarely changes)
+7. `gcTime > staleTime` — keep cached data for back-navigation
+8. Index every filtered column — especially `survey_units.status` (all queries filter by ACTIVE)
+9. No client-side `.filter()` / `.find()` / `.sort()` on large datasets (use server-side)
+10. `useMemo` on all derived data in render components
+
+---
+## 9. Edge Case Decisions
+
+| # | Edge Case | Decision |
+|---|---|---|
+| 1 | PSID in lifecycle with `Deleted in Portal = Yes` | Keep in `bill_items`. Staff app filters at query: `WHERE deleted_in_portal != 'Yes'`. Shows house with "No active bill" context. |
+| 2 | PSID was active last month, removed entirely from current lifecycle | Naturally drops out of `bill_items`. House still on map. Shows "No bill this month". Payment history remains accessible. |
+| 3 | Multiple PSIDs per active Survey ID (neither deleted) | **Keep all PSIDs.** Staff sees all PSIDs per house with their payment history. App highlights the one with recent payment. Staff chooses which to deliver. |
+| 4 | Admin-only RPCs for aggregate queries | RPCs are banned for client-facing features but allowed for admin-only aggregate queries (Data Insight, admin dashboards). |
+| 5 | PSID has payment history but NOT in current lifecycle | Payment history still in `payment_history`. House shows "No active bill" + past payments. |
+| 6 | Same PSID paid in multiple months (including current) | `payment_history` has all records. Staff app cross-references current `bill_month`: if paid, shows "Already paid" — do not deliver. |
+| 7 | Survey exists but no PSID in current lifecycle | Valid unbilled survey. Map shows house with "No bill this month". Gets PSID next month. |
+| 8 | `bill_items.tehsil` missing during import | Trigger auto-populates from `survey_units` on INSERT. |
+| 9 | `payment_summary` stale after payment import | Trigger auto-refreshes on payment_history changes. |
+| 10 | Reference table out of sync after bulk import | Import script upserts reference tables. Trigger provides real-time sync for incremental changes. |
+| 11 | Staff assigned to UC that disappears from hierarchy | Assignment references bill_items.psid directly, not UC name. House still renders even if UC renamed. |
+| 12 | Photo taken offline, assignment completed hours later | Photo queued in IndexedDB with assignment_item_id. On sync, photo metadata links to assignment. Count reflects sync'd count, not taken count. |
+
+---
+## 10. Implementation Phases
+
+### Phase 0d — Reference Tables & Filter Fix (~1.5 hrs)
+| Step | Time | Task |
+|------|------|------|
+| 0d.1 | 30 min | SQL migration `010-reference-tables.sql`: create `hierarchy`, `surveyors`, `bill_months`, populate from existing data, add maintenance trigger |
+| 0d.2 | 15 min | Update `GET /api/hierarchy` to query `hierarchy` + `surveyors` tables (remove RPC/fallback) |
+| 0d.3 | 15 min | Update `GET /api/bill-months` to query `bill_months` table (remove RPC/fallback) |
+| 0d.4 | 10 min | Verify all filters populate correctly: Khushab, Bhalwal, MC-1, all months |
+| 0d.5 | 5 min | Delete 6 dead service files: `finance-service`, `retention-service`, `recovery-service`, `hierarchy-service`, `survey-service`, `route-service` |
+
+### Phase 0e — Stabilize & Clean (~2 hrs)
+| Step | Time | Task |
+|------|------|------|
+| 0e.1 | 20 min | Fix payment filter pagination: fetch all survey IDs, apply payment filter, THEN paginate |
+| 0e.2 | 15 min | Fix `billing-stats` API: populate or remove empty `tehsil_stats`/`uc_stats`/`category_stats` |
+| 0e.3 | 15 min | Move `useBillingRoutes` to API route pattern (`/api/routes`) |
+| 0e.4 | 10 min | Deduplicate `currentMonth()` — single shared utility |
+| 0e.5 | 10 min | Add `survey_units.status` index |
+| 0e.6 | 30 min | Fix `FinanceSummary` type to match actual API response (remove empty arrays or populate them) |
+
+### Phase A — Admin Assignment UI (~3 hrs)
+| Step | Time | Task |
+|------|------|------|
+| A.1 | 30 min | SQL: `daily_assignments` + `assignment_items` tables |
+| A.2 | 30 min | `GET /api/assignments` + `POST /api/assignments` endpoints |
+| A.3 | 60 min | `/assignments` page: UC list with totals, click → unassigned bills → pick staff → set count |
+| A.4 | 30 min | Assignment management: view active, completion %, revoke |
+| A.5 | 30 min | `/route` tab from `saved_routes`, grouped city→UC→route |
+
+### Phase B — Field Staff Delivery UI (~6 hrs)
+| Step | Time | Task |
+|------|------|------|
+| B.1 | 60 min | `/deliver` page: full-screen mobile map with assigned bill markers, bottom sheet with progress bar |
+| B.2 | 30 min | House detail bottom sheet: name, address, bill amount, delivery status, photo button |
+| B.3 | 60 min | Photo capture: camera API → WebP compress → IndexedDB queue → GAS webhook → Drive URL saved to `assignment_items` |
+| B.4 | 30 min | Status marking: delivered (photo+GPS) or missed (photo+reason+GPS) — both update `assignment_items` |
+| B.5 | 30 min | Live progress: "Delivered X/Y" from assignment_items photo count |
+| B.6 | 60 min | Swipeable card list view: pull-to-refresh, sorted by route sequence |
+| B.7 | 30 min | Offline support: cached assignment + IndexedDB photo queue + sync indicator |
+| B.8 | 30 min | Route-based navigation: show next house on map, auto-advance after marking |
+
+### Phase C — Admin Dashboard (~3 hrs)
+| Step | Time | Task |
+|------|------|------|
+| C.1 | 60 min | `/stats` page: daily delivery stats per staff (assigned/delivered/missed/rate) |
+| C.2 | 60 min | Staff performance tracking: filter by staff, date range. Add notes + rating (1-5) |
+| C.3 | 60 min | Data Insight enhancement: add delivery KPIs (delivery rate, photos per staff, avg time per delivery) |
+
+### Phase D — Visual Rehaul (~4 hrs)
+| Step | Time | Task |
+|------|------|------|
+| D.1 | 60 min | Staff mode route guard: `/deliver` is default for staff role, no admin nav access |
+| D.2 | 60 min | Staff mobile layout: map fills screen, bottom sheet for detail, progress bar in header, bottom tab nav (Map/List/Progress) |
+| D.3 | 60 min | Admin desktop sidebar: collapsed/expanded, nav groups (Map/List/Assignments/Stats/Insight/Settings) |
+| D.4 | 30 min | Admin filter bar: inline chips for desktop, bottom sheet for mobile |
+| D.5 | 30 min | Theme system: Vercel light/dark defaults, staff forced to light mode |
+| D.6 | 30 min | Touch target audit: all interactive elements 44px+ on mobile, 48px+ for primary actions |
+
+### Total Estimate Breakdown
+| Phase | Time | Cumulative |
+|-------|------|------------|
+| 0d | 1.5 hrs | 1.5 hrs |
+| 0e | 2 hrs | 3.5 hrs |
+| A | 3 hrs | 6.5 hrs |
+| B | 6 hrs | 12.5 hrs |
+| C | 3 hrs | 15.5 hrs |
+| D | 4 hrs | 19.5 hrs |
+
+---
+## 11. Implementation Workflow (Permanent Rule)
+Every task is broken into short atomic steps (max 1-2 file changes per step).
+1. Present the next step with clear description
+2. Wait for user approval
+3. Implement only that step (with time estimate)
+4. Wait for user verification
+5. Present the next step
+
+Never skip ahead or batch multiple steps without explicit approval.
+When in a phase/step and the user asks a question: Answer the question, then return to the current phase/step without advancing unless told to proceed.
+
+---
+## 12. Session Log
+### 2026-05-24 (Architecture Reset) — Location: Home
+**Focus:** MASTER.md rewrite with mobile-first field staff UX + reference table architecture + visual rehaul plan
 **Done:**
-- [task 1]
-- [task 2]
-**Started but not finished:**
-- [task]
+- Completed full codebase audit (all API routes, hooks, components, stores, types, data flow)
+- Identified root cause of all filter/hierarchy issues: PostgREST 1000-row limit on `.select()` queries
+- Redesigned filter architecture: 3 reference tables (`hierarchy`, `surveyors`, `bill_months`) replace `SELECT DISTINCT` on 212K-row tables
+- Defined two-mode UX: mobile-first field staff (`/deliver`) + desktop-first admin (`/map`)
+- Built visual design system for both modes with specific color, typography, and touch target rules
+- Restructured implementation phases with realistic hour-based estimates
+- Added 4 new edge case decisions (reference table sync, offline photo, staff UC changes)
+- Created `GET /api/bill-months` endpoint
+- Created `useBillMonths` hook with 60min staleTime
+- Updated hierarchy route: RPC-first with fallback to `.range(0, 999999)` (bypasses 1000 limit)
+- Updated bill-months route: RPC-first with fallback to direct select
+- Fixed level logic in Data Insight route — never drops to unit level (stays at UC)
+- Fixed `get_survey_group_stats` RPC: `p_uc` is filter-only (no survey_id grouping)
+- Fixed `get_billing_group_stats` RPC: same filter-only change
+- Added bill month filter to FilterState + billing-store + filter-panel + passed to all API routes
+- Added `get_hierarchy`, `get_surveyors`, `get_bill_months` RPCs to `007-data-insight-rpcs.sql`
+**Key decisions:**
+- Reference tables are the single source of truth for filter dropdowns — not RPCs, not DISTINCT queries
+- Two separate UX modes with role-based routing (future: route guard)
+- Visual rehaul deferred to Phase D (after core data + assignment + delivery work)
+- Realistic estimates: ~20 hours total to complete all phases
 **Next session:**
-- [next task 1]
-- [next task 2]
-2026-05-23 (Morning) — Location: Home
-Focus: Visual harmonization + sidebar + theme system + Google Maps tiles
-Done:
-- Synced globals.css with HR's Neutral-based theme tokens
-- Added Plus Jakarta Sans + Outfit fonts to layout.tsx
-- Added typography base layer (text-caption, text-secondary, text-mono-data)
-- Removed card shadows throughout
-- Created AppShell responsive layout (desktop sidebar + mobile bottom tabs)
-- Created BillingSidebar: collapsible, nav groups, user profile card, theme toggle, logout
-- Installed next-themes, created ThemeProvider with 4 themes
-- Created billing-ui-store (Zustand + persist for sidebar state)
-- Created /settings page with Appearance + Account cards, 5-button theme grid
-- Fixed logout redirect (router.push → window.location.href)
-- Added satellite view toggle (Layers button, mapType in billing-store)
-- Switched from MapTiler to Google Maps tiles (mt0-mt3 subdomains, maxZoom 20)
-- Updated map-view.tsx with dynamic tile URL from store
-- Added skeleton loading states to kpi-cards and survey-list
-- Added login skeleton + Loader2 spinner
-- Created docs/MASTER.md + docs/archive/ structure (mirrors HR app pattern)
-- Updated AGENTS.md with full workflow context and MASTER.md reference
-- Created shadcn Skeleton component
-Key decisions:
-- Google Maps over MapTiler: internal tool, not commercial SaaS
-- Sidebar theme toggle = light/dark only; Vercel themes in Settings
-- Bill verification system: assignment by UC/MC with remaining-bill pool
-- Photos via existing GAS webhook; offline IndexedDB queue
-Next session:
-- Phase A: SQL migration for bill verification tables
-- Phase A: import-lifecycle-data.py script
-2026-05-23 (Afternoon) — Location: Home
-Focus: Phase A planning refinements + lifecycle pipeline analysis
-Done:
-- Analyzed pdf-bill-printer.py pipeline (1305 lines) — city selection, source PDF mapping, two-filter system, UC grouping, route sorting, print seq# generation, batch optimization, PDF generation with overlays
-- Corrected Phase A scope: import-lifecycle-data.py must replicate the full pipeline including source PDF mapping and PSID matching, but skip the PDF generation step
-- Clarified two-filter system: Deleted in Portal != 'Yes' + psid in psid_map — both must pass for a bill to get a bill#
-- Documented bill# mechanism: sequential counter per UC (#{n}/{total_in_uc})
-- Routes from lifecycle XLSX (Route Segment, Route Seq columns) saved to saved_routes table
-- Determined Python dependencies: PyMuPDF (fitz), pandas, openpyxl, python-dotenv, supabase-py
-- Created scripts/IMPLEMENTATION_PLAN.md with full Phase A breakdown
-- Created docs/ structure mirroring HR app (MASTER.md + archive/plans/ + archive/sql/ + archive/reports/)
-- Updated AGENTS.md with workflow context
-- Updated MASTER.md with full pipeline docs (Section 2) + detailed schema (Section 5)
-Key decisions:
-- import-lifecycle-data.py mirrors pdf-bill-printer data pipeline exactly (same XLSX, same source PDF scan, same filters, same grouping, same sorting, same print seq) — only skips generate_merged_pdf() + report XLSX
-- pdf-bill-printer.py remains completely untouched (no modifications)
-- import-lifecycle-data.py inserts into bill_documents, upserts bills, saves routes to saved_routes
-- Route tab (/route) loads from saved_routes table grouped by city → UC → route
-- Script is idempotent — re-running upserts by psid+bill_month
-Next session:
-- Phase 0b: Repoint migrate_to_supabase.py to billing Supabase and run historical migration (after verifying schema)
-- Implement Phase A1: SQL migration file (scripts/sql/004-bill-verification-system.sql)
-- Implement Phase A2: import-lifecycle-data.py
-2026-05-23 (Evening) — Location: Home
-Focus: Phase 0b data source analysis + migration planning
-Done:
-- Analyzed all 4 data sources: Survey CSVs, Biller CSVs, Payment History CSV, Lifecycle XLSX
-- Mapped all fields to survey_units + bills columns
-- Confirmed Payment CSV as authoritative for payment data (lifecycle per-month Paid columns are Yes/No only)
-- Identified Biller_{City}_{Month}.csv as correct biller source (biller_data_* files lack PSID)
-- Lifecycle XLSX is superset but used only for enrichment (is_issued, arrears, deleted_in_portal)
-- Decided on new migration script (run_historical_migration.py) rather than patching originals
-- Updated MASTER.md with field mapping and Phase 0b plan
-- Installed supabase-py
- - Created scripts/run_historical_migration.py (dry-run: 212K survey_units, 1.19M bills)
-Key decisions:
- - Payment CSV is truth for payments; lifecycle paid columns are flags only
- - biller_data_* files skipped; Biller_* files used
- - Service role key for bulk upsert
-Next session:
- - Phase A1: SQL migration file (scripts/sql/004-bill-verification-system.sql)
- - Phase A2: import-lifecycle-data.py
-2026-05-23 (Night) — Location: Office
-Focus: Phase 0b build + bug fixes
-Done:
- - Wrote scripts/run_historical_migration.py (570 lines) — loads Survey CSVs + Biller CSVs + Payment CSV + Lifecycle XLSX, upserts to billing Supabase
- - Fixed Testing_Biller_* causing duplicate (psid, bill_month) → ON CONFLICT errors; excluded them
- - Fixed empty string "" in survey_time → DB type time rejects; added clean_time() → None
- - Fixed "nan" string in paid_date → DB type date rejects; cleaned NaN in pandas datetime conversion
- - Fixed purge timeout (192K rows) → chunked delete (10K at a time)
- - Fixed duplicate survey_id key in archived records dict
- - Dedup logic added to bills upload to prevent chunk-level duplicate PKs
- - Added --skip-lifecycle flag for faster runs (lifecycle enrichment deferred to Phase A2)
- - Added --dry-run, --quick, --fast, --reset flags
- - Dry-run: 40 biller files → 1,189,313 bill records, 3 survey CSVs → 172,480 + 39,948 archived = 212,428 survey units
- - Partial upload completed: 192,428 survey units uploaded, bills partially uploaded before abort
- - DB state: survey_units=192,428 rows, bills=0 rows (purged successfully mid-fix)
-Bugs found & fixed:
- - purge_tables: Supabase 30s statement timeout on bulk DELETE → chunked with .limit(10000)
- - survey_time: CSV empty strings → DB time type error → clean_time() returns None
- - paid_date: pd.to_datetime + .dt.strftime() produced "nan" string → DB date type error → explicit pd.notna() check
- - (psid, bill_month) duplicates: Testing_Biller_* files were overlapping Biller_* files for same months → exclude by filename prefix
- - Archived record dict had duplicate survey_id key → removed duplicate
-Next session (at home):
- 1. python scripts/run_historical_migration.py --reset --skip-lifecycle  (full upload)
- 2. Phase A1: scripts/sql/004-bill-verification-system.sql
- 3. Phase A2: scripts/import-lifecycle-data.py
-9. File Inventory (Phase 0)
-Source files copied from F:\qoder\billing-system\ + F:\Routing-Station-Pro into C:\billing-saas-app\scripts\
+- Step 0d.1: Create `010-reference-tables.sql` migration — create + populate + trigger
+- Step 0d.2: Update hierarchy & bill-months API routes to query reference tables
+
+---
+## 13. File Inventory (Phase 0)
+Source files copied from `F:\qoder\billing-system\` + `F:\Routing-Station-Pro` into `scripts/`
+```
 scripts/ root (6 files, 86 KB):
   routingstation.py (46 KB) — Daily survey/payment injection into old Supabase
   migrate_to_supabase.py (23 KB) — Historical bulk migration engine (old project ref)
   migrate_life_cycle.py (10 KB) — Alternative single-month migration (old project ref)
   run_historical_migration.py (20 KB) — Phase 0b: migrates CSVs/XLSXs → billing Supabase
-  config.py (2.5 KB) — Shared config (needs repointing to billing Supabase)
+  config.py (2.5 KB) — Shared config
   geography.json (1 KB) — City→UC→MC mapping
+
 scripts/ref/ (6 files + routing-station-src dir, ~1.5 MB):
   pdf-bill-printer.py (53 KB) — Blueprint for import-lifecycle-data.py
   requirements.txt (499 B) — Python dependencies reference
   .env.old-* (4 files) — Old Supabase credentials for reference
   routing-station-src/ (1.4 MB) — Old routing station source code reference
+
 scripts/sql/_old/ (17 files, 49 KB):
   schema_update_phase_a.sql + parts — Old schema migrations
   rpc_*.sql — Old RPC definitions (finance_metrics, retention_report, etc.)
+
 scripts/data/ (gitignored — 1.10 GB total, 110 files):
   excel_dumps/ (369 MB, 44 CSV) — Biller data per city per month
   scraped_data/ (209 MB, 10 CSV) — Survey + payment records
   processed_pdfs/ (439 MB, 30 files) — Combined + lifecycle XLSX + index JSON
-  routing-station-pro-data/ (105 MB, 26 files) — PWA data JSON (paid_data, routes, hierarchy, etc.)
-10. Changelog
-Date	Version	Change
-2026-05-23	1.0	Initial MASTER.md created — full project documentation
-2026-05-23	1.1	Updated Phase A with corrected pipeline (import-lifecycle-data.py), full lifecycle pipeline doc, detailed schema
-2026-05-23	1.2	Added Phase 0 file inventory
-2026-05-23	1.3	Added Phase 0b plan, Section 5.5 data source field mapping, data merge order
-2026-05-23	1.4	Added scripts/run_historical_migration.py (570 lines), 5 bug fixes (time/nan/dedup/purge/archive), --skip-lifecycle flag
+  routing-station-pro-data/ (105 MB, 26 files) — PWA data JSON
+```
+---
+## 14. Changelog
+| Date | Version | Change |
+|------|---------|--------|
+| 2026-05-23 | 1.0 | Initial MASTER.md |
+| 2026-05-23 | 1.1 | Updated Phase A with corrected pipeline |
+| 2026-05-23 | 1.2 | Added Phase 0 file inventory |
+| 2026-05-23 | 1.3 | Added Phase 0b plan, field mapping |
+| 2026-05-23 | 1.4 | Added run_historical_migration.py, bug fixes |
+| 2026-05-23 | 2.0 | Major redesign: 3-table core model (bill_items + payment_history), dropped old bills table |
+| 2026-05-24 | 2.1 | Phase 0b complete — data fixes |
+| 2026-05-24 | 2.2 | Phase 0c defined |
+| 2026-05-24 | 3.0 | Phase 0c complete + routing app reference |
+| 2026-05-24 | 3.1 | Filter panel + mobile UX revisions |
+| 2026-05-24 | 3.2 | Navigation cleanup |
+| 2026-05-24 | 3.3 | Data Insight + RPC decision |
+| 2026-05-24 | 4.0 | Full SSR migration + triggers |
+| 2026-05-24 | 5.0 | **Architecture reset:** Reference tables (hierarchy/surveyors/bill_months). Two-mode UX (mobile-first staff / desktop-first admin). Visual design system. Hour-based phase estimates. |

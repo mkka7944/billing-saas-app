@@ -11,9 +11,9 @@ export async function getFinanceSummary(params: FinanceParams = {}) {
   const supabase = await createClient()
   const month = params.month || getCurrentBillMonth()
 
-  let billQuery = supabase
-    .from('bills')
-    .select('bill_month, payment_status, amount_paid, amount_due, fine, total_payable, survey_id, billing_category, category')
+  let itemsQuery = supabase
+    .from('bill_items')
+    .select('psid, survey_id, amount_due')
     .eq('bill_month', month)
 
   if (params.district) {
@@ -23,7 +23,7 @@ export async function getFinanceSummary(params: FinanceParams = {}) {
       .eq('city_district', params.district)
       .eq('status', 'ACTIVE')
     const ids = (surveyIds || []).map((s) => s.survey_id)
-    if (ids.length) billQuery = billQuery.in('survey_id', ids)
+    if (ids.length) itemsQuery = itemsQuery.in('survey_id', ids)
   }
 
   if (params.tehsil) {
@@ -33,19 +33,31 @@ export async function getFinanceSummary(params: FinanceParams = {}) {
       .eq('tehsil', params.tehsil)
       .eq('status', 'ACTIVE')
     const ids = (surveyIds || []).map((s) => s.survey_id)
-    if (ids.length) billQuery = billQuery.in('survey_id', ids)
+    if (ids.length) itemsQuery = itemsQuery.in('survey_id', ids)
   }
 
-  const { data: bills, error } = await billQuery
+  const { data: items, error } = await itemsQuery
   if (error) throw error
 
-  const paidBills = bills?.filter((b) => b.payment_status?.toLowerCase() === 'paid') || []
-  const totalCollected = paidBills.reduce((sum, b) => sum + Number(b.amount_paid || 0), 0)
-  const totalExpected = bills?.reduce((sum, b) => sum + Number(b.total_payable || b.amount_due || 0), 0) || 0
+  const psids = (items || []).map((i) => i.psid)
+  let paidRows: { psid: string; amount_paid: number | null }[] = []
+  if (psids.length) {
+    const { data: p } = await supabase
+      .from('payment_history')
+      .select('psid, amount_paid')
+      .eq('bill_month', month)
+      .eq('payment_status', 'paid')
+      .in('psid', psids)
+    paidRows = p || []
+  }
+
+  const paidPsids = new Set(paidRows.map((p) => p.psid))
+  const totalCollected = paidRows.reduce((sum, p) => sum + Number(p.amount_paid || 0), 0)
+  const totalExpected = items?.reduce((sum, i) => sum + Number(i.amount_due || 0), 0) || 0
 
   const grand_totals = {
-    total_units: bills?.length || 0,
-    total_paying: paidBills.length,
+    total_units: items?.length || 0,
+    total_paying: paidPsids.size,
     total_collected: totalCollected,
     total_expected: totalExpected,
     recovery_rate: totalExpected > 0 ? Math.round((totalCollected / totalExpected) * 10000) / 100 : 0,
@@ -55,20 +67,21 @@ export async function getFinanceSummary(params: FinanceParams = {}) {
     .from('survey_units')
     .select('survey_id, tehsil')
     .eq('status', 'ACTIVE')
-    .in('survey_id', bills?.map((b) => b.survey_id) || [])
+    .in('survey_id', items?.map((i) => i.survey_id) || [])
 
   const unitTehsilMap = new Map((allUnits || []).map((u) => [u.survey_id, u.tehsil]))
 
   const tehsilMap = new Map<string, { total: number; paid: number; collected: number; expected: number }>()
-  for (const bill of bills || []) {
-    const t = unitTehsilMap.get(bill.survey_id) || 'Unknown'
+  for (const item of items || []) {
+    const t = unitTehsilMap.get(item.survey_id) || 'Unknown'
     const entry = tehsilMap.get(t) || { total: 0, paid: 0, collected: 0, expected: 0 }
     entry.total++
-    if (bill.payment_status?.toLowerCase() === 'paid') {
+    if (paidPsids.has(item.psid)) {
       entry.paid++
-      entry.collected += Number(bill.amount_paid || 0)
+      const paidRow = paidRows.find((p) => p.psid === item.psid)
+      entry.collected += Number(paidRow?.amount_paid || 0)
     }
-    entry.expected += Number(bill.total_payable || bill.amount_due || 0)
+    entry.expected += Number(item.amount_due || 0)
     tehsilMap.set(t, entry)
   }
 
@@ -82,21 +95,22 @@ export async function getFinanceSummary(params: FinanceParams = {}) {
   }))
 
   const ucStatsMap = new Map<string, { tehsil: string; total: number; paid: number; collected: number; expected: number }>()
-  for (const bill of bills || []) {
+  for (const item of items || []) {
     const { data: unit } = await supabase
       .from('survey_units')
       .select('uc_name, tehsil')
-      .eq('survey_id', bill.survey_id)
+      .eq('survey_id', item.survey_id)
       .single()
     if (!unit) continue
     const key = unit.uc_name || 'Unknown'
     const entry = ucStatsMap.get(key) || { tehsil: unit.tehsil || 'Unknown', total: 0, paid: 0, collected: 0, expected: 0 }
     entry.total++
-    if (bill.payment_status?.toLowerCase() === 'paid') {
+    if (paidPsids.has(item.psid)) {
       entry.paid++
-      entry.collected += Number(bill.amount_paid || 0)
+      const paidRow = paidRows.find((p) => p.psid === item.psid)
+      entry.collected += Number(paidRow?.amount_paid || 0)
     }
-    entry.expected += Number(bill.total_payable || bill.amount_due || 0)
+    entry.expected += Number(item.amount_due || 0)
     ucStatsMap.set(key, entry)
   }
 
@@ -111,13 +125,20 @@ export async function getFinanceSummary(params: FinanceParams = {}) {
   }))
 
   const catMap = new Map<string, { total: number; paid: number; collected: number }>()
-  for (const bill of bills || []) {
-    const cat = bill.category || 'Unknown'
+  for (const item of items || []) {
+    const { data: unit } = await supabase
+      .from('survey_units')
+      .select('billing_category')
+      .eq('survey_id', item.survey_id)
+      .single()
+    if (!unit) continue
+    const cat = unit.billing_category || 'Unknown'
     const entry = catMap.get(cat) || { total: 0, paid: 0, collected: 0 }
     entry.total++
-    if (bill.payment_status?.toLowerCase() === 'paid') {
+    if (paidPsids.has(item.psid)) {
       entry.paid++
-      entry.collected += Number(bill.amount_paid || 0)
+      const paidRow = paidRows.find((p) => p.psid === item.psid)
+      entry.collected += Number(paidRow?.amount_paid || 0)
     }
     catMap.set(cat, entry)
   }

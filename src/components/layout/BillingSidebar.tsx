@@ -20,6 +20,7 @@ import {
   PanelLeftOpen,
   Moon,
   Sun,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
@@ -31,32 +32,35 @@ interface NavItem {
   href?: string
 }
 
-const navGroups: { category: string; items: NavItem[] }[] = [
-  {
-    category: 'Navigation',
-    items: [
-      { id: 'map', title: 'Map', icon: MapIcon, isView: true },
-      { id: 'list', title: 'List', icon: List, isView: true },
-      { id: 'route', title: 'Route', icon: Route, isView: true },
-      { id: 'stats', title: 'Stats', icon: BarChart3, isView: true },
-    ],
-  },
-  {
-    category: 'System',
-    items: [
-      { id: 'settings', title: 'Settings', icon: Settings, href: '/settings' },
-    ],
-  },
-]
-
 export function BillingSidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, signOut } = useAuthStore()
+  const { user, signOut, role } = useAuthStore()
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
   const { sidebarOpen, sidebarCollapsed, toggleSidebarCollapse, setSidebarOpen } = useBillingUIStore()
   const { theme, setTheme } = useTheme()
+
+  const navGroups: { category: string; items: NavItem[] }[] = [
+    {
+      category: 'Navigation',
+      items: [
+        { id: 'map', title: 'Map', icon: MapIcon, isView: true },
+        { id: 'list', title: 'List', icon: List, isView: true },
+        { id: 'route', title: 'Route', icon: Route, isView: true },
+        { id: 'stats', title: 'Stats', icon: BarChart3, isView: true },
+        ...(role === 'admin'
+          ? [{ id: 'data-insight', title: 'Data Insight', icon: FileSpreadsheet, isView: true }]
+          : []),
+      ],
+    },
+    {
+      category: 'System',
+      items: [
+        { id: 'settings', title: 'Settings', icon: Settings, href: '/settings' },
+      ],
+    },
+  ]
 
   const isSettings = pathname === '/settings'
 
@@ -145,8 +149,8 @@ export function BillingSidebar() {
         {/* Navigation */}
         <nav
           className={cn(
-            'flex-1 overflow-y-auto space-y-6 transition-all',
-            sidebarCollapsed ? 'p-2' : 'p-4'
+            'flex-1 overflow-y-auto space-y-4 transition-all',
+            sidebarCollapsed ? 'p-2' : 'p-3'
           )}
         >
           {navGroups.map((group) => (
@@ -199,7 +203,7 @@ export function BillingSidebar() {
         )}
 
         {/* Theme + User */}
-        <div className={cn('shrink-0', sidebarCollapsed ? 'p-2 space-y-2' : 'p-4')}>
+        <div className={cn('shrink-0', sidebarCollapsed ? 'p-2 space-y-2' : 'p-3')}>
           {/* Theme toggle */}
           {sidebarCollapsed ? (
             <button

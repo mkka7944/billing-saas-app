@@ -7,6 +7,7 @@ interface AuthState {
   session: Session | null
   isLoading: boolean
   initialized: boolean
+  role: string
   setUser: (user: User | null) => void
   setSession: (session: Session | null) => void
   setInitialized: (val: boolean) => void
@@ -15,11 +16,26 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+async function fetchRole(userId: string): Promise<string> {
+  try {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+    return data?.role || 'staff'
+  } catch {
+    return 'staff'
+  }
+}
+
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   session: null,
   isLoading: true,
   initialized: false,
+  role: 'staff',
 
   setUser: (user) => set({ user }),
   setSession: (session) => set({ session }),
@@ -28,18 +44,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   checkSession: async () => {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    set({
-      session,
-      user: session?.user ?? null,
-      isLoading: false,
-      initialized: true,
-    })
+    const user = session?.user ?? null
+    const role = user ? await fetchRole(user.id) : 'staff'
+    set({ session, user, role, isLoading: false, initialized: true })
   },
 
   signOut: async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
-    set({ user: null, session: null })
+    set({ user: null, session: null, role: 'staff' })
   },
 
   signIn: async (email, password) => {
@@ -47,7 +60,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return { error: error.message }
     const { data: { session } } = await supabase.auth.getSession()
-    set({ session, user: session?.user ?? null, isLoading: false })
+    const user = session?.user ?? null
+    const role = user ? await fetchRole(user.id) : 'staff'
+    set({ session, user, role, isLoading: false })
     return { error: null }
   },
 }))
