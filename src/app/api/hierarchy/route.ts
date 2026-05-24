@@ -16,37 +16,17 @@ interface HierarchyResponse {
 
 export const maxDuration = 30
 
-async function fetchHierarchyRows(sup: Awaited<ReturnType<typeof createClient>>) {
-  // Primary: use RPC (bypasses PostgREST row limit, SELECT DISTINCT)
-  const { data, error } = await sup.rpc('get_hierarchy')
-  if (!error && data?.length) return data as { city_district: string; tehsil: string; uc_name: string }[]
+export async function GET() {
+  const supabase = await createClient()
 
-  // Fallback: direct select if RPC not created yet
-  const { data: fb } = await sup
-    .from('survey_units')
-    .select('city_district, tehsil, uc_name')
-    .eq('status', 'ACTIVE')
-    .range(0, 999999)
+  const [hierRes, survRes] = await Promise.all([
+    supabase.from('hierarchy').select('city_district, tehsil, uc_name').order('city_district').order('tehsil').order('uc_name'),
+    supabase.from('surveyors').select('name').eq('is_active', true).order('name'),
+  ])
 
-  return (fb || []) as { city_district: string; tehsil: string; uc_name: string }[]
-}
+  const rows = (hierRes.data || []) as { city_district: string; tehsil: string; uc_name: string }[]
+  const surveyorRows = (survRes.data || []) as { name: string }[]
 
-async function fetchSurveyorRows(sup: Awaited<ReturnType<typeof createClient>>) {
-  const { data, error } = await sup.rpc('get_surveyors')
-  if (!error && data?.length) return data as { surveyor_name: string }[]
-
-  const { data: fb } = await sup
-    .from('survey_units')
-    .select('surveyor_name')
-    .eq('status', 'ACTIVE')
-    .not('surveyor_name', 'is', null)
-    .order('surveyor_name')
-    .range(0, 999999)
-
-  return (fb || []) as { surveyor_name: string }[]
-}
-
-function buildHierarchy(rows: { city_district: string; tehsil: string; uc_name: string }[]) {
   const seen = new Set<string>()
   const districtMap = new Map<string, number>()
   const tehsilMap = new Map<string, Map<string, number>>()
@@ -89,19 +69,7 @@ function buildHierarchy(rows: { city_district: string; tehsil: string; uc_name: 
       .sort((a, b) => a.label.localeCompare(b.label))
   }
 
-  return { districts, tehsils, ucs }
-}
-
-export async function GET() {
-  const supabase = await createClient()
-
-  const [rows, surveyorRows] = await Promise.all([
-    fetchHierarchyRows(supabase),
-    fetchSurveyorRows(supabase),
-  ])
-
-  const { districts, tehsils, ucs } = buildHierarchy(rows)
-  const surveyors = surveyorRows.map((r) => r.surveyor_name).filter(Boolean).sort()
+  const surveyors = surveyorRows.map((r) => r.name).filter(Boolean).sort()
 
   return NextResponse.json({ districts, tehsils, ucs, surveyors } satisfies HierarchyResponse)
 }
