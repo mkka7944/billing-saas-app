@@ -215,9 +215,9 @@ All 21 `Biller_{City}_{Month}.csv` files (8 months × 3 cities) are **redundant*
 
 | Table | Key | Purpose | Size |
 |-------|-----|---------|------|
-| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category | ~212K |
-| `bill_items` | psid | Current month PSID snapshot — one row per PSID from lifecycle XLSX | ~70K/mo |
-| `payment_history` | id | All payments — one row per (PSID, month) from daily Payment CSV | ~122K |
+| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category, psid (stable biller ID) | ~212K |
+| `bill_items` | psid | Monthly biller snapshot — one row per billed PSID from lifecycle XLSX. Includes `is_issued` flag (PDF issued this month), route info. Overwritten each month. | ~70K/mo |
+| `payment_history` | id | All payments — one row per (PSID, month) from daily combined Payment CSV. Append-only, all months. | ~122K |
 | `payment_summary` | bill_month | Pre-computed monthly totals (paid count + collected amount) | ~10 |
 | `profiles` | id (auth.users) | User profiles with role + permissions | ~10 |
 | `staff` | id (auth.users) | Field staff metadata (city, UC assignment) | ~70 |
@@ -227,13 +227,30 @@ All 21 `Biller_{City}_{Month}.csv` files (8 months × 3 cities) are **redundant*
 | `app_settings` | key | Key-value config store | ~5 |
 | `hierarchy` | id | Reference: distinct (city_district, tehsil, uc_name) for ACTIVE units | ~500 |
 | `surveyors` | id | Reference: distinct surveyor names for ACTIVE units | ~70 |
-| `bill_months` | month | Reference: distinct months in bill_items | ~10 |
+| `bill_months` | month | Reference: distinct months in payment_history | ~10 |
 | *(future)* `daily_assignments` | id | Admin creates per-staff-per-day chunk | Phase A |
 | *(future)* `assignment_items` | id | Individual PSID delivery tracking | Phase B |
 
 **Dropped:** `bills` (replaced by `bill_items` + `payment_history`)
 
-### 6.2 Reference Tables (New)
+### 6.2 Domain Separation (Critical)
+
+**Biller data and payments are two separate domains. Do not couple them.**
+
+- **Biller Data** (`bill_items`): Monthly snapshot — who was billed, amounts, route info, `is_issued` (PDF issued flag from lifecycle). Overwritten each month. Only current month is relevant.
+
+- **Payments** (`payment_history`): Append-only log — who paid, how much, when, channel. All months historically complete.
+
+- **The bridge** is `psid` (stable biller ID assigned to a property). To decouple the domains, `survey_units` must have a `psid` column — the stable mapping lives on the property record, not in the monthly snapshot. This lets payment queries join `payment_history.psid → survey_units.psid` for geography without touching `bill_items`.
+
+- **PDF bill number** per month comes from the separate `pdf-bill-printer.py` run (not from lifecycle files). Lifecycle files only have a boolean `is_issued` (PDF Issued) column. The printer creates a mapping file (PSID → PDF filename/number). This mapping gets stored in `bill_items` as a `pdf_bill_number` column post-print run.
+
+- **Three UIs:**
+  1. **Survey records** — browse/search properties with their PSID, geography, type (uses `survey_units`)
+  2. **Payments per survey unit** — per-property payment lookup (uses `payment_history` + `survey_units.psid`)
+  3. **Recovery reports** — district/tehsil/UC aggregates for recovery data (uses `payment_history` + `survey_units` geography, independent of `bill_items`)
+
+### 6.3 Reference Tables (New)
 
 ```sql
 -- hierarchy: Filter dropdown reference. Populated once, upserted by import scripts + trigger.
@@ -503,6 +520,27 @@ When in a phase/step and the user asks a question: Answer the question, then ret
 
 ---
 ## 12. Session Log
+### 2026-05-25 (Domain Separation Discovery) — Location: Home
+**Focus:** Fixing month dropdown, surveys API timeout, and discovering fundamental domain coupling bug
+**Done:**
+- Created `011-performance-indexes.sql` — added missing indexes (`survey_units.status`, `survey_units.consumer_name` trigram, `payment_history.payment_status`, `bill_items` composite) — fixed surveys API timeout ("canceling statement due to statement timeout")
+- Updated `/api/bill-months` to fallback to `payment_history` when `bill_months` reference table is empty
+- Re-seeded `bill_months` from `payment_history` (OCT2025–MAY2026 now show)
+- Ran `run_historical_migration.py --payments-only` — confirmed all 122K payment records already exist (duplicate key errors)
+- Fixed `get_billing_summary` RPC to use `payment_history` as primary source instead of `bill_items` — now shows `total_collected` and `total_paying` for ALL months, not just current
+- Fixed surveys API payment filter — removed `.eq('bill_month')` from bill_items lookup (psid↔survey_id mapping is stable across months)
+**Key discoveries:**
+- **Domain coupling bug:** `payment_history` had no direct geography link — it relied on `bill_items` (a monthly snapshot) as the bridge. This caused all non-current months to show zero payments.
+- **Fix:** `psid` is a stable property-level identifier — it belongs on `survey_units`, not as a coupling point. Adding `psid` to `survey_units` decouples billing from payments.
+- **PDF bill number** comes from `pdf-bill-printer.py` mapping file, NOT from lifecycle XLSX. Lifecycle only has a boolean `is_issued` (PDF Issued) column.
+- **Biller data and payments are separate domains** — should never be intermingled in the same query path.
+**Next session:**
+- Review and approve domain separation design
+- Add `psid` column to `survey_units`, backfill from `bill_items`
+- Update all queries to use `survey_units.psid` for geography-based payment lookups
+- Design recovery reports page (independent of biller data)
+- Factor in `pdf-bill-printer.py` mapping for `pdf_bill_number` in `bill_items`
+
 ### 2026-05-24 (Architecture Reset) — Location: Home
 **Focus:** MASTER.md rewrite with mobile-first field staff UX + reference table architecture + visual rehaul plan
 **Done:**
@@ -577,3 +615,4 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-24 | 3.3 | Data Insight + RPC decision |
 | 2026-05-24 | 4.0 | Full SSR migration + triggers |
 | 2026-05-24 | 5.0 | **Architecture reset:** Reference tables (hierarchy/surveyors/bill_months). Two-mode UX (mobile-first staff / desktop-first admin). Visual design system. Hour-based phase estimates. |
+| 2026-05-25 | 5.1 | **Domain separation discovery:** Biller data (`bill_items`) ≠ payments (`payment_history`). Decoupled through `survey_units.psid`. `get_billing_summary` RPC rewritten to use `payment_history` as primary source. Performance indexes added (011). |

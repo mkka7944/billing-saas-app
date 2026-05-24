@@ -169,36 +169,47 @@ LANGUAGE plpgsql STABLE
 AS $$
 BEGIN
   RETURN QUERY
-  WITH bill_data AS (
+  WITH paid_data AS (
+    -- All paid records for the requested month (works for ALL months)
+    SELECT ph.psid, ph.amount_paid
+    FROM payment_history ph
+    WHERE ph.bill_month = p_bill_month
+      AND ph.payment_status = 'paid'
+  ),
+  paid_geo AS (
+    -- Paid records filtered by geography via bill_items.psid + survey_units
+    SELECT pd.amount_paid
+    FROM paid_data pd
+    LEFT JOIN bill_items bi ON bi.psid = pd.psid
+    LEFT JOIN survey_units su ON su.survey_id = bi.survey_id
+    WHERE (p_city_district IS NULL OR su.city_district = p_city_district)
+      AND (p_tehsil IS NULL OR su.tehsil = p_tehsil)
+  ),
+  bill_data AS (
+    -- Bill items for the requested month (only has data for current month)
     SELECT bi.psid, bi.amount_due
     FROM bill_items bi
     WHERE bi.bill_month = p_bill_month
       AND (p_city_district IS NULL OR bi.city = p_city_district)
       AND (p_tehsil IS NULL OR bi.tehsil = p_tehsil)
-  ),
-  paid_data AS (
-    SELECT ph.psid, ph.amount_paid
-    FROM payment_history ph
-    WHERE ph.bill_month = p_bill_month
-      AND ph.payment_status = 'paid'
   )
   SELECT
-    COUNT(DISTINCT bd.psid)::integer,
-    COUNT(DISTINCT pd.psid)::integer,
-    COALESCE(SUM(pd.amount_paid), 0)::numeric(12,2),
-    COALESCE(SUM(bd.amount_due), 0)::numeric(12,2),
+    COALESCE((SELECT COUNT(*)::integer FROM bill_data), 0),
+    COALESCE((SELECT COUNT(*)::integer FROM paid_geo), 0),
+    COALESCE((SELECT SUM(amount_paid)::numeric(12,2) FROM paid_geo), 0),
+    COALESCE((SELECT SUM(amount_due)::numeric(12,2) FROM bill_data), 0),
     CASE
-      WHEN COALESCE(SUM(bd.amount_due), 0) > 0
-      THEN ROUND((COALESCE(SUM(pd.amount_paid), 0) / SUM(bd.amount_due)) * 100, 2)
+      WHEN (SELECT COALESCE(SUM(amount_due), 0) FROM bill_data) > 0
+      THEN ROUND(
+        ((SELECT COALESCE(SUM(amount_paid), 0) FROM paid_geo) /
+         (SELECT SUM(amount_due) FROM bill_data)) * 100, 2)
       ELSE 0
-    END::numeric(5,2)
-  FROM bill_data bd
-  LEFT JOIN paid_data pd ON bd.psid = pd.psid;
+    END::numeric(5,2);
 END;
 $$;
 
 COMMENT ON FUNCTION get_billing_summary IS
-  'Returns 5 KPI numbers: total_units, total_paying, total_collected, total_expected, recovery_rate. Supports city/tehsil filters. Uses bill_items.tehsil (migration 008).';
+  'Returns 5 KPI numbers. total_paying and total_collected work for ALL months (from payment_history). total_units and total_expected require bill_items data (current month only). Geography filter joins via bill_items.psid + survey_units.';
 
 -- ── 5. Hierarchy for filter dropdowns ─────────────────────────
 -- Returns all distinct (city_district, tehsil, uc_name) combos

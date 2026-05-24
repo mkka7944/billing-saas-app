@@ -67,9 +67,10 @@ CREATE TABLE IF NOT EXISTS public.bill_months (
   created_at timestamptz DEFAULT now()
 );
 
+-- Seed from payment_history (more complete historical record than bill_items)
 INSERT INTO public.bill_months (month)
   SELECT DISTINCT bill_month
-  FROM public.bill_items
+  FROM public.payment_history
   ORDER BY bill_month DESC
 ON CONFLICT (month) DO NOTHING;
 

@@ -55,10 +55,10 @@ export async function GET(request: Request) {
 
   const surveyIds = data.map((s: any) => s.survey_id)
 
+  // psid↔survey_id is stable — any month's mapping works
   const { data: items } = await sup
     .from('bill_items')
     .select('psid, survey_id')
-    .eq('bill_month', billMonth)
     .in('survey_id', surveyIds)
 
   const psids = [...new Set((items || []).map((i: any) => i.psid))]
