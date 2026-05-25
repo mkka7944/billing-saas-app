@@ -215,23 +215,24 @@ All 21 `Biller_{City}_{Month}.csv` files (8 months × 3 cities) are **redundant*
 
 | Table | Key | Purpose | Size |
 |-------|-----|---------|------|
-| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category, psid (stable biller ID) | ~212K |
+| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category, psid (stable biller ID), last_verified_month | ~212K |
 | `bill_items` | psid | Monthly biller snapshot — one row per billed PSID from lifecycle XLSX. Includes `is_issued` flag (PDF issued this month), route info. Overwritten each month. | ~70K/mo |
 | `payment_history` | id | All payments — one row per (PSID, month) from daily combined Payment CSV. Append-only, all months. | ~122K |
 | `payment_summary` | bill_month | Pre-computed monthly totals (paid count + collected amount) | ~10 |
 | `profiles` | id (auth.users) | User profiles with role + permissions | ~10 |
 | `staff` | id (auth.users) | Field staff metadata (city, UC assignment) | ~70 |
 | `saved_routes` | id | Saved route data (JSON) for navigation | ~50 |
-| `verified_houses` | id | GPS-verified house locations | ~5K |
-| `staff_sync_logs` | id | Staff photo sync logging | ~1K |
+| `house_corrections` | id | GPS pin corrections + house intel entered by staff during delivery. Replaces `verified_houses`. | ~1K |
+| `daily_assignments` | id | Admin creates per-staff-per-day chunk. Replaces old `staff_sync_logs`. | ~200/day |
+| `assignment_items` | id | Individual PSID delivery tracking with photo proof. Replaces old `verified_houses.is_delivered`. | ~2000/day |
+| `delivery_photos` | id | One row per photo captured during delivery. Linked to Google Drive via photo_url. Replaces `staff_sync_logs` photo tracking. | ~3K/day |
+| `staff_daily_stats` | id | Pre-computed daily perf (assigned, delivered, missed, start/end time). Updated via trigger. | ~70/day |
 | `app_settings` | key | Key-value config store | ~5 |
 | `hierarchy` | id | Reference: distinct (city_district, tehsil, uc_name) for ACTIVE units | ~500 |
 | `surveyors` | id | Reference: distinct surveyor names for ACTIVE units | ~70 |
 | `bill_months` | month | Reference: distinct months in payment_history | ~10 |
-| *(future)* `daily_assignments` | id | Admin creates per-staff-per-day chunk | Phase A |
-| *(future)* `assignment_items` | id | Individual PSID delivery tracking | Phase B |
 
-**Dropped:** `bills` (replaced by `bill_items` + `payment_history`)
+**Dropped:** `bills` (replaced by `bill_items` + `payment_history`), `verified_houses` (replaced by `house_corrections`), `staff_sync_logs` (replaced by `delivery_photos` + `assignment_items`)
 
 ### 6.2 Domain Separation (Critical)
 
@@ -283,24 +284,38 @@ These three tables never exceed 1000 rows total. All filter dropdown queries are
 ### 6.3 Core Schema
 
 ```sql
+-- survey_units: Household identity + stable psid bridge to payments
+CREATE TABLE public.survey_units (
+  survey_id text PRIMARY KEY,
+  status text DEFAULT 'ACTIVE',
+  city_district text, tehsil text, uc_name text, uc_type text,
+  consumer_name text, address text, house_type text, unit_type text,
+  surveyor_name text, survey_date date, survey_time time,
+  lat double precision, lng double precision,
+  image_urls text[],
+  monthly_fee integer DEFAULT 0, billing_category text DEFAULT 'UNKNOWN',
+  category text, sub_category text,
+  is_biller boolean DEFAULT false,
+  psid text,                              -- Stable biller ID for domain decoupling (added Phase 0f)
+  last_verified_month text,               -- e.g. "MAY2026" — tracks monthly GPS verification (added Phase 0f)
+  created_at timestamptz, updated_at timestamptz
+);
+
 -- bill_items: Current month snapshot, populated from lifecycle XLSX
 CREATE TABLE public.bill_items (
-  psid text PRIMARY KEY,
-  survey_id text REFERENCES survey_units(survey_id),
+  psid text NOT NULL,
   bill_month text NOT NULL,
-  amount_due numeric,
-  arrears numeric DEFAULT 0,
-  monthly_fee integer DEFAULT 0,
-  billing_category text,
-  uc_name text,
-  city text,
-  tehsil text,                     -- Populated via trigger from survey_units
-  deleted_in_portal text,          -- "Yes"/"No" — critical filter for staff delivery
+  survey_id text REFERENCES survey_units(survey_id),
+  amount_due numeric, arrears numeric DEFAULT 0,
+  monthly_fee integer DEFAULT 0, billing_category text,
+  uc_name text, city text,
+  tehsil text,                            -- Populated via trigger from survey_units
+  deleted_in_portal text,                 -- "Yes"/"No" — critical filter for staff delivery
   is_issued boolean DEFAULT false,
-  start_month text,
-  route_name text,
-  route_seq integer DEFAULT 0,
-  created_at timestamptz DEFAULT now()
+  start_month text, route_name text, route_seq integer DEFAULT 0,
+  pdf_bill_number text,                   -- Populated post-print by pdf-bill-printer mapping
+  created_at timestamptz DEFAULT now(),
+  PRIMARY KEY (psid, bill_month)          -- Composite PK enables historical queries (Phase 0f)
 );
 
 -- payment_history: All payments, upserted daily from Payment CSV
@@ -309,16 +324,77 @@ CREATE TABLE public.payment_history (
   psid text NOT NULL,
   bill_month text NOT NULL,
   amount_paid numeric DEFAULT 0,
-  paid_date date,
-  payment_method text,
-  payment_status text,
-  fine numeric DEFAULT 0,
+  paid_date date, payment_method text,
+  payment_status text, fine numeric DEFAULT 0,
   created_at timestamptz DEFAULT now(),
   UNIQUE (psid, bill_month)
 );
+
+-- house_corrections: Manual GPS pin corrections by staff during delivery
+CREATE TABLE public.house_corrections (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  survey_id text NOT NULL REFERENCES survey_units(survey_id),
+  corrected_lat numeric, corrected_lng numeric,
+  original_lat numeric, original_lng numeric,   -- Snapshot before correction
+  street_no text, landmark text, notes text,
+  correction_type text DEFAULT 'gps_fix'
+    CHECK (correction_type IN ('gps_fix','address_update','intel_add','full_verify')),
+  corrected_by uuid REFERENCES staff(id),
+  corrected_at timestamptz DEFAULT now(),
+  assigned_date date                             -- Which day's delivery triggered this
+);
+
+-- daily_assignments: Admin creates one per staff per day per UC
+CREATE TABLE public.daily_assignments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_id uuid NOT NULL REFERENCES staff(id),
+  assigned_date date NOT NULL,
+  uc_name text NOT NULL,
+  total_items integer DEFAULT 0,
+  created_by uuid REFERENCES staff(id),
+  created_at timestamptz DEFAULT now()
+);
+
+-- assignment_items: Individual PSIDs within a daily chunk
+CREATE TABLE public.assignment_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assignment_id uuid NOT NULL REFERENCES daily_assignments(id) ON DELETE CASCADE,
+  psid text NOT NULL,
+  route_seq integer DEFAULT 0,
+  status text DEFAULT 'pending'
+    CHECK (status IN ('pending','delivered','missed','skipped')),
+  delivered_at timestamptz,
+  gps_lat numeric, gps_lng numeric,             -- GPS at time of delivery capture
+  notes text,
+  UNIQUE (assignment_id, psid)
+);
+
+-- delivery_photos: One row per photo captured during delivery
+CREATE TABLE public.delivery_photos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assignment_item_id uuid NOT NULL REFERENCES assignment_items(id) ON DELETE CASCADE,
+  photo_url text NOT NULL,
+  gdrive_file_id text,                           -- Google Drive file ID for webhook tracking
+  gps_lat numeric, gps_lng numeric,
+  captured_at timestamptz DEFAULT now(),
+  synced_to_drive boolean DEFAULT false
+);
+
+-- staff_daily_stats: Pre-computed, updated via trigger on assignment_items changes
+CREATE TABLE public.staff_daily_stats (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_id uuid NOT NULL REFERENCES staff(id),
+  assigned_date date NOT NULL,
+  total_assigned integer DEFAULT 0,
+  delivered integer DEFAULT 0,
+  missed integer DEFAULT 0,
+  start_time timestamptz,
+  end_time timestamptz,
+  UNIQUE (staff_id, assigned_date)
+);
 ```
 
-Indexes: `bill_items(survey_id)`, `bill_items(deleted_in_portal)`, `bill_items(tehsil)`, `bill_items(city)`, `bill_items(uc_name)`, `bill_items(bill_month)`, `payment_history(psid)`, `payment_history(psid, bill_month)`, `payment_history(bill_month)`, `survey_units(status)`
+Indexes: `bill_items(survey_id)`, `bill_items(deleted_in_portal)`, `bill_items(tehsil)`, `bill_items(city)`, `bill_items(uc_name)`, `bill_items(bill_month)`, `payment_history(psid)`, `payment_history(psid, bill_month)`, `payment_history(bill_month)`, `survey_units(status)`, `survey_units(psid)` UNIQUE WHERE NOT NULL, `house_corrections(survey_id)`
 
 ### 6.4 Database Triggers
 
@@ -327,6 +403,7 @@ Indexes: `bill_items(survey_id)`, `bill_items(deleted_in_portal)`, `bill_items(t
 | `trg_bill_items_set_tehsil` | `bill_items` | BEFORE INSERT | Auto-populates `tehsil` from `survey_units` via `survey_id` FK. Allows override if `tehsil` is explicitly provided. |
 | `trg_payment_history_refresh_summary` | `payment_history` | AFTER INSERT/UPDATE/DELETE | Recomputes `payment_summary` for the affected `bill_month`. |
 | `trg_survey_units_upsert_hierarchy` | `survey_units` | AFTER INSERT/UPDATE/DELETE | Upserts `hierarchy` reference table when city_district/tehsil/uc_name/status changes. |
+| `trg_refresh_staff_stats` | `assignment_items` | AFTER INSERT/UPDATE/DELETE | Recomputes `staff_daily_stats` for affected staff+date. Updates delivered/missed counts. |
 
 ### 6.5 Data Sources → Field Mapping
 
@@ -387,6 +464,12 @@ Run these in order in the Supabase SQL Editor:
 3. `008-add-tehsil-to-bill-items.sql` — adds `tehsil` column, backfills from `survey_units`, creates index
 4. `009-triggers-and-automation.sql` — creates triggers for ongoing data integrity
 5. `010-reference-tables.sql` — creates `hierarchy`, `surveyors`, `bill_months` + maintenance trigger
+6. `011-performance-indexes.sql` — adds missing indexes (status, trigram, composite, payment_status)
+7. `012-add-psid-to-survey-units.sql` — adds `psid` column, backfills from `bill_items`, creates unique index
+8. `013-add-verification-tracking.sql` — adds `last_verified_month` to survey_units
+9. `014-house-corrections-table.sql` — creates `house_corrections` (replaces `verified_houses`)
+10. `015-revise-rpcs.sql` — updates 5 RPCs to use `survey_units.psid` + reference tables
+11. `016-delivery-tracking-tables.sql` — creates 4 delivery tables + triggers
 
 ---
 ## 7. Monthly Data Workflow
@@ -400,10 +483,17 @@ Run these in order in the Supabase SQL Editor:
 ### Daily
 1. **Admin:** Runs `bill-extractor-v4.py` → fetches updated payment CSV → upserts `payment_history`
    - Trigger `trg_payment_history_refresh_summary` auto-refreshes `payment_summary`
-2. **Admin:** Opens `/assignments` → creates daily staff assignments per UC/MC
-3. **Field Staff:** Opens `/deliver` → sees assigned bills only
-4. **Staff:** Navigates house-to-house, captures photo, marks delivered/missed
-5. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL
+2. **Admin:** Opens `/assignments` → picks UC → sees unassigned bills → picks staff → sets count → creates daily chunk
+   - Creates `daily_assignments` + `assignment_items` rows
+3. **Field Staff:** Opens `/deliver` → sees today's assigned bills only (from `assignment_items` joined to `daily_assignments`)
+4. **Staff:** Navigates house-to-house in route sequence order:
+   - Arrives at house → taps "Deliver" → camera opens → captures 1-3 photos
+   - Photos compressed locally → queued in IndexedDB if offline
+   - GPS captured at delivery time → saved to `assignment_items.gps_lat/gps_lng`
+   - Status set to `delivered` or `missed` (with reason + photo)
+5. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL → saved to `delivery_photos`
+6. **Route derivation:** After 2-3 months, actual delivery timestamps from `assignment_items.delivered_at` form the optimal route order for each UC
+7. **House corrections:** Staff long-presses map to correct GPS → saved to `house_corrections` with original+corrected coords + staff ID + delivery date
 
 ---
 ## 8. Performance Rules (Must Follow)
@@ -435,6 +525,9 @@ Run these in order in the Supabase SQL Editor:
 | 10 | Reference table out of sync after bulk import | Import script upserts reference tables. Trigger provides real-time sync for incremental changes. |
 | 11 | Staff assigned to UC that disappears from hierarchy | Assignment references bill_items.psid directly, not UC name. House still renders even if UC renamed. |
 | 12 | Photo taken offline, assignment completed hours later | Photo queued in IndexedDB with assignment_item_id. On sync, photo metadata links to assignment. Count reflects sync'd count, not taken count. |
+| 13 | House GPS coordinates are wrong — staff needs to correct | Staff long-presses correct location on map → pin drops. Saved to `house_corrections` with original+corrected lat/lng, staff ID, and delivery date. Admin reviews and can update `survey_units.lat/lng`. |
+| 14 | Legacy `verified_houses` and `staff_sync_logs` data | No import — corrections are stale, old photo logs lack house linkage. Archive to JSON file in `scripts/archive/` before dropping tables. |
+| 15 | Multiple PSIDs per survey_id — which one is the "primary" for `survey_units.psid`? | First PSID from lifecycle data (earliest start_month). Secondary PSIDs remain in `bill_items` for delivery. |
 
 ---
 ## 10. Implementation Phases
@@ -458,21 +551,30 @@ Run these in order in the Supabase SQL Editor:
 | 0e.5 | 10 min | Add `survey_units.status` index |
 | 0e.6 | 30 min | Fix `FinanceSummary` type to match actual API response (remove empty arrays or populate them) |
 
+### Phase 0f — Schema Restructuring Foundation (~3 hrs)
+| Step | Time | Task |
+|------|------|------|
+| 0f.1 | 20 min | `012-add-psid-to-survey-units.sql` — add `psid` column, backfill from `bill_items`, unique partial index |
+| 0f.2 | 5 min | `013-add-verification-tracking.sql` — add `last_verified_month` to `survey_units` |
+| 0f.3 | 20 min | `014-house-corrections-table.sql` — create `house_corrections` table to replace `verified_houses` |
+| 0f.4 | 15 min | `015-revise-rpcs.sql` — update 5 RPCs (`get_billing_group_stats`, `get_billing_summary`, `get_hierarchy`, `get_surveyors`, `get_bill_months`) |
+| 0f.5 | 30 min | `016-delivery-tracking-tables.sql` — create 4 delivery tables + triggers |
+| 0f.6 | 10 min | Archive legacy tables: `scripts/archive-legacy-tables.py` → JSON → drop `verified_houses`, `staff_sync_logs` |
+
 ### Phase A — Admin Assignment UI (~3 hrs)
 | Step | Time | Task |
 |------|------|------|
-| A.1 | 30 min | SQL: `daily_assignments` + `assignment_items` tables |
-| A.2 | 30 min | `GET /api/assignments` + `POST /api/assignments` endpoints |
-| A.3 | 60 min | `/assignments` page: UC list with totals, click → unassigned bills → pick staff → set count |
-| A.4 | 30 min | Assignment management: view active, completion %, revoke |
-| A.5 | 30 min | `/route` tab from `saved_routes`, grouped city→UC→route |
+| A.1 | 30 min | `GET /api/assignments` + `POST /api/assignments` endpoints |
+| A.2 | 60 min | `/assignments` page: UC list with totals, click → unassigned bills → pick staff → set count |
+| A.3 | 30 min | Assignment management: view active, completion %, revoke |
+| A.4 | 30 min | `/route` tab from `saved_routes`, grouped city→UC→route |
 
 ### Phase B — Field Staff Delivery UI (~6 hrs)
 | Step | Time | Task |
 |------|------|------|
 | B.1 | 60 min | `/deliver` page: full-screen mobile map with assigned bill markers, bottom sheet with progress bar |
 | B.2 | 30 min | House detail bottom sheet: name, address, bill amount, delivery status, photo button |
-| B.3 | 60 min | Photo capture: camera API → WebP compress → IndexedDB queue → GAS webhook → Drive URL saved to `assignment_items` |
+| B.3 | 60 min | Photo capture: camera API → WebP compress → IndexedDB queue → GAS webhook → Drive URL saved to `delivery_photos` |
 | B.4 | 30 min | Status marking: delivered (photo+GPS) or missed (photo+reason+GPS) — both update `assignment_items` |
 | B.5 | 30 min | Live progress: "Delivered X/Y" from assignment_items photo count |
 | B.6 | 60 min | Swipeable card list view: pull-to-refresh, sorted by route sequence |
@@ -501,10 +603,11 @@ Run these in order in the Supabase SQL Editor:
 |-------|------|------------|
 | 0d | 1.5 hrs | 1.5 hrs |
 | 0e | 2 hrs | 3.5 hrs |
-| A | 3 hrs | 6.5 hrs |
-| B | 6 hrs | 12.5 hrs |
-| C | 3 hrs | 15.5 hrs |
-| D | 4 hrs | 19.5 hrs |
+| 0f | 3 hrs | 6.5 hrs |
+| A | 3 hrs | 9.5 hrs |
+| B | 6 hrs | 15.5 hrs |
+| C | 3 hrs | 18.5 hrs |
+| D | 4 hrs | 22.5 hrs |
 
 ---
 ## 11. Implementation Workflow (Permanent Rule)
@@ -535,11 +638,53 @@ When in a phase/step and the user asks a question: Answer the question, then ret
 - **PDF bill number** comes from `pdf-bill-printer.py` mapping file, NOT from lifecycle XLSX. Lifecycle only has a boolean `is_issued` (PDF Issued) column.
 - **Biller data and payments are separate domains** — should never be intermingled in the same query path.
 **Next session:**
-- Review and approve domain separation design
-- Add `psid` column to `survey_units`, backfill from `bill_items`
-- Update all queries to use `survey_units.psid` for geography-based payment lookups
-- Design recovery reports page (independent of biller data)
-- Factor in `pdf-bill-printer.py` mapping for `pdf_bill_number` in `bill_items`
+- Phase 0f: Schema restructuring — add `psid`, `last_verified_month`, `house_corrections`, delivery tables, revise RPCs, archive legacy
+
+### 2026-05-25 (Schema Restructuring Plan) — Location: Office
+**Focus:** Comprehensive schema restructuring to fix domain coupling, add delivery accountability, clean legacy
+**Done:**
+- Analyzed full DB schema (11 SQL files, all API routes, TypeScript types, 618-line MASTER.md)
+- Designed 6-step Phase 0f migration plan:
+  1. `012-add-psid-to-survey-units.sql` — decouples payments from bill_items via survey_units.psid
+  2. `013-add-verification-tracking.sql` — last_verified_month for GPS verification tracking
+  3. `014-house-corrections-table.sql` — replaces `verified_houses` with FK-linked, auditable corrections
+  4. `015-revise-rpcs.sql` — 5 RPCs updated for survey_units.psid + reference tables
+  5. `016-delivery-tracking-tables.sql` — 4 new tables (daily_assignments, assignment_items, delivery_photos, staff_daily_stats)
+  6. Archive legacy tables (`verified_houses`, `staff_sync_logs`) to JSON before dropping
+- Decided: No legacy data import needed (stale corrections, unlinked photo logs)
+- Decided: Separate `delivery_photos` table (not array column) — better for GAS webhook async flow
+- Decided: Composite PK `(psid, bill_month)` for bill_items — enables historical billing queries
+- Added 3 new edge case decisions (#13-#15): GPS correction flow, legacy archive, primary PSID resolution
+- Updated MASTER.md extensively: Section 6 tables, 6.3 Core Schema, 6.4 Triggers, 6.7 Migration Order, Section 9 Edge Cases, Section 10 Phases (0f added, A revised), estimates, changelog
+**Key decisions:**
+- `delivery_photos` table over array column — avoids race conditions with GAS webhook concurrent uploads
+- No legacy import — corrections stale, photos unlinked. Archive to JSON for reference.
+- Composite PK for bill_items — enables querying past monthly billing amounts and is_issued history
+**Next session:**
+- Continue Phase 0f from Step 0f.3 (house_corrections table)
+
+### 2026-05-25 (Phase 0f Start — Steps 0f.1 + 0f.2) — Location: Office
+**Focus:** Execute Phase 0f schema restructuring — first 2 migrations
+**Done:**
+- Created `scripts/sql/012-add-psid-to-survey-units.sql` — adds `psid` to `survey_units`, backfills from `bill_items`, creates unique partial index + JOIN index
+  - Column already existed from partial prior run (4,682 rows populated)
+  - UPDATE backfilled remaining 207K+ rows using `bill_items.survey_id` match
+  - Verified: 0 unmatched rows, all survey_units with matching bill_items got psid
+- Created `scripts/sql/013-add-verification-tracking.sql` — adds `last_verified_month` to `survey_units`, creates partial index
+- Updated MASTER.md: Phase 0f progress tracked, changelog v5.2
+**Key finding:** `survey_units.psid` already existed from previous partial run (4,682 rows). Migration ran cleanly — `ADD COLUMN IF NOT EXISTS` skipped, UPDATE handled remaining rows.
+**Next session:**
+- Continue Phase 0f → Step 0f.3: `014-house-corrections-table.sql`
+- Steps remaining: 0f.3 (house_corrections), 0f.4 (revise RPCs), 0f.5 (delivery tables), 0f.6 (archive legacy)
+- Then Phase A: Admin Assignment API + UI
+
+---
+### ═══ SESSION CONTINUATION POINT ═══
+### Start here on next session — Phase 0f, Step 0f.3
+### All prior phases (0b, 0c, 0d, 0e) complete
+### DB has survey_units (~212K), bill_items (~213K), payment_history (~122K),
+###   reference tables (hierarchy/surveyors/bill_months), psid column populated
+### Files created since last push: 012-add-psid-to-survey-units.sql, 013-add-verification-tracking.sql
 
 ### 2026-05-24 (Architecture Reset) — Location: Home
 **Focus:** MASTER.md rewrite with mobile-first field staff UX + reference table architecture + visual rehaul plan
@@ -587,9 +732,23 @@ scripts/ref/ (6 files + routing-station-src dir, ~1.5 MB):
   .env.old-* (4 files) — Old Supabase credentials for reference
   routing-station-src/ (1.4 MB) — Old routing station source code reference
 
+scripts/sql/ (17 active migration files, ~120 KB):
+  005-bill-items-payment-history.sql — Core 2-table model (bill_items + payment_history)
+  006-payment-summary.sql — Pre-computed monthly payment totals
+  007-data-insight-rpcs.sql — 7 RPCs for admin aggregation
+  008-add-tehsil-to-bill-items.sql — tehsil column + backfill
+  009-triggers-and-automation.sql — tehsil + payment_summary triggers
+  010-reference-tables.sql — hierarchy, surveyors, bill_months ref tables
+  011-performance-indexes.sql — Missing indexes (status trigram, composite)
+  012-add-psid-to-survey-units.sql — Phase 0f: psid column + backfill + index
+  013-add-verification-tracking.sql — Phase 0f: last_verified_month column
+  014-house-corrections-table.sql — Phase 0f: replaces verified_houses
+  015-revise-rpcs.sql — Phase 0f: 5 RPCs updated for psid + ref tables
+  016-delivery-tracking-tables.sql — Phase 0f: delivery infrastructure (4 tables + triggers)
 scripts/sql/_old/ (17 files, 49 KB):
   schema_update_phase_a.sql + parts — Old schema migrations
   rpc_*.sql — Old RPC definitions (finance_metrics, retention_report, etc.)
+scripts/archive/ (gitignored, created by archive-legacy-tables.py):
 
 scripts/data/ (gitignored — 1.10 GB total, 110 files):
   excel_dumps/ (369 MB, 44 CSV) — Biller data per city per month
@@ -616,3 +775,5 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-24 | 4.0 | Full SSR migration + triggers |
 | 2026-05-24 | 5.0 | **Architecture reset:** Reference tables (hierarchy/surveyors/bill_months). Two-mode UX (mobile-first staff / desktop-first admin). Visual design system. Hour-based phase estimates. |
 | 2026-05-25 | 5.1 | **Domain separation discovery:** Biller data (`bill_items`) ≠ payments (`payment_history`). Decoupled through `survey_units.psid`. `get_billing_summary` RPC rewritten to use `payment_history` as primary source. Performance indexes added (011). |
+| 2026-05-25 | 5.2 | **Schema restructuring plan (Phase 0f):** 6 new SQL migrations (012-016) — `psid` on survey_units, `last_verified_month`, `house_corrections`, 4 delivery tables (daily_assignments, assignment_items, delivery_photos, staff_daily_stats), revised RPCs, archive legacy. Composite PK `(psid, bill_month)` for `bill_items`. 3 new edge cases (#13-#15). Phase estimates updated to 22.5 hrs total. |
+| 2026-05-25 | 5.3 | **Phase 0f execution:** Step 0f.1 (psid) and 0f.2 (last_verified_month) applied successfully. psid backfilled 207K+ rows. Session continuation point marked at Step 0f.3. |
