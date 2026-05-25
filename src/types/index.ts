@@ -65,18 +65,20 @@ export interface RouteWaypoint {
   name: string
 }
 
-export interface VerifiedHouse {
+export interface HouseCorrection {
   id: string
   survey_id: string
-  latitude: number
-  longitude: number
-  surveyor_name: string | null
-  route_name: string | null
-  verified_at: string
-  billing_month: string | null
-  verified_by: string | null
-  is_delivered: boolean
-  delivered_at: string | null
+  corrected_lat: number | null
+  corrected_lng: number | null
+  original_lat: number | null
+  original_lng: number | null
+  street_no: string | null
+  landmark: string | null
+  notes: string | null
+  correction_type: 'gps_fix' | 'address_update' | 'intel_add' | 'full_verify'
+  corrected_by: string | null
+  corrected_at: string
+  assigned_date: string | null
 }
 
 export interface Staff {

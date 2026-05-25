@@ -663,6 +663,17 @@ When in a phase/step and the user asks a question: Answer the question, then ret
 **Next session:**
 - Continue Phase 0f from Step 0f.3 (house_corrections table)
 
+### 2026-05-25 (Phase 0f Complete — Steps 0f.4+0f.5+0f.6) — Location: Office
+**Focus:** RPCs revised, delivery tables created, legacy tables archived
+**Done:**
+- Created `scripts/sql/015-revise-rpcs.sql` — 5 RPCs updated for domain decoupling + reference tables
+- Created `scripts/sql/016-delivery-tracking-tables.sql` — 4 delivery tables + trigger `trg_refresh_staff_stats`
+- Created `scripts/archive-legacy-tables.py` — archives `verified_houses` + `staff_sync_logs` to JSON, then drops them
+- Updated MASTER.md: Phase 0f complete, session continuation point moved to Phase A.1
+**Supabase storage:** At 480MB on free tier. Plan: run legacy archive script to recover space, then monitor for Phase A impact.
+**Next session:**
+- Phase A.1: `GET /api/assignments` + `POST /api/assignments` endpoints
+
 ### 2026-05-25 (Phase 0f Start — Steps 0f.1 + 0f.2) — Location: Office
 **Focus:** Execute Phase 0f schema restructuring — first 2 migrations
 **Done:**
@@ -680,11 +691,12 @@ When in a phase/step and the user asks a question: Answer the question, then ret
 
 ---
 ### ═══ SESSION CONTINUATION POINT ═══
-### Start here on next session — Phase 0f, Step 0f.3
-### All prior phases (0b, 0c, 0d, 0e) complete
+### Start here on next session — Phase A, Step A.1
+### All prior phases (0b, 0c, 0d, 0e, 0f) complete
 ### DB has survey_units (~212K), bill_items (~213K), payment_history (~122K),
-###   reference tables (hierarchy/surveyors/bill_months), psid column populated
-### Files created since last push: 012-add-psid-to-survey-units.sql, 013-add-verification-tracking.sql
+###   reference tables (hierarchy/surveyors/bill_months), psid column populated,
+###   house_corrections table, delivery tracking tables (4), legacy tables archived
+### Files created since last push: 012–016 SQL migrations, archive-legacy-tables.py
 
 ### 2026-05-24 (Architecture Reset) — Location: Home
 **Focus:** MASTER.md rewrite with mobile-first field staff UX + reference table architecture + visual rehaul plan
@@ -776,4 +788,4 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-24 | 5.0 | **Architecture reset:** Reference tables (hierarchy/surveyors/bill_months). Two-mode UX (mobile-first staff / desktop-first admin). Visual design system. Hour-based phase estimates. |
 | 2026-05-25 | 5.1 | **Domain separation discovery:** Biller data (`bill_items`) ≠ payments (`payment_history`). Decoupled through `survey_units.psid`. `get_billing_summary` RPC rewritten to use `payment_history` as primary source. Performance indexes added (011). |
 | 2026-05-25 | 5.2 | **Schema restructuring plan (Phase 0f):** 6 new SQL migrations (012-016) — `psid` on survey_units, `last_verified_month`, `house_corrections`, 4 delivery tables (daily_assignments, assignment_items, delivery_photos, staff_daily_stats), revised RPCs, archive legacy. Composite PK `(psid, bill_month)` for `bill_items`. 3 new edge cases (#13-#15). Phase estimates updated to 22.5 hrs total. |
-| 2026-05-25 | 5.3 | **Phase 0f execution:** Step 0f.1 (psid) and 0f.2 (last_verified_month) applied successfully. psid backfilled 207K+ rows. Session continuation point marked at Step 0f.3. |
+| 2026-05-25 | 6.0 | **Phase 0f complete.** Steps 0f.1–0f.6 applied. Schema restructuring, domain decoupling, delivery tracking tables, legacy archive. DB at ~480MB (free tier). |

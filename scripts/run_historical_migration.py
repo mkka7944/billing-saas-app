@@ -513,6 +513,7 @@ class HistoricalMigration:
     def run(self):
         parser = argparse.ArgumentParser(description="Historical Data Migration -> billing Supabase")
         parser.add_argument("--payments-only", action="store_true", help="Only sync payment_history (daily)")
+        parser.add_argument("--bills-only", action="store_true", help="Only sync bill_items (lifecycle), skip survey_units")
         parser.add_argument("--reset", action="store_true", help="Purge tables before upload")
         parser.add_argument("--dry-run", action="store_true", help="Process files but skip upload")
         parser.add_argument("--month", type=str, help="Override month filter for lifecycle (e.g. May2026)")
@@ -521,6 +522,23 @@ class HistoricalMigration:
         print(f"Historical Migration — Phase 0b (3-table design)")
         print(f"Supabase: {SUPABASE_URL}")
         print(f"Data:     {DATA_DIR}")
+
+        if args.bills_only:
+            print("\n[BILLS-ONLY MODE]")
+            print("\n[1/2] Loading Lifecycle XLSX -> bill_items...")
+            self.load_lifecycle(month_override=args.month)
+            print("\n[2/2] Loading Payment History -> payment_history...")
+            self.load_payments()
+            if args.dry_run:
+                print("\n[DRY RUN] Skipping upload.")
+                self.print_summary()
+                return
+            print("\nUploading bill_items...")
+            self.upload_chunked("bill_items", self.bill_items_rows)
+            print("\nUploading payment_history...")
+            self.upload_chunked("payment_history", self.payment_rows)
+            self.print_summary()
+            return
 
         if args.payments_only:
             print("\n[PAYMENTS-ONLY MODE]")
