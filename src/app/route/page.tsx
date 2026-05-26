@@ -73,33 +73,35 @@ export default function RoutePage() {
                   <Loader2 className="size-4 mr-2 animate-spin" /> Loading...
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8">#</TableHead>
-                      <TableHead>Consumer</TableHead>
-                      <TableHead>PSID</TableHead>
-                      <TableHead>Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {routeUnits.map((u, i) => (
-                      <TableRow key={u.survey_id}>
-                        <TableCell className="text-xs text-muted-foreground tabular-nums">{i + 1}</TableCell>
-                        <TableCell className="text-xs max-w-[250px] truncate">{u.consumer_name || '-'}</TableCell>
-                        <TableCell className="text-xs font-mono">{u.psid?.slice(-8) || '-'}</TableCell>
-                        <TableCell className="text-xs tabular-nums">{u.amount_due ? `Rs. ${u.amount_due.toLocaleString()}` : '-'}</TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-8">#</TableHead>
+                        <TableHead>Consumer</TableHead>
+                        <TableHead>PSID</TableHead>
+                        <TableHead>Amount</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {routeUnits.map((u, i) => (
+                        <TableRow key={u.survey_id}>
+                          <TableCell className="text-xs text-muted-foreground tabular-nums">{i + 1}</TableCell>
+                          <TableCell className="text-xs max-w-[250px] truncate">{u.consumer_name || '-'}</TableCell>
+                          <TableCell className="text-xs font-mono">{u.psid?.slice(-8) || '-'}</TableCell>
+                          <TableCell className="text-xs tabular-nums">{u.amount_due ? `Rs. ${u.amount_due.toLocaleString()}` : '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </div>
           </>
         ) : (
           <div className="flex flex-1 overflow-hidden">
-            {/* City tree sidebar */}
-            <div className="w-64 border-r overflow-y-auto shrink-0 p-2 space-y-1">
+            {/* City tree sidebar — full width on mobile, 256px on desktop */}
+            <div className="w-full lg:w-64 border-r overflow-y-auto shrink-0 p-2 space-y-1">
               <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1">Cities</h2>
               {isLoading ? (
                 <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
@@ -152,8 +154,8 @@ export default function RoutePage() {
               ))}
             </div>
 
-            {/* Empty state */}
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+            {/* Empty state — hidden on mobile when tree is full width */}
+            <div className="hidden lg:flex flex-1 items-center justify-center text-sm text-muted-foreground">
               Select a route to view its stops
             </div>
           </div>

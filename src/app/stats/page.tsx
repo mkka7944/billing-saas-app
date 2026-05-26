@@ -10,10 +10,11 @@ import { useStaffPerformance, useSavePerformance } from '@/hooks/use-staff-perfo
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, CheckCircle2, XCircle, TrendingUp, Star, FileText } from 'lucide-react'
-import { AppHeader } from '@/components/layout/AppHeader'
+import { AppShell } from '@/components/layout/AppShell'
 
 export default function StatsPage() {
   const router = useRouter()
+  const user = useAuthStore((s) => s.user)
   const role = useAuthStore((s) => s.role)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const [selectedStaff, setSelectedStaff] = useState<string>('')
@@ -31,7 +32,11 @@ export default function StatsPage() {
   const { data: perfRecords } = useStaffPerformance(modalStaff?.id || undefined, fromDate, toDate)
   const savePerf = useSavePerformance()
 
-  useEffect(() => { setPageIdentity('Staff Delivery Stats') }, [setPageIdentity])
+  useEffect(() => {
+    if (!user) router.replace('/login')
+  }, [user, router])
+
+  useEffect(() => { setPageIdentity('Delivery Stats') }, [setPageIdentity])
 
   if (role !== 'admin') {
     return (
@@ -40,6 +45,7 @@ export default function StatsPage() {
       </div>
     )
   }
+
 
   const totals = stats?.reduce(
     (s, r) => ({
@@ -70,10 +76,10 @@ export default function StatsPage() {
     setModalStaff(null)
   }
 
-  return (
-    <div className="h-full flex flex-col">
-      <AppHeader forceBack onBack={() => router.push('/map')} />
+  if (!user) return null
 
+  return (
+    <AppShell>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="flex flex-wrap gap-3">
           <select
@@ -236,6 +242,6 @@ export default function StatsPage() {
           </div>
         </div>
       )}
-    </div>
+    </AppShell>
   )
 }

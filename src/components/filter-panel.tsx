@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { useBillingStore } from '@/stores/billing-store'
 import { useHierarchy } from '@/hooks/use-hierarchy'
 import { useBillMonths } from '@/hooks/use-bill-months'
 import { shortenMCName, compareMC } from '@/lib/mc-utils'
+import { currentMonth } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { ChevronDown, X, SlidersHorizontal, Search, Check, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -259,20 +260,19 @@ function FilterPanelInner({ onClose }: { onClose?: () => void }) {
       </div>
 
       {onClose && (
-        <div className="mt-auto border-t border-border p-3 flex gap-2">
-          <Button
+        <div className="mt-auto border-t border-border p-4 flex gap-3">
+          <button
             onClick={() => { cancelFilters(); onClose() }}
-            variant="outline"
-            className="h-10 text-sm font-bold flex-1"
+            className="flex-1 h-12 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors cursor-pointer"
           >
             Cancel
-          </Button>
-          <Button
+          </button>
+          <button
             onClick={() => { applyFilters(); onClose() }}
-            className="h-10 text-sm font-bold flex-1"
+            className="flex-1 h-12 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity cursor-pointer"
           >
             Apply
-          </Button>
+          </button>
         </div>
       )}
     </div>
@@ -369,10 +369,20 @@ function FilterDropdown({
   )
 }
 
+const PENDING_DEFAULTS = {
+  districts: [] as string[],
+  tehsils: [] as string[],
+  ucs: [] as string[],
+  surveyor: null as string | null,
+  paymentStatus: 'all' as 'all' | 'paid' | 'unpaid' | 'overdue',
+  unitType: null as string | null,
+  search: '',
+  billMonth: currentMonth(),
+}
+
 export function DesktopFilterBar() {
-  const filters = useBillingStore((s) => s.filters)
-  const setFilters = useBillingStore((s) => s.setFilters)
-  const resetFilters = useBillingStore((s) => s.resetFilters)
+  const pendingFilters = useBillingStore((s) => s.pendingFilters)
+  const setPendingFilter = useBillingStore((s) => s.setPendingFilter)
   const { data: hierarchy } = useHierarchy()
   const { data: billMonths } = useBillMonths()
 
@@ -381,14 +391,14 @@ export function DesktopFilterBar() {
   const districts = hierarchy?.districts || []
 
   const tehsils = useMemo(() => {
-    if (!filters.districts.length) return []
-    return filters.districts.flatMap((d) => hierarchy?.tehsils[d] || [])
-  }, [filters.districts, hierarchy])
+    if (!pendingFilters.districts.length) return []
+    return pendingFilters.districts.flatMap((d) => hierarchy?.tehsils[d] || [])
+  }, [pendingFilters.districts, hierarchy])
 
   const ucs = useMemo(() => {
     const list: { value: string; label: string; short: string }[] = []
-    const dists = filters.districts.length ? filters.districts : []
-    const tehls = filters.tehsils.length ? filters.tehsils : []
+    const dists = pendingFilters.districts.length ? pendingFilters.districts : []
+    const tehls = pendingFilters.tehsils.length ? pendingFilters.tehsils : []
     if (!dists.length || !tehls.length) return list
     for (const d of dists) {
       for (const t of tehls) {
@@ -399,51 +409,55 @@ export function DesktopFilterBar() {
       }
     }
     return list.sort((a, b) => compareMC(a.short, b.short))
-  }, [filters.districts, filters.tehsils, hierarchy])
+  }, [pendingFilters.districts, pendingFilters.tehsils, hierarchy])
 
   const activeFilterCount = [
-    filters.districts.length,
-    filters.tehsils.length,
-    filters.ucs.length,
-    filters.surveyor !== null,
-    filters.paymentStatus !== 'all',
-    filters.search !== '',
+    pendingFilters.districts.length,
+    pendingFilters.tehsils.length,
+    pendingFilters.ucs.length,
+    pendingFilters.surveyor !== null,
+    pendingFilters.paymentStatus !== 'all',
+    pendingFilters.search !== '',
   ].filter(Boolean).length
 
   const hasActiveFilters = activeFilterCount > 0
 
   const toggleSelect = useCallback(
     (group: 'districts' | 'tehsils' | 'ucs', value: string) => {
-      const current = new Set(filters[group])
+      const current = new Set(pendingFilters[group])
       if (current.has(value)) current.delete(value)
       else current.add(value)
       const update: Partial<Record<'districts' | 'tehsils' | 'ucs', string[]>> = { [group]: [...current] }
       if (group === 'districts') { update.tehsils = []; update.ucs = [] }
       if (group === 'tehsils') { update.ucs = [] }
-      setFilters(update)
+      setPendingFilter(update)
     },
-    [filters, setFilters]
+    [pendingFilters, setPendingFilter]
   )
 
+  const resetPendingFilters = useCallback(() => {
+    setPendingFilter(PENDING_DEFAULTS)
+  }, [setPendingFilter])
+
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 border-b bg-background shrink-0">
+    <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/20 shrink-0">
       {/* Search */}
       <div className={cn(
         'relative flex items-center rounded-lg border transition-colors shrink-0',
-        searchFocused ? 'border-primary ring-1 ring-primary/20' : 'border-border'
+        searchFocused ? 'border-primary ring-1 ring-primary/20 shadow-sm' : 'border-border hover:border-muted-foreground/30'
       )}>
-        <Search className="absolute left-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+        <Search className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
         <Input
           placeholder="Search name or ID..."
-          value={filters.search}
-          onChange={(e) => setFilters({ search: e.target.value })}
+          value={pendingFilters.search}
+          onChange={(e) => setPendingFilter({ search: e.target.value })}
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
-          className="pl-7 h-8 text-xs border-0 ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 w-[160px]"
+          className="pl-8 h-8 text-xs border-0 ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 w-[180px]"
         />
-        {filters.search && (
+        {pendingFilters.search && (
           <button
-            onClick={() => setFilters({ search: '' })}
+            onClick={() => setPendingFilter({ search: '' })}
             className="absolute right-1 h-6 w-6 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
           >
             <X className="h-3 w-3 text-muted-foreground" />
@@ -453,8 +467,8 @@ export function DesktopFilterBar() {
 
       {/* Payment Status */}
       <Select
-        value={filters.paymentStatus}
-        onValueChange={(v) => setFilters({ paymentStatus: (v || 'all') as typeof filters.paymentStatus })}
+        value={pendingFilters.paymentStatus}
+        onValueChange={(v) => setPendingFilter({ paymentStatus: (v || 'all') as typeof pendingFilters.paymentStatus })}
       >
         <SelectTrigger className="w-[100px] h-8 text-xs">
           <SelectValue placeholder="Status" />
@@ -469,8 +483,8 @@ export function DesktopFilterBar() {
 
       {/* Bill Month */}
       <Select
-        value={filters.billMonth || ''}
-        onValueChange={(v) => setFilters({ billMonth: v || null })}
+        value={pendingFilters.billMonth || ''}
+        onValueChange={(v) => setPendingFilter({ billMonth: v || null })}
       >
         <SelectTrigger className="w-[110px] h-8 text-xs">
           <SelectValue placeholder="Month" />
@@ -482,15 +496,17 @@ export function DesktopFilterBar() {
         </SelectContent>
       </Select>
 
+      <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
+
       {/* District */}
       <FilterDropdown
         id="district"
         label="District"
         items={districts}
-        selected={new Set(filters.districts)}
+        selected={new Set(pendingFilters.districts)}
         onToggle={(v) => toggleSelect('districts', v)}
-        onSelectAll={() => { setFilters({ districts: districts.map((d) => d.value), tehsils: [], ucs: [] }) }}
-        onSelectNone={() => { setFilters({ districts: [], tehsils: [], ucs: [] }) }}
+        onSelectAll={() => { setPendingFilter({ districts: districts.map((d) => d.value), tehsils: [], ucs: [] }) }}
+        onSelectNone={() => { setPendingFilter({ districts: [], tehsils: [], ucs: [] }) }}
       />
 
       {/* Tehsil */}
@@ -498,11 +514,11 @@ export function DesktopFilterBar() {
         id="tehsil"
         label="Tehsil"
         items={tehsils}
-        selected={new Set(filters.tehsils)}
+        selected={new Set(pendingFilters.tehsils)}
         onToggle={(v) => toggleSelect('tehsils', v)}
-        onSelectAll={() => { setFilters({ tehsils: tehsils.map((t) => t.value), ucs: [] }) }}
-        onSelectNone={() => { setFilters({ tehsils: [], ucs: [] }) }}
-        disabled={!filters.districts.length}
+        onSelectAll={() => { setPendingFilter({ tehsils: tehsils.map((t) => t.value), ucs: [] }) }}
+        onSelectNone={() => { setPendingFilter({ tehsils: [], ucs: [] }) }}
+        disabled={!pendingFilters.districts.length}
       />
 
       {/* MC/UC */}
@@ -510,37 +526,40 @@ export function DesktopFilterBar() {
         id="mcuc"
         label="MC/UC"
         items={ucs}
-        selected={new Set(filters.ucs)}
+        selected={new Set(pendingFilters.ucs)}
         onToggle={(v) => toggleSelect('ucs', v)}
-        onSelectAll={() => { setFilters({ ucs: ucs.map((u) => u.value) }) }}
-        onSelectNone={() => { setFilters({ ucs: [] }) }}
-        disabled={!filters.tehsils.length}
+        onSelectAll={() => { setPendingFilter({ ucs: ucs.map((u) => u.value) }) }}
+        onSelectNone={() => { setPendingFilter({ ucs: [] }) }}
+        disabled={!pendingFilters.tehsils.length}
         className="min-w-[80px]"
       />
 
       {/* Surveyor */}
       {hierarchy?.surveyors && hierarchy.surveyors.length > 0 && (
-        <Select
-          value={filters.surveyor || ''}
-          onValueChange={(v) => setFilters({ surveyor: v || null })}
-        >
-          <SelectTrigger className="w-[130px] h-8 text-xs">
-            <SelectValue placeholder="Surveyor" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">All Surveyors</SelectItem>
-            {hierarchy.surveyors.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <>
+          <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
+          <Select
+            value={pendingFilters.surveyor || ''}
+            onValueChange={(v) => setPendingFilter({ surveyor: v || null })}
+          >
+            <SelectTrigger className="w-[130px] h-8 text-xs">
+              <SelectValue placeholder="Surveyor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Surveyors</SelectItem>
+              {hierarchy.surveyors.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </>
       )}
 
       {hasActiveFilters && (
         <>
           <div className="w-px h-6 bg-border mx-1 shrink-0" />
           <button
-            onClick={() => resetFilters()}
+            onClick={resetPendingFilters}
             className="h-8 text-[11px] font-bold text-red-500 hover:text-red-600 px-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors whitespace-nowrap cursor-pointer shrink-0"
           >
             Clear ({activeFilterCount})
@@ -559,32 +578,76 @@ function ActionButtons() {
   const applyFilters = useBillingStore((s) => s.applyFilters)
   const cancelFilters = useBillingStore((s) => s.cancelFilters)
   const queryClient = useQueryClient()
+  const isFetching = useIsFetching()
+
+  const [showSuccess, setShowSuccess] = useState(false)
+  const successTimer = useRef<number>(0)
 
   const hasUnapplied = useMemo(
     () => JSON.stringify(filters) !== JSON.stringify(pendingFilters),
     [filters, pendingFilters]
   )
 
+  const handleUpdate = useCallback(() => {
+    queryClient.invalidateQueries()
+    window.clearTimeout(successTimer.current)
+    successTimer.current = window.setTimeout(() => {
+      if (isFetching === 0) {
+        setShowSuccess(true)
+        window.setTimeout(() => setShowSuccess(false), 2000)
+      }
+    }, 300)
+  }, [queryClient, isFetching])
+
+  useEffect(() => {
+    return () => window.clearTimeout(successTimer.current)
+  }, [])
+
+  const isRefreshing = isFetching > 0
+
   return (
     <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-      <button
-        onClick={() => queryClient.invalidateQueries()}
-        className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer"
-        title="Refresh data"
-      >
-        <RefreshCw className="h-3.5 w-3.5" />
-      </button>
+      <div className="relative">
+        <button
+          onClick={handleUpdate}
+          disabled={isRefreshing}
+          className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+          title={isRefreshing ? 'Updating...' : showSuccess ? 'Updated' : 'Refresh data'}
+        >
+          <RefreshCw
+            className={cn(
+              'h-3.5 w-3.5 transition-none',
+              isRefreshing && 'animate-spin'
+            )}
+          />
+        </button>
+        {showSuccess && (
+          <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-green-500 flex items-center justify-center animate-in zoom-in duration-150">
+            <Check className="h-2.5 w-2.5 text-white" />
+          </span>
+        )}
+      </div>
+
+      {isRefreshing && (
+        <span className="text-[10px] text-muted-foreground font-medium animate-pulse">Syncing...</span>
+      )}
+
+      {showSuccess && !isRefreshing && (
+        <span className="text-[10px] text-green-600 font-medium animate-in fade-in duration-150">Updated</span>
+      )}
+
       {hasUnapplied && (
         <>
+          <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
           <button
             onClick={cancelFilters}
-            className="h-8 text-[11px] font-bold px-2 rounded-lg border border-border hover:bg-muted cursor-pointer"
+            className="h-8 text-[11px] font-bold px-2.5 rounded-lg border border-border hover:bg-muted cursor-pointer transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={applyFilters}
-            className="h-8 text-[11px] font-bold px-2.5 rounded-lg flex items-center gap-1 bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+            className="h-8 text-[11px] font-bold px-3 rounded-lg flex items-center gap-1 bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
           >
             <Check className="h-3 w-3" />
             Apply
@@ -600,28 +663,47 @@ function ActionButtons() {
 export function MobileFilterSheet() {
   const [open, setOpen] = useState(false)
   const cancelFilters = useBillingStore((s) => s.cancelFilters)
+  const filters = useBillingStore((s) => s.filters)
+
+  const activeCount = [
+    filters.districts.length,
+    filters.tehsils.length,
+    filters.ucs.length,
+    filters.surveyor !== null,
+    filters.paymentStatus !== 'all',
+  ].filter(Boolean).length
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        className="h-8 px-3 text-xs font-bold rounded-lg border border-border hover:bg-muted flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+        className={cn(
+          'h-9 px-3 text-xs font-bold rounded-lg border flex items-center gap-1.5 transition-colors cursor-pointer shrink-0',
+          activeCount > 0
+            ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/15'
+            : 'border-border hover:bg-muted'
+        )}
       >
         <SlidersHorizontal className="h-3.5 w-3.5" />
         Filters
+        {activeCount > 0 && (
+          <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+            {activeCount}
+          </span>
+        )}
       </button>
 
       {open && (
         <div className="fixed inset-0 z-50 flex flex-col">
-          <div className="absolute inset-0 bg-black/50" onClick={() => { cancelFilters(); setOpen(false) }} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { cancelFilters(); setOpen(false) }} />
           <div
             className={cn(
-              'absolute bottom-0 left-0 right-0 bg-background rounded-t-2xl shadow-xl flex flex-col max-h-[80vh] z-10',
-              'animate-in slide-in-from-bottom duration-200'
+              'absolute bottom-0 left-0 right-0 bg-background rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh] z-10',
+              'animate-in slide-in-from-bottom-2 duration-300 ease-out'
             )}
           >
-            <div className="flex justify-center pt-2 pb-1 shrink-0">
-              <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+            <div className="flex justify-center pt-2.5 pb-2 shrink-0">
+              <div className="w-9 h-1 rounded-full bg-muted-foreground/20" />
             </div>
             <div className="flex-1 overflow-y-auto">
               <FilterPanelInner onClose={() => setOpen(false)} />

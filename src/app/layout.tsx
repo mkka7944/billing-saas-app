@@ -43,9 +43,8 @@ export default function RootLayout({
           <ThemeProvider
             attribute="class"
             defaultTheme="vercel"
-            forcedTheme="vercel"
             disableTransitionOnChange
-            themes={["vercel"]}
+            themes={["light", "dark", "vercel", "vercel-dark", "system"]}
           >
           <QueryProvider>
             <AuthInit>

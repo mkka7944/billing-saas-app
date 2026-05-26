@@ -167,47 +167,49 @@ function OverviewView({
           <Loader2 className="size-4 mr-2 animate-spin" /> Loading totals...
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Union Council</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Assigned</TableHead>
-              <TableHead className="text-right">Unassigned</TableHead>
-              <TableHead className="w-20" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {totals.length === 0 ? (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                  No UCs with unassigned bills
-                </TableCell>
+                <TableHead>Union Council</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Assigned</TableHead>
+                <TableHead className="text-right">Unassigned</TableHead>
+                <TableHead className="w-20" />
               </TableRow>
-            ) : totals.map((t) => (
-              <TableRow key={t.uc_name}>
-                <TableCell className="text-xs max-w-[300px] truncate">{t.uc_name}</TableCell>
-                <TableCell className="text-right text-xs tabular-nums">{t.total}</TableCell>
-                <TableCell className="text-right text-xs tabular-nums">{t.assigned}</TableCell>
-                <TableCell className="text-right text-xs tabular-nums">
-                  <span className={t.unassigned > 0 ? 'font-medium' : 'text-muted-foreground'}>
-                    {t.unassigned}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={t.unassigned === 0}
-                    onClick={() => onSelectUc(t.uc_name)}
-                  >
-                    Select
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {totals.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    No UCs with unassigned bills
+                  </TableCell>
+                </TableRow>
+              ) : totals.map((t) => (
+                <TableRow key={t.uc_name}>
+                  <TableCell className="text-xs max-w-[300px] truncate">{t.uc_name}</TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">{t.total}</TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">{t.assigned}</TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">
+                    <span className={t.unassigned > 0 ? 'font-medium' : 'text-muted-foreground'}>
+                      {t.unassigned}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={t.unassigned === 0}
+                      onClick={() => onSelectUc(t.uc_name)}
+                    >
+                      Select
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   )
@@ -249,50 +251,52 @@ function UcDetailView({
           <Loader2 className="size-4 mr-2 animate-spin" /> Loading bills...
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-8">
-                <Checkbox
-                  checked={allSelected}
-                  onCheckedChange={onSelectAll}
-                />
-              </TableHead>
-              <TableHead>Consumer</TableHead>
-              <TableHead>PSID</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Route</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {unassignedBills.length === 0 ? (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                  All bills in this UC have been assigned
+                <TableHead className="w-8">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={onSelectAll}
+                  />
+                </TableHead>
+                <TableHead>Consumer</TableHead>
+                <TableHead>PSID</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Route</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {unassignedBills.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    All bills in this UC have been assigned
+                  </TableCell>
+                </TableRow>
+              ) : unassignedBills.map((b) => (
+                <TableRow key={b.psid || b.survey_id} className="cursor-pointer" onClick={() => b.psid && onTogglePsid(b.psid)}>
+                <TableCell>
+                  <Checkbox
+                    checked={!!b.psid && selectedPsids.has(b.psid)}
+                    onCheckedChange={() => b.psid && onTogglePsid(b.psid)}
+                  />
                 </TableCell>
-              </TableRow>
-            ) : unassignedBills.map((b) => (
-              <TableRow key={b.psid || b.survey_id} className="cursor-pointer" onClick={() => b.psid && onTogglePsid(b.psid)}>
-              <TableCell>
-                <Checkbox
-                  checked={!!b.psid && selectedPsids.has(b.psid)}
-                  onCheckedChange={() => b.psid && onTogglePsid(b.psid)}
-                />
-              </TableCell>
-                <TableCell className="text-xs max-w-[200px] truncate">{b.consumer_name || '-'}</TableCell>
-                <TableCell className="text-xs font-mono">{b.psid?.slice(-8) || '-'}</TableCell>
-                <TableCell className="text-xs tabular-nums">{b.amount_due ? `Rs. ${b.amount_due.toLocaleString()}` : '-'}</TableCell>
-                <TableCell className="text-xs tabular-nums">{b.route_seq || '-'}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                  <TableCell className="text-xs max-w-[200px] truncate">{b.consumer_name || '-'}</TableCell>
+                  <TableCell className="text-xs font-mono">{b.psid?.slice(-8) || '-'}</TableCell>
+                  <TableCell className="text-xs tabular-nums">{b.amount_due ? `Rs. ${b.amount_due.toLocaleString()}` : '-'}</TableCell>
+                  <TableCell className="text-xs tabular-nums">{b.route_seq || '-'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {/* Action bar */}
-      <div className="flex items-center gap-3 pt-2 border-t">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 border-t">
         <Select value={selectedStaffId} onValueChange={onStaffChange}>
-          <SelectTrigger className="w-[200px]">
+          <SelectTrigger className="w-full sm:w-[200px]">
             <SelectValue placeholder="Select staff..." />
           </SelectTrigger>
           <SelectContent>

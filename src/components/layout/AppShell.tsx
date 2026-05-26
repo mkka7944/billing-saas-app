@@ -1,18 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useRef } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { BillingSidebar } from './BillingSidebar'
 import { AppHeader } from './AppHeader'
 import { DesktopFilterBar } from '@/components/filter-panel'
-import { MapIcon, List, BarChart3, FileSpreadsheet } from 'lucide-react'
+import { MapIcon, List, Truck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
   const role = useAuthStore((s) => s.role)
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
@@ -20,13 +21,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isMapPage = pathname === '/map'
 
+  // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [
-    { id: 'map' as const, label: 'Map', icon: MapIcon },
-    { id: 'list' as const, label: 'List', icon: List },
-    { id: 'stats' as const, label: 'Dashboard', icon: BarChart3 },
-    ...(role === 'admin'
-      ? [{ id: 'data-insight' as const, label: 'Insight', icon: FileSpreadsheet }]
-      : []),
+    { id: 'map' as const, label: 'Map', icon: MapIcon, href: undefined },
+    { id: 'list' as const, label: 'List', icon: List, href: undefined },
+    { id: 'deliver' as const, label: 'Deliver', icon: Truck, href: '/deliver' },
   ]
 
   // Debounced resize handler
@@ -49,48 +48,45 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-full">
-      <div className="hidden lg:flex">
-        <BillingSidebar />
-      </div>
+      <BillingSidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
         <div className="lg:hidden">
           <AppHeader />
         </div>
 
-        {isMapPage && (
-          <div className="hidden lg:block">
-            <DesktopFilterBar />
-          </div>
-        )}
+        <div className="hidden lg:block">
+          <DesktopFilterBar />
+        </div>
 
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden relative z-0">
           {children}
         </main>
 
-        {/* Bottom tab bar — only on /map pages where activeView applies */}
-        {isMapPage && (
-          <nav className="flex items-center justify-around border-t bg-card shrink-0 safe-area-bottom lg:hidden">
-            {tabs.map((tab) => {
-              const isActive = activeView === tab.id
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setView(tab.id)}
-                  className={cn(
-                    "flex flex-col items-center gap-0.5 py-2 px-4 min-w-0 transition-colors cursor-pointer",
-                    isActive
-                      ? "text-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <tab.icon className={cn("h-5 w-5", isActive && "fill-primary/10")} />
-                  <span className="text-[10px] font-semibold">{tab.label}</span>
-                </button>
-              )
-            })}
-          </nav>
-        )}
+        {/* Bottom tab bar — mobile only, core navigation */}
+        <nav className="flex items-center justify-around border-t bg-card shrink-0 safe-area-bottom lg:hidden">
+          {tabs.map((tab) => {
+            const isActive = tab.href ? pathname === tab.href : activeView === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  if (tab.href) router.push(tab.href)
+                  else setView(tab.id as 'map' | 'list' | 'stats' | 'data-insight' | 'detail')
+                }}
+                className={cn(
+                  "flex flex-col items-center gap-0.5 py-2 px-4 min-w-0 min-h-[48px] justify-center transition-colors cursor-pointer",
+                  isActive
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <tab.icon className={cn("h-5 w-5", isActive && "fill-primary/10")} />
+                <span className="text-[10px] font-semibold">{tab.label}</span>
+              </button>
+            )
+          })}
+        </nav>
       </div>
     </div>
   )
