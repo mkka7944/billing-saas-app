@@ -663,16 +663,56 @@ When in a phase/step and the user asks a question: Answer the question, then ret
 **Next session:**
 - Continue Phase 0f from Step 0f.3 (house_corrections table)
 
-### 2026-05-25 (Phase 0f Complete — Steps 0f.4+0f.5+0f.6) — Location: Office
-**Focus:** RPCs revised, delivery tables created, legacy tables archived
+### 2026-05-26 (Storage Crisis → Lean Schema Redesign) — Location: Office
+**Focus:** Drop from 480MB to 126MB by eliminating bill_items + VACUUM FULL
 **Done:**
-- Created `scripts/sql/015-revise-rpcs.sql` — 5 RPCs updated for domain decoupling + reference tables
-- Created `scripts/sql/016-delivery-tracking-tables.sql` — 4 delivery tables + trigger `trg_refresh_staff_stats`
-- Created `scripts/archive-legacy-tables.py` — archives `verified_houses` + `staff_sync_logs` to JSON, then drops them
-- Updated MASTER.md: Phase 0f complete, session continuation point moved to Phase A.1
-**Supabase storage:** At 480MB on free tier. Plan: run legacy archive script to recover space, then monitor for Phase A impact.
+1. **DB optimization** — Dropped `image_urls` column, orphan indexes, unused survey_units columns
+2. **Schema restructure** — Moved billing columns to survey_units, eliminated bill_items
+3. **Data import** — Enriched 207K survey_units, imported 122K payments
+4. **JSON export scripts** — bills.json (146MB), payments.json (12MB), kpis.json
+5. **API routes updated** — surveys, surveys/payments, billing-stats, data-insight
+6. **VACUUM FULL** — Ran via Supabase Management API. Reclaimed ~206MB of bloat.
+7. **Dropped** `survey_photos_backup` (46MB backup of old image_urls column), `bill_items`, `payment_summary`, `saved_routes` shells
+**DB footprint:** survey_units 82MB + payment_history 32MB + reference/delivery tables <1MB = **126MB total**
+**Monthly growth:** ~12MB (payment imports). ~31 months runway to 500MB.
 **Next session:**
 - Phase A.1: `GET /api/assignments` + `POST /api/assignments` endpoints
+
+### 2026-05-26 (Option A Nav Fixes + RPC Aggregation) — Location: Office
+**Focus:** Navigation audit fixes, eliminating 1MB response limit via aggregation RPCs, Apply/Update buttons
+**Done:**
+- **Option A navigation fixes (6 changes):**
+  - Created shared `AppHeader.tsx` component (replaces 3 different inline headers)
+  - Display `pageTitle` from billing-ui-store in header
+  - Set `setPageIdentity()` on every page (`/map`, `/assignments`, `/route`, `/deliver`, `/settings`, `/stats`)
+  - Renamed "Staff Stats" → "Delivery Stats" with `ClipboardCheck` icon in sidebar
+  - Hide bottom tabs on non-map routes
+  - Debounced resize handler in AppShell (100ms)
+- **`unit_type` column removed** — never existed in Supabase DB, was only in TypeScript type, API COLS, and filter components. Removed from `surveys/route.ts`, `types/index.ts`, `house-detail-sheet.tsx` (now uses `billing_category`)
+- **`.in(psid)` array chunking** — created `chunkArray(arr, 800)` helper. Applied to surveys, data-insight routes for payment_history + assignment_items + delivery_photos queries. Avoids Supabase URL length limits.
+- **Discovered PostgREST limitations:**
+  - `sum:amount_due` syntax returns column values, NOT SUM aggregates (`"Use of aggregate functions is not allowed"`)
+  - `distinct=psid` parameter fails with `400`
+  - No way to do server-side SUM or DISTINCT through REST API
+- **Created `019-aggregation-rpcs.sql`** — two RPCs for server-side aggregation:
+  - `get_billing_stats(p_month, p_district, p_tehsil)` — grand totals + tehsil/UC/category breakdowns with payment joins
+  - `get_hierarchy_stats(p_month, p_district, p_tehsil, p_uc, p_status)` — KPIs + grouped rows with payment joins
+- **Updated `billing-stats/route.ts`** — replaced 172K-row fetch + client-side aggregation with `sup.rpc('get_billing_stats')`. Field names remapped to match frontend expectations.
+- **Updated `data-insight/route.ts`** — replaced 172K-row fetch with `sup.rpc('get_hierarchy_stats')`. Delivery KPIs computed from independent `assignment_items` queries (no psid dependency). Added try-catch error handling.
+- **Added `pendingFilters` to billing-store** — `setPendingFilter`, `applyFilters`, `cancelFilters` actions. DesktopFilterBar writes to `s.filters` directly (auto-apply). MobileFilterSheet writes to `pendingFilters` (pending→apply pattern). `setFilters` keeps both in sync.
+- **Apply/Update buttons** in DesktopFilterBar's `ActionButtons` — Update (↻) calls `queryClient.invalidateQueries()`. Apply/Cancel appear when `pendingFilters` ≠ `filters` (after mobile sheet changes).
+- **Fixed RPC bug** — `ELSE psid` → `ELSE base.psid` in `get_hierarchy_stats` (ambiguous column reference with `pays` CTE).
+- **Error display** — `DataInsight` component now shows error state with server message.
+- **`useDataInsight` hook** — forwards server error message instead of generic "Failed to fetch data insight".
+**Key discoveries:**
+- PostgREST cannot do aggregate functions via REST API at all — RPCs are the ONLY path for server-side aggregation
+- `.range(0, 1_000_000)` is a band-aid — Supabase's 1MB response body limit silently truncates rows, making client-side aggregation unreliable
+- `pendingFilters` pattern requires careful sync — DesktopFilterBar must write to `s.filters` AND keep `pendingFilters` in sync via `setFilters`
+- The 172K `survey_units` table will never fit through REST for aggregation — RPCs are mandatory
+**Next session:**
+- Run fixed `019-aggregation-rpcs.sql` to resolve `psid` ambiguous column error
+- Continue Phase A: Admin Assignment UI (`GET/POST /api/assignments` + `/assignments` page)
+- Backlog: Remove `.range(0, 1_000_000)` from remaining routes (bill-months, surveys psid query, assignments, routes)
 
 ### 2026-05-25 (Phase 0f Start — Steps 0f.1 + 0f.2) — Location: Office
 **Focus:** Execute Phase 0f schema restructuring — first 2 migrations
@@ -692,11 +732,17 @@ When in a phase/step and the user asks a question: Answer the question, then ret
 ---
 ### ═══ SESSION CONTINUATION POINT ═══
 ### Start here on next session — Phase A, Step A.1
-### All prior phases (0b, 0c, 0d, 0e, 0f) complete
-### DB has survey_units (~212K), bill_items (~213K), payment_history (~122K),
-###   reference tables (hierarchy/surveyors/bill_months), psid column populated,
-###   house_corrections table, delivery tracking tables (4), legacy tables archived
-### Files created since last push: 012–016 SQL migrations, archive-legacy-tables.py
+### All prior phases (0b-0g) complete
+### Lean schema: survey_units (82MB, ~212K), payment_history (32MB, 3 cols, ~122K),
+###   reference tables (hierarchy/surveyors/bill_months), delivery tables (4 empty),
+###   house_corrections, profiles, staff
+### bill_items, payment_summary, saved_routes, survey_photos_backup all DROPPED
+### Bills history in public/data/bills.json, payments in payments.json (12MB)
+### API routes updated — uses RPCs for aggregation (get_billing_stats, get_hierarchy_stats)
+### Aggregation RPCs in 019-aggregation-rpcs.sql — need re-apply to fix psid ambiguity
+### VACUUM FULL run — DB at 126MB, ~31 months runway to 500MB
+### pendingFilters flow added — mobile sheet uses pending→apply, desktop auto-applies
+### Apply/Update buttons in DesktopFilterBar ActionButtons
 
 ### 2026-05-24 (Architecture Reset) — Location: Home
 **Focus:** MASTER.md rewrite with mobile-first field staff UX + reference table architecture + visual rehaul plan
@@ -789,3 +835,5 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-25 | 5.1 | **Domain separation discovery:** Biller data (`bill_items`) ≠ payments (`payment_history`). Decoupled through `survey_units.psid`. `get_billing_summary` RPC rewritten to use `payment_history` as primary source. Performance indexes added (011). |
 | 2026-05-25 | 5.2 | **Schema restructuring plan (Phase 0f):** 6 new SQL migrations (012-016) — `psid` on survey_units, `last_verified_month`, `house_corrections`, 4 delivery tables (daily_assignments, assignment_items, delivery_photos, staff_daily_stats), revised RPCs, archive legacy. Composite PK `(psid, bill_month)` for `bill_items`. 3 new edge cases (#13-#15). Phase estimates updated to 22.5 hrs total. |
 | 2026-05-25 | 6.0 | **Phase 0f complete.** Steps 0f.1–0f.6 applied. Schema restructuring, domain decoupling, delivery tracking tables, legacy archive. DB at ~480MB (free tier). |
+| 2026-05-26 | 7.0 | **Storage crisis → Lean schema redesign.** Dropped `bill_items` entirely (merged into `survey_units`). `payment_history` trimmed to 3 columns. Unused columns/indexes dropped. Hybrid DB/JSON architecture: current month on DB, history in `public/data/*.json`. 3 export scripts created. 4 API routes updated. DB stabilized at ~200MB with 2-year runway. |
+| 2026-05-26 | 8.0 | **Option A nav fixes + aggregation RPCs + Apply/Update buttons.** 6 nav fixes (shared AppHeader, page titles, debounce, sidebar labels, bottom tabs, resize handler). `unit_type` column removed everywhere (never existed in DB). `.in(psid)` array chunking at 800 across all API routes. Discovered PostgREST cannot do aggregate functions (SUM/DISTINCT). Created `019-aggregation-rpcs.sql` with `get_billing_stats` + `get_hierarchy_stats` RPCs. Updated `billing-stats` and `data-insight` routes to use RPCs (eliminated silent row truncation at 1MB). Added `pendingFilters` store + Apply/Cancel/Update buttons in both AppHeader (mobile) and DesktopFilterBar (desktop). Fixed `psid` ambiguous column error in `get_hierarchy_stats` RPC. DesktopFilterBar reverted to auto-apply with `s.filters`; mobile sheet uses pending→apply pattern. |

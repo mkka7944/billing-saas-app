@@ -19,6 +19,7 @@ export async function GET() {
     .from('payment_history')
     .select('bill_month')
     .order('bill_month', { ascending: false })
+    .range(0, 1_000_000)
 
   if (phError) return NextResponse.json({ error: phError.message }, { status: 500 })
 

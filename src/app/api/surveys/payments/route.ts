@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-
-function currentMonth(): string {
-  const m = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-  const d = new Date()
-  return `${m[d.getMonth()]}${d.getFullYear()}`
-}
+import { currentMonth } from '@/lib/constants'
+import { join } from 'path'
+import { readFileSync } from 'fs'
 
 function last3Months(): string[] {
   const m = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
@@ -24,18 +21,30 @@ export async function GET(request: Request) {
   if (!surveyId) return NextResponse.json({ error: 'surveyId required' }, { status: 400 })
 
   const sup = await createClient()
-  const months = last3Months()
 
-  const { data: items } = await sup
-    .from('bill_items')
-    .select('psid, bill_month, amount_due, arrears, monthly_fee, amount_paid, payment_status')
+  // Get psid(s) for this survey from survey_units
+  const { data: su } = await sup
+    .from('survey_units')
+    .select('psid')
     .eq('survey_id', surveyId)
-    .in('bill_month', months)
+    .single()
+
+  const psids = su?.psid ? [su.psid] : []
+
+  // Read bills from JSON
+  const billsPath = join(process.cwd(), 'public', 'data', 'bills.json')
+  let bills: any[] = []
+  try {
+    bills = JSON.parse(readFileSync(billsPath, 'utf-8'))
+  } catch {}
+
+  const months = last3Months()
+  const matchingBills = bills.filter((b: any) => b.survey_id === surveyId && months.includes(b.bill_month))
 
   const current = currentMonth()
-  const bill = items?.find((i: any) => i.bill_month === current) || null
-  const psids = [...new Set((items || []).map((i: any) => i.psid))]
+  const bill = matchingBills.find((b: any) => b.bill_month === current) || null
 
+  // Get payments for these psids
   const { data: payments } = await sup
     .from('payment_history')
     .select('psid, bill_month, amount_paid, paid_date, payment_method, payment_status')

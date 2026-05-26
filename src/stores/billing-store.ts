@@ -1,34 +1,27 @@
 import { create } from 'zustand'
 import type { FilterState } from '@/types'
-
-type ActiveView = 'map' | 'list' | 'route' | 'stats' | 'detail' | 'data-insight'
-type MapType = 'streets' | 'satellite'
+import { currentMonth } from '@/lib/constants'
 
 interface BillingState {
-  activeView: ActiveView
+  activeView: 'map' | 'list' | 'stats' | 'detail' | 'data-insight'
   filters: FilterState
-  selectedRouteId: string | null
+  pendingFilters: FilterState
   selectedHouseId: string | null
   mapCenter: [number, number]
   mapZoom: number
-  mapType: MapType
-  navHistory: ActiveView[]
-
-  setView: (view: ActiveView) => void
+  mapType: 'streets' | 'satellite'
+  navHistory: string[]
+  setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
   goBack: () => void
-  setFilters: (filters: Partial<FilterState>) => void
+  setFilters: (partial: Partial<FilterState>) => void
   resetFilters: () => void
-  selectRoute: (id: string | null) => void
+  setPendingFilter: (partial: Partial<FilterState>) => void
+  applyFilters: () => void
+  cancelFilters: () => void
   selectHouse: (id: string | null) => void
   setMapCenter: (center: [number, number]) => void
   setMapZoom: (zoom: number) => void
-  setMapType: (type: MapType) => void
-}
-
-function currentMonth(): string {
-  const m = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-  const d = new Date()
-  return `${m[d.getMonth()]}${d.getFullYear()}`
+  setMapType: (type: 'streets' | 'satellite') => void
 }
 
 const defaultFilters: FilterState = {
@@ -45,7 +38,7 @@ const defaultFilters: FilterState = {
 export const useBillingStore = create<BillingState>((set, get) => ({
   activeView: 'map',
   filters: { ...defaultFilters },
-  selectedRouteId: null,
+  pendingFilters: { ...defaultFilters },
   selectedHouseId: null,
   mapCenter: [32.0836, 72.6712],
   mapZoom: 12,
@@ -64,20 +57,21 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   goBack: () => {
     const { navHistory, activeView } = get()
     if (!navHistory.length) return
-    const prev = navHistory[navHistory.length - 1]
+    const prev = navHistory[navHistory.length - 1] as 'map' | 'list' | 'stats' | 'detail' | 'data-insight'
     set({
       activeView: prev,
       navHistory: navHistory.slice(0, -1),
       selectedHouseId: prev === 'detail' ? get().selectedHouseId : null,
     })
   },
-  setFilters: (partial) => set((s) => ({ filters: { ...s.filters, ...partial } })),
-  resetFilters: () => set({ filters: { ...defaultFilters } }),
-  selectRoute: (id) => set((s) => ({
-    selectedRouteId: id,
-    activeView: id ? 'route' : 'map',
-    navHistory: id ? [...s.navHistory, s.activeView] : s.navHistory,
+  setFilters: (partial) => set((s) => ({
+    filters: { ...s.filters, ...partial },
+    pendingFilters: { ...s.pendingFilters, ...partial },
   })),
+  resetFilters: () => set({ filters: { ...defaultFilters }, pendingFilters: { ...defaultFilters } }),
+  setPendingFilter: (partial) => set((s) => ({ pendingFilters: { ...s.pendingFilters, ...partial } })),
+  applyFilters: () => set((s) => ({ filters: { ...s.pendingFilters } })),
+  cancelFilters: () => set((s) => ({ pendingFilters: { ...s.filters } })),
   selectHouse: (id) => set((s) => ({
     selectedHouseId: id,
     activeView: id ? 'detail' : 'map',

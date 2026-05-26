@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/generate-version.mjs",
     "dev": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" next dev",
+    "prebuild": "node scripts/generate-version.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

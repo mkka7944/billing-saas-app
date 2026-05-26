@@ -17,6 +17,14 @@ export interface AggregationRow {
   no_coords: number
 }
 
+export interface DeliveryKpis {
+  total_assigned: number
+  total_delivered: number
+  delivery_rate: number
+  total_photos: number
+  staff_with_deliveries: number
+}
+
 export interface DataInsightResponse {
   kpis: {
     total_units: number
@@ -28,6 +36,7 @@ export interface DataInsightResponse {
     unique_surveyors: number
     no_coords: number
   }
+  delivery_kpis: DeliveryKpis
   rows: AggregationRow[]
   total: number
 }
@@ -53,7 +62,10 @@ export function useDataInsight({ filters, page, pageSize }: UseDataInsightParams
       params.set('pageSize', String(pageSize))
 
       const res = await fetch(`/api/data-insight?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch data insight')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error || `API error ${res.status}`)
+      }
       return res.json()
     },
     staleTime: 1000 * 60 * 5,

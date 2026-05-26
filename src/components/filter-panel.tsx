@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { useBillingStore } from '@/stores/billing-store'
 import { useHierarchy } from '@/hooks/use-hierarchy'
 import { useBillMonths } from '@/hooks/use-bill-months'
 import { shortenMCName, compareMC } from '@/lib/mc-utils'
 import { cn } from '@/lib/utils'
-import { ChevronDown, X, SlidersHorizontal, Search } from 'lucide-react'
+import { ChevronDown, X, SlidersHorizontal, Search, Check, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -116,8 +117,10 @@ function FilterAccordion({
 // ─── Filter Panel Inner (shared between mobile/desktop) ────────
 
 function FilterPanelInner({ onClose }: { onClose?: () => void }) {
-  const filters = useBillingStore((s) => s.filters)
-  const setFilters = useBillingStore((s) => s.setFilters)
+  const filters = useBillingStore((s) => s.pendingFilters)
+  const setFilters = useBillingStore((s) => s.setPendingFilter)
+  const applyFilters = useBillingStore((s) => s.applyFilters)
+  const cancelFilters = useBillingStore((s) => s.cancelFilters)
   const resetFilters = useBillingStore((s) => s.resetFilters)
   const { data: hierarchy } = useHierarchy()
 
@@ -198,7 +201,7 @@ function FilterPanelInner({ onClose }: { onClose?: () => void }) {
               </button>
             )}
             <button
-              onClick={onClose}
+              onClick={() => { cancelFilters(); onClose() }}
               className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-muted transition-colors cursor-pointer"
             >
               <X className="h-4 w-4" />
@@ -256,9 +259,19 @@ function FilterPanelInner({ onClose }: { onClose?: () => void }) {
       </div>
 
       {onClose && (
-        <div className="mt-auto border-t border-border p-3">
-          <Button onClick={onClose} className="w-full h-10 text-sm font-bold">
-            Done
+        <div className="mt-auto border-t border-border p-3 flex gap-2">
+          <Button
+            onClick={() => { cancelFilters(); onClose() }}
+            variant="outline"
+            className="h-10 text-sm font-bold flex-1"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => { applyFilters(); onClose() }}
+            className="h-10 text-sm font-bold flex-1"
+          >
+            Apply
           </Button>
         </div>
       )}
@@ -534,6 +547,50 @@ export function DesktopFilterBar() {
           </button>
         </>
       )}
+
+      <ActionButtons />
+    </div>
+  )
+}
+
+function ActionButtons() {
+  const filters = useBillingStore((s) => s.filters)
+  const pendingFilters = useBillingStore((s) => s.pendingFilters)
+  const applyFilters = useBillingStore((s) => s.applyFilters)
+  const cancelFilters = useBillingStore((s) => s.cancelFilters)
+  const queryClient = useQueryClient()
+
+  const hasUnapplied = useMemo(
+    () => JSON.stringify(filters) !== JSON.stringify(pendingFilters),
+    [filters, pendingFilters]
+  )
+
+  return (
+    <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+      <button
+        onClick={() => queryClient.invalidateQueries()}
+        className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer"
+        title="Refresh data"
+      >
+        <RefreshCw className="h-3.5 w-3.5" />
+      </button>
+      {hasUnapplied && (
+        <>
+          <button
+            onClick={cancelFilters}
+            className="h-8 text-[11px] font-bold px-2 rounded-lg border border-border hover:bg-muted cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={applyFilters}
+            className="h-8 text-[11px] font-bold px-2.5 rounded-lg flex items-center gap-1 bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+          >
+            <Check className="h-3 w-3" />
+            Apply
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -542,6 +599,7 @@ export function DesktopFilterBar() {
 
 export function MobileFilterSheet() {
   const [open, setOpen] = useState(false)
+  const cancelFilters = useBillingStore((s) => s.cancelFilters)
 
   return (
     <>
@@ -555,7 +613,7 @@ export function MobileFilterSheet() {
 
       {open && (
         <div className="fixed inset-0 z-50 flex flex-col">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+          <div className="absolute inset-0 bg-black/50" onClick={() => { cancelFilters(); setOpen(false) }} />
           <div
             className={cn(
               'absolute bottom-0 left-0 right-0 bg-background rounded-t-2xl shadow-xl flex flex-col max-h-[80vh] z-10',

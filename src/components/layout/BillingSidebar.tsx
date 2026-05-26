@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils'
 import {
   MapIcon,
   List,
-  Route,
   BarChart3,
   Settings,
   Building2,
@@ -21,6 +20,10 @@ import {
   Moon,
   Sun,
   FileSpreadsheet,
+  ClipboardList,
+  Route,
+  Truck,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
@@ -47,11 +50,26 @@ export function BillingSidebar() {
       items: [
         { id: 'map', title: 'Map', icon: MapIcon, isView: true },
         { id: 'list', title: 'List', icon: List, isView: true },
-        { id: 'route', title: 'Route', icon: Route, isView: true },
-        { id: 'stats', title: 'Stats', icon: BarChart3, isView: true },
+        { id: 'stats', title: 'Dashboard', icon: BarChart3, isView: true },
         ...(role === 'admin'
           ? [{ id: 'data-insight', title: 'Data Insight', icon: FileSpreadsheet, isView: true }]
           : []),
+      ],
+    },
+    ...(role === 'admin'
+      ? [{
+          category: 'Administration',
+          items: [
+            { id: 'assignments', title: 'Assignments', icon: ClipboardList, href: '/assignments' },
+            { id: 'routes', title: 'Routes', icon: Route, href: '/route' },
+            { id: 'delivery-stats', title: 'Delivery Stats', icon: ClipboardCheck, href: '/stats' },
+          ],
+        }]
+      : []),
+    {
+      category: 'Field Operations',
+      items: [
+        { id: 'deliver', title: 'Deliver', icon: Truck, href: '/deliver' },
       ],
     },
     {
@@ -62,11 +80,9 @@ export function BillingSidebar() {
     },
   ]
 
-  const isSettings = pathname === '/settings'
-
   const isActive = (item: NavItem) => {
     if (item.href) return pathname === item.href
-    if (item.isView) return isSettings ? false : activeView === item.id
+    if (item.isView) return pathname === '/map' && activeView === item.id
     return false
   }
 

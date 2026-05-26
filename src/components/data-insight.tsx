@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useDataInsight } from '@/hooks/use-data-insight'
-import type { AggregationRow } from '@/hooks/use-data-insight'
+import type { AggregationRow, DeliveryKpis } from '@/hooks/use-data-insight'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Truck, Camera, PersonStanding, Percent } from 'lucide-react'
 
 const kpiConfig: { key: string; label: string; color: string; bg: string }[] = [
   { key: 'total_units', label: 'Total Units', color: 'text-blue-600', bg: 'bg-blue-100' },
@@ -92,7 +92,7 @@ function AggregationTable({ rows, level }: { rows: AggregationRow[]; level: stri
               {rows.map((row, i) => (
                 <TableRow key={i}>
                   <TableCell className="text-sm font-medium">
-                    {level === 'uc' ? row.uc_name : row.district}
+                    {level === 'uc' ? row.uc_name : level === 'tehsil' ? row.tehsil : row.district}
                   </TableCell>
                   {level !== 'district' && (
                     <TableCell className="text-sm text-muted-foreground">{row.tehsil}</TableCell>
@@ -121,12 +121,44 @@ function AggregationTable({ rows, level }: { rows: AggregationRow[]; level: stri
   )
 }
 
+const dkpiConfig: { key: keyof DeliveryKpis; label: string; icon: typeof Truck; color: string; bg: string; fmt?: (v: number) => string }[] = [
+  { key: 'total_assigned', label: 'Assigned', icon: Truck, color: 'text-blue-600', bg: 'bg-blue-100' },
+  { key: 'total_delivered', label: 'Delivered', icon: Truck, color: 'text-green-600', bg: 'bg-green-100' },
+  { key: 'delivery_rate', label: 'Delivery Rate', icon: Percent, color: 'text-purple-600', bg: 'bg-purple-100', fmt: (v) => `${v}%` },
+  { key: 'total_photos', label: 'Photos', icon: Camera, color: 'text-amber-600', bg: 'bg-amber-100' },
+  { key: 'staff_with_deliveries', label: 'Active Staff', icon: PersonStanding, color: 'text-indigo-600', bg: 'bg-indigo-100' },
+]
+
+function DeliveryKpiCards({ kpis }: { kpis: DeliveryKpis }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {dkpiConfig.map((k) => {
+        const value = kpis[k.key] ?? 0
+        const display = k.fmt ? k.fmt(value) : value.toLocaleString()
+        return (
+          <Card key={k.key} className="shadow-none">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-xs text-muted-foreground font-medium">{k.label}</CardTitle>
+              <div className={`p-1.5 rounded ${k.bg}`}>
+                <k.icon className={`h-3.5 w-3.5 ${k.color}`} />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-lg font-bold">{display}</p>
+            </CardContent>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
 export function DataInsight() {
   const filters = useBillingStore((s) => s.filters)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
-  const { data, isLoading } = useDataInsight({ filters, page, pageSize })
+  const { data, isLoading, isError, error } = useDataInsight({ filters, page, pageSize })
   const totalPages = Math.ceil((data?.total || 0) / pageSize)
 
   const handlePageSizeChange = useCallback((size: number) => {
@@ -150,13 +182,31 @@ export function DataInsight() {
     )
   }
 
+  if (isError) {
+    return (
+      <div className="p-4 flex items-center justify-center h-full">
+        <div className="text-center space-y-2">
+          <p className="text-sm text-red-500 font-semibold">Failed to load data</p>
+          <p className="text-xs text-muted-foreground">{(error as Error)?.message || 'Unknown error'}</p>
+        </div>
+      </div>
+    )
+  }
+
   const kpis = data?.kpis
   const rows = data?.rows || []
   const level = rows[0]?.level || 'district'
 
   return (
     <div className="p-4 space-y-4 overflow-y-auto h-full">
-      {kpis && <KpiCards data={kpis as unknown as Record<string, number>} />}
+      {kpis && <KpiCards data={kpis as Record<string, number>} />}
+
+      {data?.delivery_kpis && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Delivery KPIs</h3>
+          <DeliveryKpiCards kpis={data.delivery_kpis} />
+        </div>
+      )}
 
       <AggregationTable rows={rows} level={level} />
 

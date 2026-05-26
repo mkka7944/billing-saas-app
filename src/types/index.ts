@@ -4,42 +4,22 @@ export interface SurveyUnit {
   address: string | null
   lat: number | null
   lng: number | null
+  psid: string | null
+  amount_due: number | null
+  arrears: number | null
+  current_bill_month: string | null
+  route_name: string | null
+  route_seq: number | null
   image_urls: string[] | null
   city_district: string | null
   tehsil: string | null
   uc_name: string | null
-  uc_type: string | null
-  unit_type: string | null
   surveyor_name: string | null
   survey_date: string | null
+  survey_time: string | null
   monthly_fee: number
   billing_category: string
   status: string
-  category: string | null
-  sub_category: string | null
-  house_type: string | null
-}
-
-export interface Bill {
-  psid: string
-  bill_month: string
-  survey_id: string
-  amount_due: number
-  amount_paid: number
-  fine: number
-  total_payable: number
-  payment_status: string
-  paid_date: string | null
-  payment_method: string | null
-  is_primary: boolean
-  is_issued: boolean
-  monthly_fee: number
-  billing_category: string | null
-  category: string | null
-  sub_category: string | null
-  arrears: number
-  current_bill: number
-  deleted_in_portal: string | null
 }
 
 export interface SavedRoute {
@@ -51,7 +31,7 @@ export interface SavedRoute {
   created_at: string
 }
 
-export interface RouteData {
+interface RouteData {
   name: string
   sequence: RouteWaypoint[]
   polygon?: number[][] | null
@@ -63,32 +43,6 @@ export interface RouteWaypoint {
   lat: number
   lng: number
   name: string
-}
-
-export interface HouseCorrection {
-  id: string
-  survey_id: string
-  corrected_lat: number | null
-  corrected_lng: number | null
-  original_lat: number | null
-  original_lng: number | null
-  street_no: string | null
-  landmark: string | null
-  notes: string | null
-  correction_type: 'gps_fix' | 'address_update' | 'intel_add' | 'full_verify'
-  corrected_by: string | null
-  corrected_at: string
-  assigned_date: string | null
-}
-
-export interface Staff {
-  id: string
-  email: string
-  role: 'admin' | 'staff' | 'viewer'
-  full_name: string | null
-  assigned_city: string | null
-  assigned_ucs: string[] | null
-  is_active: boolean
 }
 
 export interface FilterState {
@@ -139,4 +93,43 @@ export interface CategoryStat {
   total_units: number
   paying_units: number
   collected: number
+}
+
+export interface DailyAssignment {
+  id: string
+  staff_id: string
+  assigned_date: string
+  uc_name: string
+  total_items: number
+  created_by: string | null
+  created_at: string
+}
+
+export interface AssignmentItem {
+  id: string
+  assignment_id: string
+  psid: string
+  route_seq: number
+  status: 'pending' | 'delivered' | 'missed' | 'skipped'
+  delivered_at: string | null
+  gps_lat: number | null
+  gps_lng: number | null
+  notes: string | null
+}
+
+export interface AssignmentItemUnit {
+  psid: string
+  consumer_name: string | null
+  address: string | null
+  lat: number | null
+  lng: number | null
+  amount_due: number | null
+  monthly_fee: number | null
+  route_name: string | null
+  route_seq: number | null
+  uc_name: string | null
+}
+
+export interface AssignmentItemWithUnit extends AssignmentItem {
+  unit: AssignmentItemUnit | null
 }

@@ -1,0 +1,55 @@
+{
+  "months": [
+    "SEP2025",
+    "OCT2025",
+    "NOV2025",
+    "MAY2026",
+    "MAR2026",
+    "JAN2026",
+    "FEB2026",
+    "DEC2025",
+    "APR2026"
+  ],
+  "monthly": {
+    "SEP2025": {
+      "total_paid": 80,
+      "total_collected": 75067
+    },
+    "OCT2025": {
+      "total_paid": 201,
+      "total_collected": 155070
+    },
+    "NOV2025": {
+      "total_paid": 6536,
+      "total_collected": 2685840
+    },
+    "MAY2026": {
+      "total_paid": 378,
+      "total_collected": 310692
+    },
+    "MAR2026": {
+      "total_paid": 31213,
+      "total_collected": 20721324
+    },
+    "JAN2026": {
+      "total_paid": 20397,
+      "total_collected": 11761079
+    },
+    "FEB2026": {
+      "total_paid": 25100,
+      "total_collected": 15330084
+    },
+    "DEC2025": {
+      "total_paid": 7871,
+      "total_collected": 5038035
+    },
+    "APR2026": {
+      "total_paid": 30423,
+      "total_collected": 19686701
+    }
+  },
+  "grand_totals": {
+    "total_payments": 122199,
+    "total_collected": 75763892
+  }
+}

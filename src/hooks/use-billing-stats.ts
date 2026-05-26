@@ -2,12 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import type { FinanceSummary } from '@/types'
-
-function currentMonth(): string {
-  const m = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-  const d = new Date()
-  return `${m[d.getMonth()]}${d.getFullYear()}`
-}
+import { currentMonth } from '@/lib/constants'
 
 export function useBillingStats(month?: string) {
   const billMonth = month || currentMonth()

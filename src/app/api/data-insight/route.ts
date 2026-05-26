@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { currentMonth } from '@/lib/constants'
 
-function currentMonth(): string {
-  const m = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-  const d = new Date()
-  return `${m[d.getMonth()]}${d.getFullYear()}`
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
+  return chunks
 }
 
 interface AggRow {
@@ -15,84 +16,130 @@ interface AggRow {
   surveyors: number; no_coords: number
 }
 
-interface RpcSurveyRow { group_key: string; total_units: number; active_units: number; no_coords: number; surveyor_count: number }
-interface RpcBillingRow { group_key: string; billed_units: number; paid_units: number; total_collected: number }
-
-function kmeta(k: string, lvl: string) {
-  if (lvl === 'district') return { district: k }
-  const p = k.split('::')
-  if (lvl === 'tehsil') return { district: p[0], tehsil: p[1] }
-  return { district: p[0], tehsil: p[1], uc_name: p[2] ?? k }
-}
-
 export async function GET(request: Request) {
-  const sp = new URL(request.url).searchParams
-  const district = sp.get('district') || ''
-  const tehsil = sp.get('tehsil') || ''
-  const uc = sp.get('uc') || ''
-  const surveyor = sp.get('surveyor') || ''
-  const statusParam = sp.get('status') || 'active'
-  const billMonth = sp.get('billMonth') || currentMonth()
-  const page = Math.max(1, parseInt(sp.get('page') || '1'))
-  const ps = Math.min(100, Math.max(10, parseInt(sp.get('pageSize') || '50')))
+  try {
+    const sp = new URL(request.url).searchParams
+    const district = sp.get('district') || ''
+    const tehsil = sp.get('tehsil') || ''
+    const uc = sp.get('uc') || ''
+    const surveyor = sp.get('surveyor') || ''
+    const statusParam = sp.get('status') || 'active'
+    const billMonth = sp.get('billMonth') || currentMonth()
+    const page = Math.max(1, parseInt(sp.get('page') || '1'))
+    const ps = Math.min(100, Math.max(10, parseInt(sp.get('pageSize') || '50')))
 
-  const sup = await createClient()
-  const dbStatus = statusParam === 'active' ? 'ACTIVE' : statusParam === 'archived' ? 'ARCHIVED' : null
-  const lvl: AggRow['level'] = !district ? 'district' : !tehsil ? 'tehsil' : 'uc'
+    const sup = await createClient()
+    const lvl: AggRow['level'] = !district ? 'district' : !tehsil ? 'tehsil' : 'uc'
+    const dbStatus = statusParam === 'active' ? 'ACTIVE' : statusParam === 'archived' ? 'ARCHIVED' : null
 
-  // Pass null for empty params, non-null for set params
-  const pDist = district || null
-  const pTeh = tehsil || null
-  const pUc = uc || null
-  const pSurv = surveyor || null
+    // --- Aggregation via RPC ---
+    const { data: raw, error: rpcErr } = await sup.rpc('get_hierarchy_stats', {
+      p_month: billMonth,
+      p_district: district,
+      p_tehsil: tehsil,
+      p_uc: uc,
+      p_status: dbStatus || '',
+    })
 
-  const [surveyRes, billingRes] = await Promise.all([
-    sup.rpc('get_survey_group_stats', { p_city_district: pDist, p_tehsil: pTeh, p_uc: pUc, p_surveyor: pSurv, p_status: dbStatus }),
-    sup.rpc('get_billing_group_stats', { p_city_district: pDist, p_tehsil: pTeh, p_uc: pUc, p_bill_month: billMonth }),
-  ])
-
-  if (surveyRes.error) throw new Error(`survey RPC: ${surveyRes.error.message}`)
-  if (billingRes.error) throw new Error(`billing RPC: ${billingRes.error.message}`)
-
-  const surveyRows = (surveyRes.data || []) as RpcSurveyRow[]
-  const billingRows = (billingRes.data || []) as RpcBillingRow[]
-  const billingMap = new Map(billingRows.map(r => [r.group_key, r]))
-
-  const rows: AggRow[] = surveyRows.map(r => {
-    const b = billingMap.get(r.group_key)
-    const m = kmeta(r.group_key, lvl)
-    return {
-      level: lvl,
-      district: m.district || 'Unknown',
-      ...(lvl !== 'district' ? { tehsil: m.tehsil ?? 'Unknown' } : {}),
-      ...(lvl === 'uc' ? { uc_name: m.uc_name ?? r.group_key } : {}),
-      total_units: Number(r.total_units),
-      active: Number(r.active_units),
-      billed: b ? Number(b.billed_units) : 0,
-      paid: b ? Number(b.paid_units) : 0,
-      collected: b ? Number(b.total_collected) : 0,
-      surveyors: Number(r.surveyor_count),
-      no_coords: Number(r.no_coords),
+    if (rpcErr) {
+      console.error('get_hierarchy_stats RPC error:', rpcErr)
+      return NextResponse.json({ error: rpcErr.message }, { status: 500 })
     }
-  })
 
-  const kpis = {
-    total_units: rows.reduce((s, r) => s + r.total_units, 0),
-    active_units: rows.reduce((s, r) => s + r.active, 0),
-    archived_units: rows.reduce((s, r) => s + r.total_units - r.active, 0),
-    billed_units: rows.reduce((s, r) => s + r.billed, 0),
-    paid_units: rows.reduce((s, r) => s + r.paid, 0),
-    total_collected: rows.reduce((s, r) => s + r.collected, 0),
-    unique_surveyors: rows.reduce((s, r) => s + r.surveyors, 0),
-    no_coords: rows.reduce((s, r) => s + r.no_coords, 0),
+    // RPC returns json ─ postgrest-js should return parsed object
+    const r = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
+      kpis?: Record<string, number>
+      rows?: { gk: string; total_units: number; active: number; billed: number; paid: number; collected: number; surveyors: number; no_coords: number }[]
+    } | null
+
+    if (!r?.rows?.length) {
+      return NextResponse.json({
+        kpis: { total_units: 0, active_units: 0, archived_units: 0, billed_units: 0, paid_units: 0, total_collected: 0, unique_surveyors: 0, no_coords: 0 },
+        delivery_kpis: { total_delivered: 0, total_assigned: 0, delivery_rate: 0, total_photos: 0, staff_with_deliveries: 0 },
+        rows: [], total: 0,
+      })
+    }
+
+    // Map RPC grouped rows → AggRow[]
+    const rows: AggRow[] = r.rows.map((g) => {
+      const base: AggRow = {
+        level: lvl,
+        district: lvl === 'district' ? g.gk : district || 'Unknown',
+        ...(lvl === 'tehsil' || lvl === 'uc' ? { tehsil: lvl === 'tehsil' ? g.gk : tehsil } : {}),
+        ...(lvl === 'uc' ? { uc_name: g.gk } : {}),
+        total_units: g.total_units,
+        active: g.active,
+        billed: g.billed,
+        paid: g.paid,
+        collected: Number(g.collected),
+        surveyors: g.surveyors,
+        no_coords: g.no_coords,
+      }
+      return base
+    })
+
+    // --- Delivery KPIS (independent queries, no psid dependency) ---
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+
+    const { data: recentAssignments } = await sup
+      .from('assignment_items')
+      .select('id, status, assignment_id')
+      .gte('delivered_at', ninetyDaysAgo)
+
+    const assigned = recentAssignments || []
+    const delivered = assigned.filter((a: any) => a.status === 'delivered')
+
+    // Count photos for delivered items (chunked)
+    const deliveredIds = delivered.map((a: any) => a.id)
+    let totalPhotos = 0
+    if (deliveredIds.length) {
+      const photoResults = await Promise.all(
+        chunkArray(deliveredIds, 800).map(chunk =>
+          sup.from('delivery_photos').select('id', { count: 'exact', head: true }).in('assignment_item_id', chunk)
+        )
+      )
+      totalPhotos = photoResults.reduce((s, r) => s + (r.count || 0), 0)
+    }
+
+    // Count distinct staff for these assignments
+    const assignmentIds = [...new Set(assigned.map((a: any) => a.assignment_id).filter(Boolean))]
+    let staffCount = 0
+    if (assignmentIds.length) {
+      const { data: staffData } = await sup
+        .from('daily_assignments')
+        .select('staff_id')
+        .in('id', assignmentIds)
+      staffCount = staffData ? new Set(staffData.map((s: any) => s.staff_id)).size : 0
+    }
+
+    const deliveryKpis = {
+      total_assigned: assigned.length,
+      total_delivered: delivered.length,
+      delivery_rate: assigned.length > 0 ? Math.round((delivered.length / assigned.length) * 100) : 0,
+      total_photos: totalPhotos,
+      staff_with_deliveries: staffCount,
+    }
+
+    // --- Sorting ---
+    if (lvl === 'district') rows.sort((a, b) => b.total_units - a.total_units)
+    else if (lvl === 'tehsil') rows.sort((a, b) => (a.tehsil ?? '').localeCompare(b.tehsil ?? ''))
+    else if (lvl === 'uc') rows.sort((a, b) => (a.uc_name ?? '').localeCompare(b.uc_name ?? ''))
+
+    // --- Pagination ---
+    const totalRows = rows.length
+    const pageRows = rows.slice((page - 1) * ps, (page - 1) * ps + ps)
+
+    return NextResponse.json({
+      kpis: r.kpis || {
+        total_units: 0, active_units: 0, archived_units: 0, billed_units: 0,
+        paid_units: 0, total_collected: 0, unique_surveyors: 0, no_coords: 0,
+      },
+      delivery_kpis: deliveryKpis,
+      rows: pageRows,
+      total: totalRows,
+    })
+  } catch (err) {
+    console.error('data-insight route error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-
-  if (lvl === 'district') rows.sort((a, b) => b.total_units - a.total_units)
-  else if (lvl === 'tehsil') rows.sort((a, b) => (a.tehsil ?? '').localeCompare(b.tehsil ?? ''))
-  else if (lvl === 'uc') rows.sort((a, b) => (a.uc_name ?? '').localeCompare(b.uc_name ?? ''))
-
-  const totalRows = rows.length
-  const pageRows = rows.slice((page - 1) * ps, (page - 1) * ps + ps)
-
-  return NextResponse.json({ kpis, rows: pageRows, total: totalRows })
 }

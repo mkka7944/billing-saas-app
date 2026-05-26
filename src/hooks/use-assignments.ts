@@ -1,0 +1,183 @@
+'use client'
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type { DailyAssignment, AssignmentItemWithUnit } from '@/types'
+import { currentMonth, today } from '@/lib/constants'
+
+export interface UCTotals {
+  uc_name: string
+  total: number
+  assigned: number
+  unassigned: number
+}
+
+export interface UnassignedBill {
+  survey_id: string
+  consumer_name: string | null
+  address: string | null
+  lat: number | null
+  lng: number | null
+  psid: string | null
+  amount_due: number | null
+  route_seq: number | null
+  route_name: string | null
+}
+
+export interface StaffMember {
+  id: string
+  full_name: string | null
+  assigned_city: string | null
+  assigned_ucs: string[] | null
+  is_active: boolean
+}
+
+export function useAssignmentTotals(month: string = currentMonth()) {
+  return useQuery<UCTotals[]>({
+    queryKey: ['assignment-totals', month],
+    queryFn: async () => {
+      const res = await fetch(`/api/assignments?totals=true&month=${month}`)
+      if (!res.ok) throw new Error('Failed to fetch totals')
+      const json = await res.json()
+      return json.data || []
+    },
+    staleTime: 1000 * 30,
+  })
+}
+
+export function useUnassignedBills(uc: string | null, month: string = currentMonth()) {
+  return useQuery<UnassignedBill[]>({
+    queryKey: ['unassigned-bills', uc, month],
+    queryFn: async () => {
+      if (!uc) return []
+      const res = await fetch(`/api/assignments?uc=${encodeURIComponent(uc)}&month=${month}`)
+      if (!res.ok) throw new Error('Failed to fetch unassigned bills')
+      const json = await res.json()
+      return json.data || []
+    },
+    enabled: !!uc,
+    staleTime: 1000 * 30,
+  })
+}
+
+export function useStaffList() {
+  return useQuery<StaffMember[]>({
+    queryKey: ['staff-list'],
+    queryFn: async () => {
+      const res = await fetch('/api/staff')
+      if (!res.ok) throw new Error('Failed to fetch staff')
+      const json = await res.json()
+      return json.data || []
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useCreateAssignment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: { staff_id: string; assigned_date: string; uc_name: string; psids: string[] }) => {
+      const res = await fetch('/api/assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to create assignment')
+      }
+      return res.json()
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['assignment-totals'] })
+      qc.invalidateQueries({ queryKey: ['unassigned-bills', vars.uc_name] })
+      qc.invalidateQueries({ queryKey: ['staff-assignment'] })
+    },
+  })
+}
+
+export function useStaffAssignment(staffId: string | null, date: string = today()) {
+  return useQuery<{ data: DailyAssignment | null; items: AssignmentItemWithUnit[] }>({
+    queryKey: ['staff-assignment', staffId, date],
+    queryFn: async () => {
+      if (!staffId) return { data: null, items: [] }
+      const res = await fetch(`/api/assignments?staff_id=${staffId}&date=${date}`)
+      if (!res.ok) throw new Error('Failed to fetch assignment')
+      return res.json()
+    },
+    enabled: !!staffId,
+    staleTime: 1000 * 30,
+  })
+}
+
+export interface AssignmentWithStats {
+  id: string
+  staff_id: string
+  staff_name: string
+  assigned_date: string
+  uc_name: string
+  total_items: number
+  pending: number
+  delivered: number
+  missed: number
+  completion_pct: number
+  created_at: string
+}
+
+export function useAssignmentList(date: string = today()) {
+  return useQuery<AssignmentWithStats[]>({
+    queryKey: ['assignment-list', date],
+    queryFn: async () => {
+      const res = await fetch(`/api/assignments?list=true&date=${date}`)
+      if (!res.ok) throw new Error('Failed to fetch assignments')
+      const json = await res.json()
+      return json.data || []
+    },
+    staleTime: 1000 * 30,
+  })
+}
+
+export function useRevokeAssignment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/assignments?id=${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to revoke assignment')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assignment-list'] })
+      qc.invalidateQueries({ queryKey: ['assignment-totals'] })
+      qc.invalidateQueries({ queryKey: ['unassigned-bills'] })
+    },
+  })
+}
+
+export function useMarkItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: {
+      id: string
+      status: 'delivered' | 'missed' | 'skipped'
+      gps_lat?: number | null
+      gps_lng?: number | null
+      notes?: string | null
+    }) => {
+      const res = await fetch('/api/assignments/items', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to mark item')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff-assignment'] })
+    },
+  })
+}

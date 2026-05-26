@@ -42,3 +42,6 @@ next-env.d.ts
 
 # data files (CSV, XLSX, JSON) - too large for git, transfer via USB
 scripts/data/
+
+# Historical bill data JSON (153MB, exceeds GitHub's 100MB limit)
+public/data/bills.json
