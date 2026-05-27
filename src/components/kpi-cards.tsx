@@ -1,12 +1,16 @@
 'use client'
 
 import { useBillingStats } from '@/hooks/use-billing-stats'
+import { useBillingStore } from '@/stores/billing-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Users, Receipt, PiggyBank, Target } from 'lucide-react'
 
 export function KpiCards() {
-  const { data, isLoading } = useBillingStats()
+  const selectedCity = useBillingStore((s) => s.selectedCity)
+  const filters = useBillingStore((s) => s.filters)
+  const tehsil = filters.tehsils[0] || null
+  const { data, isLoading } = useBillingStats(undefined, selectedCity, tehsil)
 
   if (isLoading) {
     return (

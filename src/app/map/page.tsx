@@ -16,15 +16,13 @@ import { useBillingUIStore } from '@/stores/billing-ui-store'
 export default function MapPage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
-  const role = useAuthStore((s) => s.role)
   const activeView = useBillingStore((s) => s.activeView)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
 
   useEffect(() => {
     if (!user) { router.replace('/login'); return }
-    if (role === 'staff') router.replace('/deliver')
-  }, [user, role, router])
+  }, [user, router])
 
   useEffect(() => { setPageIdentity('Map') }, [setPageIdentity])
 

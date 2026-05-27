@@ -15,7 +15,7 @@ import { AppShell } from '@/components/layout/AppShell'
 export default function StatsPage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
-  const role = useAuthStore((s) => s.role)
+  const roleName = useAuthStore((s) => s.roleName)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const [selectedStaff, setSelectedStaff] = useState<string>('')
   const [dateRange, setDateRange] = useState<'7' | '30' | '90'>('7')
@@ -38,7 +38,7 @@ export default function StatsPage() {
 
   useEffect(() => { setPageIdentity('Delivery Stats') }, [setPageIdentity])
 
-  if (role !== 'admin') {
+  if (roleName !== 'admin' && roleName !== 'super_admin') {
     return (
       <div className="flex items-center justify-center h-full">
         <p className="text-sm text-muted-foreground">Access denied. Admin only.</p>

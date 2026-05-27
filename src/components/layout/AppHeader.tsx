@@ -6,21 +6,19 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { MobileFilterSheet } from '@/components/filter-panel'
-import { Building2, Layers, Menu, RefreshCw, Search, X } from 'lucide-react'
+import { Building2, Layers, LogOut, Menu, RefreshCw, Search, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface AppHeaderProps {
   title?: string
   actions?: React.ReactNode
-  forceBack?: boolean
-  onBack?: () => void
 }
 
-export function AppHeader({ title, actions, forceBack, onBack }: AppHeaderProps) {
+export function AppHeader({ title, actions }: AppHeaderProps) {
   const user = useAuthStore((s) => s.user)
-  const activeView = useBillingStore((s) => s.activeView)
-  const goBackStore = useBillingStore((s) => s.goBack)
-  const navHistory = useBillingStore((s) => s.navHistory)
+  const displayName = useAuthStore((s) => s.displayName)
+  const roleName = useAuthStore((s) => s.roleName)
+  const signOut = useAuthStore((s) => s.signOut)
   const mapType = useBillingStore((s) => s.mapType)
   const setMapType = useBillingStore((s) => s.setMapType)
   const toggleSidebar = useBillingUIStore((s) => s.toggleSidebar)
@@ -41,31 +39,20 @@ export function AppHeader({ title, actions, forceBack, onBack }: AppHeaderProps)
     queryClient.invalidateQueries()
   }, [queryClient])
 
-  const showBack = forceBack || (navHistory.length > 0 && activeView !== 'detail')
   const displayTitle = title || pageTitle || 'TMT'
 
   return (
     <header className="border-b bg-card shrink-0">
-      {/* Row 1: Menu/Back + Title + Actions */}
+      {/* Row 1: Menu + Title + Actions */}
       <div className="flex items-center justify-between px-2 py-1.5 min-h-[48px]">
         <div className="flex items-center gap-1 min-w-0 flex-1">
-          {showBack ? (
-            <button
-              onClick={onBack || goBackStore}
-              className="h-11 w-11 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0"
-              aria-label="Back"
-            >
-              <span className="text-xl leading-none">‹</span>
-            </button>
-          ) : (
-            <button
-              onClick={toggleSidebar}
-              className="h-11 w-11 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0"
-              aria-label="Menu"
-            >
-              <Menu className="h-4 w-4" />
-            </button>
-          )}
+          <button
+            onClick={toggleSidebar}
+            className="h-11 w-11 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0"
+            aria-label="Menu"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
           <div className="flex items-center gap-1.5 min-w-0">
             <Building2 className="h-4 w-4 text-primary shrink-0" />
             <span className="text-xs font-bold tracking-tight truncate">{displayTitle}</span>
@@ -102,21 +89,35 @@ export function AppHeader({ title, actions, forceBack, onBack }: AppHeaderProps)
               </>
             )}
 
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/50 max-w-[140px]">
-              <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                <span className="text-[9px] font-black text-primary">
-                  {user?.email?.charAt(0).toUpperCase() || 'U'}
-                </span>
+            <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/50">
+                <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                  <span className="text-[9px] font-black text-primary">
+                    {(displayName || user?.email)?.charAt(0).toUpperCase() || 'U'}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-medium text-foreground truncate max-w-[80px] leading-tight">
+                    {displayName || user?.email?.split('@')[0] || ''}
+                  </div>
+                  <div className="text-[8px] font-semibold text-muted-foreground uppercase leading-tight">
+                    {roleName === 'super_admin' ? 'Super Admin' : roleName === 'admin' ? 'Admin' : 'Staff'}
+                  </div>
+                </div>
               </div>
-              <span className="text-[10px] font-medium text-muted-foreground truncate">
-                {user?.email?.split('@')[0] || ''}
-              </span>
+              <button
+                onClick={async () => { await signOut(); window.location.href = '/login' }}
+                className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer text-muted-foreground hover:text-rose-500 transition-colors"
+                title="Sign Out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Row 2: Search + Filter — always visible on mobile */}
+      {/* Row 2: Search + Filter — mobile only */}
       <div className="lg:hidden px-2 pb-2">
         <div className="flex items-center gap-2">
           <div className="flex-1 relative">

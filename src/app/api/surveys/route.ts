@@ -46,17 +46,26 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: data || [], total: count ?? 0 })
   }
 
-  // Payment filter: get ALL matching psids via paginated fetches
-  let idQ = sup.from('survey_units').select('psid').eq('status', 'ACTIVE')
-  if (districts.length) idQ = idQ.in('city_district', districts)
-  if (tehsils.length) idQ = idQ.in('tehsil', tehsils)
-  if (ucs.length) idQ = idQ.in('uc_name', ucs)
-  if (surveyor) idQ = idQ.eq('surveyor_name', surveyor)
-  if (search) idQ = idQ.or(`consumer_name.ilike.%${search}%,survey_id.ilike.%${search}%`)
-  idQ = idQ.not('psid', 'is', null).range(0, 1_000_000)
+  // Payment filter: fetch ALL matching psids in pages (avoids 1MB PostgREST limit)
+  const PSID_PAGE = 3000
+  let allPsids: string[] = []
+  let psidOffset = 0
+  while (true) {
+    let pq = sup.from('survey_units').select('psid').eq('status', 'ACTIVE')
+    if (districts.length) pq = pq.in('city_district', districts)
+    if (tehsils.length) pq = pq.in('tehsil', tehsils)
+    if (ucs.length) pq = pq.in('uc_name', ucs)
+    if (surveyor) pq = pq.eq('surveyor_name', surveyor)
+    if (search) pq = pq.or(`consumer_name.ilike.%${search}%,survey_id.ilike.%${search}%`)
+    pq = pq.not('psid', 'is', null)
 
-  const { data: allRows } = await idQ
-  const allPsids = (allRows || []).map((r: any) => r.psid).filter(Boolean)
+    const { data: rows } = await pq.range(psidOffset, psidOffset + PSID_PAGE - 1)
+    if (!rows?.length) break
+    const psids = rows.map((r: any) => r.psid).filter(Boolean)
+    allPsids.push(...psids)
+    if (psids.length < PSID_PAGE) break
+    psidOffset += PSID_PAGE
+  }
 
   // Chunk psids to avoid URL length limits
   const paidPsids = new Set<string>()

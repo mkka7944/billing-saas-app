@@ -11,7 +11,7 @@ import { X, MapPin, Copy, Camera, ChevronLeft, ChevronRight, Image, ExternalLink
 
 export function HouseDetailSheet() {
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
-  const goBack = useBillingStore((s) => s.goBack)
+  const selectHouse = useBillingStore((s) => s.selectHouse)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
   const setMapZoom = useBillingStore((s) => s.setMapZoom)
 
@@ -32,7 +32,7 @@ export function HouseDetailSheet() {
   const openOnMap = (lat: number, lng: number) => {
     setMapCenter([lat, lng])
     setMapZoom(18)
-    goBack()
+    selectHouse(null)
   }
 
   const isPaid = bill?.payment_status?.toLowerCase() === 'paid'
@@ -42,7 +42,7 @@ export function HouseDetailSheet() {
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 min-h-[44px]">
         <div className="flex items-center gap-2 min-w-0">
-          <button onClick={() => goBack()} className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0" aria-label="Close">
+          <button onClick={() => selectHouse(null)} className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
           <div className="min-w-0">

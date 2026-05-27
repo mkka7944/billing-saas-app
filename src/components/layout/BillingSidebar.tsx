@@ -26,6 +26,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
+import { CitySwitcher } from '@/components/layout/CitySwitcher'
 
 interface NavItem {
   id: string
@@ -38,7 +39,7 @@ interface NavItem {
 export function BillingSidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, signOut, role } = useAuthStore()
+  const { user, signOut, roleName, displayName } = useAuthStore()
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
   const { sidebarOpen, sidebarCollapsed, toggleSidebarCollapse, setSidebarOpen } = useBillingUIStore()
@@ -51,12 +52,12 @@ export function BillingSidebar() {
         { id: 'map', title: 'Map', icon: MapIcon, isView: true },
         { id: 'list', title: 'List', icon: List, isView: true },
         { id: 'stats', title: 'Dashboard', icon: BarChart3, isView: true },
-        ...(role === 'admin'
+        ...(roleName === 'admin' || roleName === 'super_admin'
           ? [{ id: 'data-insight', title: 'Data Insight', icon: FileSpreadsheet, isView: true }]
           : []),
       ],
     },
-    ...(role === 'admin'
+    ...(roleName === 'admin' || roleName === 'super_admin'
       ? [{
           category: 'Administration',
           items: [
@@ -121,7 +122,7 @@ export function BillingSidebar() {
         className={cn(
           'fixed inset-y-0 left-0 z-[1000] flex flex-col border-r border-border bg-sidebar text-sidebar-foreground transition-all duration-200 ease-in-out lg:static lg:translate-x-0',
           sidebarCollapsed ? 'w-[68px]' : 'w-64',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          sidebarOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'
         )}
       >
         {/* Header */}
@@ -160,6 +161,11 @@ export function BillingSidebar() {
               <span className="text-lg font-bold tracking-tight uppercase">TMT Billing</span>
             </div>
           )}
+        </div>
+
+        {/* City Switcher */}
+        <div className={cn('border-b border-border/40', sidebarCollapsed ? 'py-2' : '')}>
+          <CitySwitcher isCollapsed={sidebarCollapsed} />
         </div>
 
         {/* Navigation */}
@@ -244,7 +250,7 @@ export function BillingSidebar() {
             <div className="flex flex-col items-center gap-2">
               <div className="w-9 h-9 rounded-lg bg-sidebar-accent border border-sidebar-border flex items-center justify-center">
                 <span className="text-[10px] font-black text-sidebar-foreground uppercase tracking-tighter">
-                  {user?.email?.charAt(0).toUpperCase() || 'U'}
+                  {(displayName || user?.email)?.charAt(0).toUpperCase() || 'U'}
                 </span>
               </div>
               <button
@@ -260,15 +266,15 @@ export function BillingSidebar() {
               <div className="flex items-center gap-3 overflow-hidden">
                 <div className="w-9 h-9 rounded-lg bg-sidebar-accent border border-sidebar-border flex items-center justify-center shrink-0">
                   <span className="text-[10px] font-black text-sidebar-foreground uppercase tracking-tighter">
-                    {user?.email?.charAt(0).toUpperCase() || 'U'}
+                    {(displayName || user?.email)?.charAt(0).toUpperCase() || 'U'}
                   </span>
                 </div>
                 <div className="overflow-hidden min-w-0 flex-1">
                   <div className="text-[12px] font-bold truncate text-sidebar-foreground capitalize">
-                    {user?.email?.split('@')[0] || 'Operator'}
+                    {displayName || user?.email?.split('@')[0] || 'Operator'}
                   </div>
                   <div className="text-[10px] font-medium truncate text-sidebar-foreground/60 mt-0.5">
-                    {user?.email || ''}
+                    {roleName === 'super_admin' ? 'Super Admin' : roleName === 'admin' ? 'Admin' : 'Staff'}
                   </div>
                 </div>
               </div>

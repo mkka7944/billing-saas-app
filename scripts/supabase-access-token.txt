@@ -1,0 +1,10 @@
+Supabase Personal Access Token (PAT)
+Created: 2026-05-27
+Token: stored in `.env.local` as SUPABASE_ACCESS_TOKEN
+Usage: Management API — apply SQL migrations, query database
+  POST https://api.supabase.com/v1/projects/{ref}/database/query
+  Authorization: Bearer <token>
+  Content-Type: application/json
+  Body: {"query": "SQL here"}
+
+Project ref: qrxbsoqepfaryolwcedk

@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useCallback } from 'react'
 import dynamic from 'next/dynamic'
+import { useMap } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyData } from '@/hooks/use-survey-data'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,6 +25,17 @@ const GOOGLE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3']
 const TILE_URLS = {
   streets:   'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
   satellite: 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',
+}
+
+function MapFollower() {
+  const map = useMap()
+  const mapCenter = useBillingStore((s) => s.mapCenter)
+
+  useEffect(() => {
+    map.flyTo(mapCenter, map.getZoom(), { duration: 1.2 })
+  }, [map, mapCenter])
+
+  return null
 }
 
 export function MapView() {
@@ -61,6 +73,7 @@ export function MapView() {
           maxZoom={20}
           attribution='&copy; Google'
         />
+        <MapFollower />
         <SurveyMarkers data={markers} />
       </MapContainer>
     </div>

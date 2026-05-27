@@ -12,38 +12,49 @@ export async function GET(request: Request) {
   const staffId = sp.get('staff_id')
   const totals = sp.get('totals') === 'true'
   const list = sp.get('list') === 'true'
+  const district = sp.get('district') || ''
+  const tehsil = sp.get('tehsil') || ''
   const date = sp.get('date') || today()
   const month = sp.get('month') || currentMonth()
   const sup = await createClient()
 
   // Mode 1: Get unassigned counts per UC (for overview)
   if (totals) {
-    const { data: allAssignments } = await sup
-      .from('daily_assignments')
-      .select('id, uc_name')
-      .eq('assigned_date', date)
-
-    const allIds = allAssignments?.map((a: any) => a.id) || []
-    const { data: allItems } = allIds.length
-      ? await sup.from('assignment_items').select('psid').in('assignment_id', allIds)
-      : { data: [] }
-
-    const assignedPsids = new Set((allItems || []).map((i: any) => i.psid))
-
-    const { data: units } = await sup
+    let totalsQ = sup
       .from('survey_units')
-      .select('uc_name, psid')
+      .select('uc_name')
       .eq('status', 'ACTIVE')
       .eq('current_bill_month', month)
       .not('psid', 'is', null)
-      .range(0, 1_000_000)
+    if (district) totalsQ = totalsQ.eq('city_district', district)
+    if (tehsil) totalsQ = totalsQ.eq('tehsil', tehsil)
+
+    const { data: units } = await totalsQ.limit(20000)
 
     const counts = new Map<string, { total: number; assigned: number }>()
     for (const u of units || []) {
       const c = counts.get(u.uc_name) || { total: 0, assigned: 0 }
       c.total++
-      if (assignedPsids.has(u.psid)) c.assigned++
       counts.set(u.uc_name, c)
+    }
+
+    // Get assigned counts per UC from today's assignment items
+    const { data: todayAssignments } = await sup
+      .from('daily_assignments')
+      .select('id, uc_name')
+      .eq('assigned_date', date)
+
+    if (todayAssignments?.length) {
+      const ucFromId = new Map(todayAssignments.map((a: any) => [a.id, a.uc_name]))
+      const { data: items } = await sup
+        .from('assignment_items')
+        .select('assignment_id')
+        .in('assignment_id', todayAssignments.map((a: any) => a.id))
+
+      for (const item of items || []) {
+        const uc = ucFromId.get(item.assignment_id)
+        if (uc && counts.has(uc)) counts.get(uc)!.assigned++
+      }
     }
 
     const data = Array.from(counts.entries())

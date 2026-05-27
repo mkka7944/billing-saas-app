@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
-import { useBillingStore } from '@/stores/billing-store'
+import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
 import { useHierarchy } from '@/hooks/use-hierarchy'
 import { useBillMonths } from '@/hooks/use-bill-months'
 import { shortenMCName, compareMC } from '@/lib/mc-utils'
@@ -119,50 +119,37 @@ function FilterAccordion({
 
 function FilterPanelInner({ onClose }: { onClose?: () => void }) {
   const filters = useBillingStore((s) => s.pendingFilters)
+  const selectedCity = useBillingStore((s) => s.selectedCity)
   const setFilters = useBillingStore((s) => s.setPendingFilter)
   const applyFilters = useBillingStore((s) => s.applyFilters)
   const cancelFilters = useBillingStore((s) => s.cancelFilters)
   const resetFilters = useBillingStore((s) => s.resetFilters)
   const { data: hierarchy } = useHierarchy()
 
-  const [openSection, setOpenSection] = useState<string | null>('district')
-
-  const districts = hierarchy?.districts || []
-
-  const tehsils = useMemo(() => {
-    if (!filters.districts.length) {
-      return Object.values(hierarchy?.tehsils || {}).flat()
-    }
-    return filters.districts.flatMap((d) => hierarchy?.tehsils[d] || [])
-  }, [filters.districts, hierarchy])
+  const [openSection, setOpenSection] = useState<string | null>('mcuc')
 
   const ucs = useMemo(() => {
-    if (!filters.districts.length && !filters.tehsils.length) {
-      return Object.values(hierarchy?.ucs || {})
-        .flat()
-        .map((u) => ({
-          ...u,
-          short: shortenMCName(u.value),
-        }))
-        .sort((a, b) => compareMC(a.short, b.short))
-    }
+    const seen = new Set<string>()
     const list: { value: string; label: string; short: string }[] = []
-    const dists = filters.districts.length ? filters.districts : districts.map((d) => d.value)
-    const tehls = filters.tehsils.length ? filters.tehsils : tehsils.map((t) => t.value)
-    for (const d of dists) {
-      for (const t of tehls) {
-        const key = `${d}::${t}`
-        const group = hierarchy?.ucs[key] || []
-        for (const u of group) {
-          list.push({ ...u, short: shortenMCName(u.value, d, t) })
+    for (const [key, group] of Object.entries(hierarchy?.ucs || {})) {
+      if (selectedCity) {
+        const cfg = CITY_CONFIG[selectedCity]
+        if (cfg) {
+          const expected = `${cfg.district}::${cfg.tehsil}`
+          if (key !== expected) continue
         }
+      }
+      for (const u of group) {
+        if (seen.has(u.value)) continue
+        seen.add(u.value)
+        list.push({ ...u, short: shortenMCName(u.value, selectedCity || undefined) })
       }
     }
     return list.sort((a, b) => compareMC(a.short, b.short))
-  }, [filters.districts, filters.tehsils, hierarchy, districts, tehsils])
+  }, [selectedCity, hierarchy])
 
   const toggleFilter = useCallback(
-    (group: 'districts' | 'tehsils' | 'ucs', value: string) => {
+    (group: 'ucs', value: string) => {
       const current = new Set(filters[group])
       if (current.has(value)) current.delete(value)
       else current.add(value)
@@ -172,20 +159,20 @@ function FilterPanelInner({ onClose }: { onClose?: () => void }) {
   )
 
   const selectAll = useCallback(
-    (group: 'districts' | 'tehsils' | 'ucs', items: { value: string }[]) => {
+    (group: 'ucs', items: { value: string }[]) => {
       setFilters({ [group]: items.map((i) => i.value) })
     },
     [setFilters]
   )
 
   const selectNone = useCallback(
-    (group: 'districts' | 'tehsils' | 'ucs') => {
+    (group: 'ucs') => {
       setFilters({ [group]: [] })
     },
     [setFilters]
   )
 
-  const hasActiveFilters = filters.districts.length > 0 || filters.tehsils.length > 0 || filters.ucs.length > 0
+  const hasActiveFilters = filters.ucs.length > 0
 
   return (
     <div className="flex flex-col">
@@ -212,40 +199,6 @@ function FilterPanelInner({ onClose }: { onClose?: () => void }) {
       )}
 
       <div className="overflow-y-auto">
-        <FilterAccordion
-          label="Districts"
-          icon="🏛"
-          items={districts}
-          selected={new Set(filters.districts)}
-          onToggle={(v) => {
-            toggleFilter('districts', v)
-            if (!filters.districts.includes(v)) {
-              setFilters({ tehsils: [], ucs: [] })
-            }
-          }}
-          onSelectAll={() => selectAll('districts', districts)}
-          onSelectNone={() => { selectNone('districts'); setFilters({ tehsils: [], ucs: [] }) }}
-          open={openSection === 'district'}
-          onToggleOpen={() => setOpenSection(openSection === 'district' ? null : 'district')}
-        />
-
-        <FilterAccordion
-          label="Tehsils"
-          icon="📍"
-          items={tehsils}
-          selected={new Set(filters.tehsils)}
-          onToggle={(v) => {
-            toggleFilter('tehsils', v)
-            if (!filters.tehsils.includes(v)) {
-              setFilters({ ucs: [] })
-            }
-          }}
-          onSelectAll={() => selectAll('tehsils', tehsils)}
-          onSelectNone={() => { selectNone('tehsils'); setFilters({ ucs: [] }) }}
-          open={openSection === 'tehsil'}
-          onToggleOpen={() => setOpenSection(openSection === 'tehsil' ? null : 'tehsil')}
-        />
-
         <FilterAccordion
           label="MC/UC Areas"
           icon="🗺"
@@ -381,39 +334,37 @@ const PENDING_DEFAULTS = {
 }
 
 export function DesktopFilterBar() {
+  const filters = useBillingStore((s) => s.filters)
   const pendingFilters = useBillingStore((s) => s.pendingFilters)
+  const selectedCity = useBillingStore((s) => s.selectedCity)
   const setPendingFilter = useBillingStore((s) => s.setPendingFilter)
+  const setFilters = useBillingStore((s) => s.setFilters)
   const { data: hierarchy } = useHierarchy()
   const { data: billMonths } = useBillMonths()
 
   const [searchFocused, setSearchFocused] = useState(false)
 
-  const districts = hierarchy?.districts || []
-
-  const tehsils = useMemo(() => {
-    if (!pendingFilters.districts.length) return []
-    return pendingFilters.districts.flatMap((d) => hierarchy?.tehsils[d] || [])
-  }, [pendingFilters.districts, hierarchy])
-
   const ucs = useMemo(() => {
+    const seen = new Set<string>()
     const list: { value: string; label: string; short: string }[] = []
-    const dists = pendingFilters.districts.length ? pendingFilters.districts : []
-    const tehls = pendingFilters.tehsils.length ? pendingFilters.tehsils : []
-    if (!dists.length || !tehls.length) return list
-    for (const d of dists) {
-      for (const t of tehls) {
-        const group = hierarchy?.ucs[`${d}::${t}`] || []
-        for (const u of group) {
-          list.push({ ...u, short: shortenMCName(u.value, d, t) })
+    for (const [key, group] of Object.entries(hierarchy?.ucs || {})) {
+      if (selectedCity) {
+        const cfg = CITY_CONFIG[selectedCity]
+        if (cfg) {
+          const expected = `${cfg.district}::${cfg.tehsil}`
+          if (key !== expected) continue
         }
+      }
+      for (const u of group) {
+        if (seen.has(u.value)) continue
+        seen.add(u.value)
+        list.push({ ...u, short: shortenMCName(u.value, selectedCity || undefined) })
       }
     }
     return list.sort((a, b) => compareMC(a.short, b.short))
-  }, [pendingFilters.districts, pendingFilters.tehsils, hierarchy])
+  }, [selectedCity, hierarchy])
 
   const activeFilterCount = [
-    pendingFilters.districts.length,
-    pendingFilters.tehsils.length,
     pendingFilters.ucs.length,
     pendingFilters.surveyor !== null,
     pendingFilters.paymentStatus !== 'all',
@@ -423,21 +374,27 @@ export function DesktopFilterBar() {
   const hasActiveFilters = activeFilterCount > 0
 
   const toggleSelect = useCallback(
-    (group: 'districts' | 'tehsils' | 'ucs', value: string) => {
+    (group: 'ucs', value: string) => {
       const current = new Set(pendingFilters[group])
       if (current.has(value)) current.delete(value)
       else current.add(value)
-      const update: Partial<Record<'districts' | 'tehsils' | 'ucs', string[]>> = { [group]: [...current] }
-      if (group === 'districts') { update.tehsils = []; update.ucs = [] }
-      if (group === 'tehsils') { update.ucs = [] }
-      setPendingFilter(update)
+      setPendingFilter({ [group]: [...current] })
     },
     [pendingFilters, setPendingFilter]
   )
 
   const resetPendingFilters = useCallback(() => {
-    setPendingFilter(PENDING_DEFAULTS)
-  }, [setPendingFilter])
+    setFilters({
+      districts: filters.districts,
+      tehsils: [],
+      ucs: [],
+      surveyor: null,
+      paymentStatus: 'all',
+      unitType: null,
+      search: '',
+      billMonth: currentMonth(),
+    })
+  }, [setFilters, filters.districts])
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/20 shrink-0">
@@ -498,31 +455,9 @@ export function DesktopFilterBar() {
 
       <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
 
-      {/* District */}
-      <FilterDropdown
-        id="district"
-        label="District"
-        items={districts}
-        selected={new Set(pendingFilters.districts)}
-        onToggle={(v) => toggleSelect('districts', v)}
-        onSelectAll={() => { setPendingFilter({ districts: districts.map((d) => d.value), tehsils: [], ucs: [] }) }}
-        onSelectNone={() => { setPendingFilter({ districts: [], tehsils: [], ucs: [] }) }}
-      />
-
-      {/* Tehsil */}
-      <FilterDropdown
-        id="tehsil"
-        label="Tehsil"
-        items={tehsils}
-        selected={new Set(pendingFilters.tehsils)}
-        onToggle={(v) => toggleSelect('tehsils', v)}
-        onSelectAll={() => { setPendingFilter({ tehsils: tehsils.map((t) => t.value), ucs: [] }) }}
-        onSelectNone={() => { setPendingFilter({ tehsils: [], ucs: [] }) }}
-        disabled={!pendingFilters.districts.length}
-      />
-
       {/* MC/UC */}
       <FilterDropdown
+        key={`mcuc-${selectedCity || 'all'}`}
         id="mcuc"
         label="MC/UC"
         items={ucs}
@@ -530,7 +465,6 @@ export function DesktopFilterBar() {
         onToggle={(v) => toggleSelect('ucs', v)}
         onSelectAll={() => { setPendingFilter({ ucs: ucs.map((u) => u.value) }) }}
         onSelectNone={() => { setPendingFilter({ ucs: [] }) }}
-        disabled={!pendingFilters.tehsils.length}
         className="min-w-[80px]"
       />
 
@@ -666,8 +600,6 @@ export function MobileFilterSheet() {
   const filters = useBillingStore((s) => s.filters)
 
   const activeCount = [
-    filters.districts.length,
-    filters.tehsils.length,
     filters.ucs.length,
     filters.surveyor !== null,
     filters.paymentStatus !== 'all',

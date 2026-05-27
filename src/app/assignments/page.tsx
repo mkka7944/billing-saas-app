@@ -19,11 +19,11 @@ import {
 } from '@/hooks/use-assignments'
 import { ArrowLeft, BadgePlus, Loader2, Trash2 } from 'lucide-react'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
+import { useBillingStore } from '@/stores/billing-store'
 
 export default function AssignmentsPage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
-  const role = useAuthStore((s) => s.role)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const [tab, setTab] = useState<'create' | 'active'>('create')
   const [selectedUc, setSelectedUc] = useState<string | null>(null)
@@ -31,8 +31,11 @@ export default function AssignmentsPage() {
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null)
   const [assignCount, setAssignCount] = useState<number>(50)
   const [search, setSearch] = useState('')
+  const selectedCity = useBillingStore((s) => s.selectedCity)
+  const filters = useBillingStore((s) => s.filters)
+  const tehsil = filters.tehsils[0] || null
 
-  const { data: totals, isLoading: totalsLoading } = useAssignmentTotals()
+  const { data: totals, isLoading: totalsLoading } = useAssignmentTotals(undefined, selectedCity, tehsil)
   const { data: bills, isLoading: billsLoading } = useUnassignedBills(selectedUc)
   const { data: staff } = useStaffList()
   const createAssignment = useCreateAssignment()

@@ -30,11 +30,14 @@ export interface CityWithRoutes {
   ucs: UCWithRoutes[]
 }
 
-export function useRouteTree() {
+export function useRouteTree(city?: string | null, tehsil?: string | null) {
   return useQuery<CityWithRoutes[]>({
-    queryKey: ['route-tree'],
+    queryKey: ['route-tree', city, tehsil],
     queryFn: async () => {
-      const res = await fetch('/api/routes')
+      const params = new URLSearchParams()
+      if (city) params.set('city', city)
+      if (tehsil) params.set('tehsil', tehsil)
+      const res = await fetch(`/api/routes?${params}`)
       if (!res.ok) throw new Error('Failed to fetch routes')
       const json = await res.json()
       return json.data || []
@@ -43,12 +46,14 @@ export function useRouteTree() {
   })
 }
 
-export function useRouteUnits(city: string | null, routeName: string | null) {
+export function useRouteUnits(city: string | null, routeName: string | null, tehsil?: string | null) {
   return useQuery<RouteUnit[]>({
-    queryKey: ['route-units', city, routeName],
+    queryKey: ['route-units', city, routeName, tehsil],
     queryFn: async () => {
       if (!city || !routeName) return []
-      const res = await fetch(`/api/routes?city=${encodeURIComponent(city)}&route=${encodeURIComponent(routeName)}`)
+      const params = new URLSearchParams({ city, route: routeName })
+      if (tehsil) params.set('tehsil', tehsil)
+      const res = await fetch(`/api/routes?${params}`)
       if (!res.ok) throw new Error('Failed to fetch route units')
       const json = await res.json()
       return json.data || []

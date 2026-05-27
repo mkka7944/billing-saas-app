@@ -12,7 +12,7 @@ import { Map, List, BarChart3, Upload, Loader2, WifiOff, CheckCircle2, XCircle, 
 import { cn } from '@/lib/utils'
 import type { AssignmentItemWithUnit } from '@/types'
 import DeliverCardList from '@/components/delivery/deliver-card-list'
-import { AppHeader } from '@/components/layout/AppHeader'
+import { AppShell } from '@/components/layout/AppShell'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 
 const DeliverMap = dynamic(
@@ -77,7 +77,7 @@ function TodayStats({ items }: { items: AssignmentItemWithUnit[] }) {
 export default function DeliverPage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
-  const role = useAuthStore((s) => s.role)
+  const roleName = useAuthStore((s) => s.roleName)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [photoPreviews, setPhotoPreviews] = useState<Record<string, string>>({})
@@ -113,8 +113,8 @@ export default function DeliverPage() {
 
   useEffect(() => {
     if (!user) { router.replace('/login'); return }
-    if (role === 'admin') router.replace('/map')
-  }, [user, role, router])
+    if (roleName !== 'field_staff') router.replace('/map')
+  }, [user, roleName, router])
 
   // Use cached data as fallback
   const cached = useCache ? getCachedAssignment() : null
@@ -213,7 +213,8 @@ export default function DeliverPage() {
   ]
 
   return (
-    <div className="fixed inset-0 bg-background flex flex-col overflow-hidden staff-light-mode">
+    <AppShell>
+      <div className="flex flex-col h-full">
       {/* Error banner */}
       {lastError && (
         <div className="h-8 shrink-0 flex items-center justify-center bg-destructive/10 text-destructive text-xs font-medium px-4">
@@ -221,31 +222,30 @@ export default function DeliverPage() {
         </div>
       )}
 
-      <AppHeader
-        title={viewMode === 'list' ? 'All Items' : viewMode === 'stats' ? 'Today\'s Stats' : 'Deliver'}
-        forceBack
-        onBack={() => router.push('/map')}
-        actions={
-          <div className="flex items-center gap-2">
-            {!isOnline && (
-              <span className="text-[10px] text-amber-600 flex items-center gap-1 font-medium">
-                <WifiOff className="h-3 w-3" />
-                Offline
-              </span>
+      {/* Status bar — offline + photo queue */}
+      {(!isOnline || queueCount > 0 || useCache) && (
+      <div className="shrink-0 px-4 py-1.5 border-b bg-muted/30 flex items-center gap-3">
+        {!isOnline && (
+          <span className="text-[10px] text-amber-600 flex items-center gap-1 font-medium">
+            <WifiOff className="h-3 w-3" />
+            Offline
+          </span>
+        )}
+        {queueCount > 0 && (
+          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+            {isProcessing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Upload className="h-3 w-3" />
             )}
-            {queueCount > 0 && (
-              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                {isProcessing ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Upload className="h-3 w-3" />
-                )}
-                {queueCount}
-              </span>
-            )}
-          </div>
-        }
-      />
+            {queueCount}
+          </span>
+        )}
+        {useCache && (
+          <span className="text-[9px] text-amber-600 font-medium">(cached)</span>
+        )}
+      </div>
+      )}
 
       {/* Persistent progress bar */}
       {items.length > 0 && viewMode !== 'stats' && (
@@ -366,5 +366,6 @@ export default function DeliverPage() {
         </nav>
       )}
     </div>
+    </AppShell>
   )
 }

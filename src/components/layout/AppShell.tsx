@@ -14,12 +14,10 @@ import { cn } from '@/lib/utils'
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const role = useAuthStore((s) => s.role)
+  const roleName = useAuthStore((s) => s.roleName)
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
   const { setSidebarOpen } = useBillingUIStore()
-
-  const isMapPage = pathname === '/map'
 
   // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [
@@ -47,7 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [handleResize])
 
   return (
-    <div className="flex h-full">
+    <div className={cn("flex h-full", roleName === 'field_staff' && 'staff-light-mode')}>
       <BillingSidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -63,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
 
-        {/* Bottom tab bar — mobile only, core navigation */}
+        {/* Bottom tab bar — mobile only */}
         <nav className="flex items-center justify-around border-t bg-card shrink-0 safe-area-bottom lg:hidden">
           {tabs.map((tab) => {
             const isActive = tab.href ? pathname === tab.href : activeView === tab.id
@@ -72,7 +70,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={tab.id}
                 onClick={() => {
                   if (tab.href) router.push(tab.href)
-                  else setView(tab.id as 'map' | 'list' | 'stats' | 'data-insight' | 'detail')
+                  else {
+                    setView(tab.id as 'map' | 'list' | 'stats' | 'data-insight' | 'detail')
+                    if (pathname !== '/map') router.push('/map')
+                  }
                 }}
                 className={cn(
                   "flex flex-col items-center gap-0.5 py-2 px-4 min-w-0 min-h-[48px] justify-center transition-colors cursor-pointer",

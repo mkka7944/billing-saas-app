@@ -7,15 +7,13 @@ import { useAuthStore } from '@/stores/auth-store'
 export default function Home() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
-  const role = useAuthStore((s) => s.role)
   const initialized = useAuthStore((s) => s.initialized)
 
   useEffect(() => {
     if (!initialized) return
     if (!user) { router.replace('/login'); return }
-    if (role === 'staff') router.replace('/deliver')
-    else router.replace('/map')
-  }, [initialized, user, role, router])
+    router.replace('/map')
+  }, [initialized, user, router])
 
   return (
     <div className="flex flex-1 items-center justify-center">

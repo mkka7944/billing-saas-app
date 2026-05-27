@@ -11,13 +11,16 @@ import {
 import { useRouteTree, useRouteUnits } from '@/hooks/use-routes'
 import { ArrowLeft, ChevronRight, ChevronDown, Loader2, MapPin } from 'lucide-react'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
+import { useBillingStore } from '@/stores/billing-store'
 
 export default function RoutePage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
-  const role = useAuthStore((s) => s.role)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
-  const { data: tree, isLoading } = useRouteTree()
+  const globalCity = useBillingStore((s) => s.selectedCity)
+  const globalFilters = useBillingStore((s) => s.filters)
+  const globalTehsil = globalFilters.tehsils[0] || null
+  const { data: tree, isLoading } = useRouteTree(globalCity, globalTehsil)
   const [expandedCities, setExpandedCities] = useState<Set<string>>(new Set())
   const [expandedUcs, setExpandedUcs] = useState<Set<string>>(new Set())
   const [selectedRoute, setSelectedRoute] = useState<{ city: string; route: string } | null>(null)
@@ -26,6 +29,7 @@ export default function RoutePage() {
   const { data: routeUnits, isLoading: unitsLoading } = useRouteUnits(
     selectedRoute?.city || null,
     selectedRoute?.route || null,
+    globalTehsil,
   )
 
   useEffect(() => {

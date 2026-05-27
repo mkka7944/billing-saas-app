@@ -31,11 +31,14 @@ export interface StaffMember {
   is_active: boolean
 }
 
-export function useAssignmentTotals(month: string = currentMonth()) {
+export function useAssignmentTotals(month: string = currentMonth(), district?: string | null, tehsil?: string | null) {
   return useQuery<UCTotals[]>({
-    queryKey: ['assignment-totals', month],
+    queryKey: ['assignment-totals', month, district, tehsil],
     queryFn: async () => {
-      const res = await fetch(`/api/assignments?totals=true&month=${month}`)
+      const params = new URLSearchParams({ totals: 'true', month })
+      if (district) params.set('district', district)
+      if (tehsil) params.set('tehsil', tehsil)
+      const res = await fetch(`/api/assignments?${params}`)
       if (!res.ok) throw new Error('Failed to fetch totals')
       const json = await res.json()
       return json.data || []

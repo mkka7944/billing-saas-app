@@ -12,7 +12,7 @@ import { Building2, Loader2 } from 'lucide-react'
 export default function LoginPage() {
   const router = useRouter()
   const { signIn, user, initialized, isLoading } = useAuthStore()
-  const [email, setEmail] = useState('')
+  const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -45,7 +45,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
-    const result = await signIn(email, password)
+    const result = await signIn(login, password)
     setSubmitting(false)
     if (result.error) setError(result.error)
     else router.replace('/map')
@@ -61,17 +61,17 @@ export default function LoginPage() {
             </div>
           </div>
           <CardTitle className="text-2xl font-bold font-display">TMT Billing</CardTitle>
-          <CardDescription>Sign in to your account</CardDescription>
+          <CardDescription>Sign in with your username or email</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium">Email</label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+              <label htmlFor="login" className="text-sm font-medium">Username or Email</label>
+              <Input id="login" type="text" value={login} onChange={(e) => setLogin(e.target.value)} placeholder="your_username" required autoComplete="username" />
             </div>
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium">Password</label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required autoComplete="current-password" />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={submitting || isLoading}>
