@@ -125,6 +125,7 @@ export interface AssignmentItemUnit {
   lng: number | null
   amount_due: number | null
   monthly_fee: number | null
+  arrears: number | null
   route_name: string | null
   route_seq: number | null
   uc_name: string | null

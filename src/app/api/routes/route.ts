@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-const ROUTE_UNIT_COLS = 'survey_id, consumer_name, address, psid, amount_due, route_seq, lat, lng'
+const ROUTE_UNIT_COLS = 'survey_id, consumer_name, address, psid, amount_due, monthly_fee, arrears, route_seq, lat, lng'
 
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams

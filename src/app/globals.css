@@ -233,6 +233,14 @@
     @apply w-full h-full;
   }
 
+  .leaflet-control-zoom {
+    display: none !important;
+  }
+
+  .leaflet-control-attribution {
+    display: none !important;
+  }
+
   [data-slot="card"] {
     box-shadow: none !important;
   }

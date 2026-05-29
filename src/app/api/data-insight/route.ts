@@ -31,52 +31,7 @@ export async function GET(request: Request) {
     const sup = await createClient()
     const lvl: AggRow['level'] = !district ? 'district' : !tehsil ? 'tehsil' : 'uc'
     const dbStatus = statusParam === 'active' ? 'ACTIVE' : statusParam === 'archived' ? 'ARCHIVED' : null
-
-    // --- Aggregation via RPC ---
-    const { data: raw, error: rpcErr } = await sup.rpc('get_hierarchy_stats', {
-      p_month: billMonth,
-      p_district: district,
-      p_tehsil: tehsil,
-      p_uc: uc,
-      p_status: dbStatus || '',
-    })
-
-    if (rpcErr) {
-      console.error('get_hierarchy_stats RPC error:', rpcErr)
-      return NextResponse.json({ error: rpcErr.message }, { status: 500 })
-    }
-
-    // RPC returns json ─ postgrest-js should return parsed object
-    const r = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
-      kpis?: Record<string, number>
-      rows?: { gk: string; total_units: number; active: number; billed: number; paid: number; collected: number; surveyors: number; no_coords: number }[]
-    } | null
-
-    if (!r?.rows?.length) {
-      return NextResponse.json({
-        kpis: { total_units: 0, active_units: 0, archived_units: 0, billed_units: 0, paid_units: 0, total_collected: 0, unique_surveyors: 0, no_coords: 0 },
-        delivery_kpis: { total_delivered: 0, total_assigned: 0, delivery_rate: 0, total_photos: 0, staff_with_deliveries: 0 },
-        rows: [], total: 0,
-      })
-    }
-
-    // Map RPC grouped rows → AggRow[]
-    const rows: AggRow[] = r.rows.map((g) => {
-      const base: AggRow = {
-        level: lvl,
-        district: lvl === 'district' ? g.gk : district || 'Unknown',
-        ...(lvl === 'tehsil' || lvl === 'uc' ? { tehsil: lvl === 'tehsil' ? g.gk : tehsil } : {}),
-        ...(lvl === 'uc' ? { uc_name: g.gk } : {}),
-        total_units: g.total_units,
-        active: g.active,
-        billed: g.billed,
-        paid: g.paid,
-        collected: Number(g.collected),
-        surveyors: g.surveyors,
-        no_coords: g.no_coords,
-      }
-      return base
-    })
+    const drillUC = sp.get('drill') || ''
 
     // --- Delivery KPIS (independent queries, no psid dependency) ---
     const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
@@ -120,12 +75,138 @@ export async function GET(request: Request) {
       staff_with_deliveries: staffCount,
     }
 
+    // --- Drill-down mode: unit-level data ---
+    if (drillUC) {
+      const { data: raw, error: rpcErr } = await sup.rpc('get_hierarchy_stats', {
+        p_month: billMonth,
+        p_district: district,
+        p_tehsil: tehsil,
+        p_uc: drillUC,
+        p_status: dbStatus || '',
+      })
+
+      if (rpcErr) {
+        console.error('get_hierarchy_stats RPC error:', rpcErr)
+        return NextResponse.json({ error: rpcErr.message }, { status: 500 })
+      }
+
+      const r = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
+        kpis?: Record<string, number>
+      } | null
+
+      let unitQuery = sup
+        .from('survey_units')
+        .select('survey_id, psid, consumer_name, status, amount_due, surveyor_name, monthly_fee, arrears', { count: 'exact' })
+        .eq('uc_name', drillUC)
+        .eq('status', dbStatus || 'ACTIVE')
+
+      if (district) unitQuery = unitQuery.eq('city_district', district)
+      if (tehsil) unitQuery = unitQuery.eq('tehsil', tehsil)
+
+      const { data: units, count: unitTotal, error: unitErr } = await unitQuery
+        .order('psid')
+        .range((page - 1) * ps, (page - 1) * ps + ps - 1)
+
+      if (unitErr) {
+        console.error('Drill-down query error:', unitErr)
+        return NextResponse.json({ error: unitErr.message }, { status: 500 })
+      }
+
+      let unitRows: {
+        survey_id: string; psid: string; consumer_name: string | null; status: string
+        amount_due: number; surveyor_name: string | null; amount_paid: number
+        monthly_fee: number; arrears: number
+      }[] = (units || []).map(u => ({
+        survey_id: u.survey_id,
+        psid: u.psid,
+        consumer_name: u.consumer_name,
+        status: u.status,
+        amount_due: u.amount_due,
+        surveyor_name: u.surveyor_name,
+        amount_paid: 0,
+        monthly_fee: u.monthly_fee ?? 0,
+        arrears: u.arrears ?? 0,
+      }))
+
+      const psids = (units || []).map(u => u.psid)
+      if (psids.length) {
+        const { data: payments } = await sup
+          .from('payment_history')
+          .select('psid, amount_paid')
+          .eq('bill_month', billMonth)
+          .eq('payment_status', 'paid')
+          .in('psid', psids)
+
+        const paymentMap = new Map((payments || []).map(p => [p.psid, p.amount_paid ?? 0]))
+        unitRows = unitRows.map(u => ({ ...u, amount_paid: paymentMap.get(u.psid) || 0 }))
+      }
+
+      return NextResponse.json({
+        kpis: r?.kpis || {
+          total_units: 0, active_units: 0, archived_units: 0, billed_units: 0,
+          paid_units: 0, total_collected: 0, unique_surveyors: 0, no_coords: 0,
+        },
+        delivery_kpis: deliveryKpis,
+        unitRows,
+        rows: [],
+        total: unitTotal || 0,
+        level: 'unit',
+      })
+    }
+
+    // --- Normal aggregation flow ---
+    const { data: raw, error: rpcErr } = await sup.rpc('get_hierarchy_stats', {
+      p_month: billMonth,
+      p_district: district,
+      p_tehsil: tehsil,
+      p_uc: uc,
+      p_status: dbStatus || '',
+    })
+
+    if (rpcErr) {
+      console.error('get_hierarchy_stats RPC error:', rpcErr)
+      return NextResponse.json({ error: rpcErr.message }, { status: 500 })
+    }
+
+    const r = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
+      kpis?: Record<string, number>
+      rows?: { gk: string; total_units: number; active: number; billed: number; paid: number; collected: number; surveyors: number; no_coords: number }[]
+    } | null
+
+    if (!r?.rows?.length) {
+      return NextResponse.json({
+        kpis: { total_units: 0, active_units: 0, archived_units: 0, billed_units: 0, paid_units: 0, total_collected: 0, unique_surveyors: 0, no_coords: 0 },
+        delivery_kpis: { total_delivered: 0, total_assigned: 0, delivery_rate: 0, total_photos: 0, staff_with_deliveries: 0 },
+        rows: [], total: 0, level: lvl,
+      })
+    }
+
+    const rows: AggRow[] = r.rows.map((g) => {
+      const base: AggRow = {
+        level: lvl,
+        district: lvl === 'district' ? g.gk : district || 'Unknown',
+        ...(lvl === 'tehsil' || lvl === 'uc' ? { tehsil: lvl === 'tehsil' ? g.gk : tehsil } : {}),
+        ...(lvl === 'uc' ? { uc_name: g.gk } : {}),
+        total_units: g.total_units,
+        active: g.active,
+        billed: g.billed,
+        paid: g.paid,
+        collected: Number(g.collected),
+        surveyors: g.surveyors,
+        no_coords: g.no_coords,
+      }
+      return base
+    })
+
     // --- Sorting ---
     if (lvl === 'district') rows.sort((a, b) => b.total_units - a.total_units)
     else if (lvl === 'tehsil') rows.sort((a, b) => (a.tehsil ?? '').localeCompare(b.tehsil ?? ''))
-    else if (lvl === 'uc') rows.sort((a, b) => (a.uc_name ?? '').localeCompare(b.uc_name ?? ''))
+    else if (lvl === 'uc') rows.sort((a, b) => {
+      const aN = parseInt((a.uc_name ?? '').replace(/\D/g, ''), 10) || 0
+      const bN = parseInt((b.uc_name ?? '').replace(/\D/g, ''), 10) || 0
+      return aN - bN
+    })
 
-    // --- Pagination ---
     const totalRows = rows.length
     const pageRows = rows.slice((page - 1) * ps, (page - 1) * ps + ps)
 
@@ -137,6 +218,7 @@ export async function GET(request: Request) {
       delivery_kpis: deliveryKpis,
       rows: pageRows,
       total: totalRows,
+      level: lvl,
     })
   } catch (err) {
     console.error('data-insight route error:', err)

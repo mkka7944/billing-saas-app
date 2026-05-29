@@ -1,226 +1,341 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyById, useSurveyPayments } from '@/hooks/use-survey-data'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
-import { Badge } from '@/components/ui/badge'
 import { shortenMCName } from '@/lib/mc-utils'
+import { currentMonth } from '@/lib/constants'
+import { PaymentHistoryCard } from '@/components/payment-history-card'
 import { cn } from '@/lib/utils'
-import { X, MapPin, Copy, Camera, ChevronLeft, ChevronRight, Image, ExternalLink } from 'lucide-react'
+import { X, MapPin, Copy, Camera, ChevronLeft, ChevronRight, Image, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import Lightbox from 'yet-another-react-lightbox'
+import 'yet-another-react-lightbox/styles.css'
+import Counter from 'yet-another-react-lightbox/plugins/counter'
+import 'yet-another-react-lightbox/plugins/counter.css'
+import Zoom from 'yet-another-react-lightbox/plugins/zoom'
+import Fullscreen from 'yet-another-react-lightbox/plugins/fullscreen'
 
 export function HouseDetailSheet() {
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const selectHouse = useBillingStore((s) => s.selectHouse)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
   const setMapZoom = useBillingStore((s) => s.setMapZoom)
+  const houseList = useBillingStore((s) => s.houseList)
+  const houseListIndex = useBillingStore((s) => s.houseListIndex)
+  const houseListTotal = useBillingStore((s) => s.houseListTotal)
+  const nextHouse = useBillingStore((s) => s.nextHouse)
+  const prevHouse = useBillingStore((s) => s.prevHouse)
+  const firstHouse = useBillingStore((s) => s.firstHouse)
+  const lastHouse = useBillingStore((s) => s.lastHouse)
 
   const { data: survey } = useSurveyById(selectedHouseId)
   const { data: billData } = useSurveyPayments(selectedHouseId)
   const { data: deliveryPhotos = [] } = useDeliveryPhotos(survey?.psid || null)
 
   const [imgIdx, setImgIdx] = useState(0)
+  const [galleryOpen, setGalleryOpen] = useState(false)
+
+  useEffect(() => { setImgIdx(0); setGalleryOpen(false) }, [selectedHouseId])
+
+  // Compute before effects so allImages is accessible
+  const surveyImages = (survey?.image_urls)?.filter(Boolean) || []
+  const deliveryPhotoUrls = (deliveryPhotos || []).map((p) => p.photo_url)
+  const allImages = [...surveyImages, ...deliveryPhotoUrls]
+
+  const openGallery = (idx: number) => {
+    setImgIdx(idx)
+    setGalleryOpen(true)
+  }
+
+  // Touch swipe between records
+  const touchStartX = useRef(0)
+  const touchStartY = useRef(0)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }, [])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    const dy = e.changedTouches[0].clientY - touchStartY.current
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) nextHouse()
+      else prevHouse()
+    }
+  }, [nextHouse, prevHouse])
+
+  // Keyboard: record navigation (gallery closed)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') prevHouse()
+      else if (e.key === 'ArrowRight') nextHouse()
+    }
+    if (galleryOpen) return
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [prevHouse, nextHouse, galleryOpen])
 
   if (!survey) return null
 
-  const bill = billData?.bill
   const payments = billData?.payments
-
-  const allImages = [...deliveryPhotos.map((p) => p.photo_url), ...(survey.image_urls?.filter(Boolean) || [])]
   const currentImage = allImages[imgIdx] || null
+  const slides = allImages.map((src) => ({ src }))
 
-  const openOnMap = (lat: number, lng: number) => {
-    setMapCenter([lat, lng])
-    setMapZoom(18)
+  const hasNext = houseListIndex < houseList.length - 1
+  const hasPrev = houseListIndex > 0
+  const canNav = houseList.length > 1
+
+  const openOnMap = () => {
+    if (survey.lat && survey.lng) {
+      setMapCenter([survey.lat, survey.lng])
+      setMapZoom(18)
+    }
     selectHouse(null)
   }
 
-  const isPaid = bill?.payment_status?.toLowerCase() === 'paid'
+  const infoValues: string[] = [
+    ...(survey.uc_name ? [shortenMCName(survey.uc_name)] : []),
+    ...(survey.tehsil ? [survey.tehsil] : []),
+    ...(survey.surveyor_name ? [survey.surveyor_name] : []),
+    ...(survey.survey_date ? [new Date(survey.survey_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })] : []),
+    ...(survey.survey_time ? [survey.survey_time] : []),
+    ...(survey.billing_category ? [survey.billing_category] : []),
+    ...(survey.monthly_fee > 0 ? [`Rs.${survey.monthly_fee}/mo`] : []),
+    ...(survey.route_name ? [survey.route_name] : []),
+  ]
 
   return (
-    <div className="absolute inset-0 bg-background z-10 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 min-h-[44px]">
-        <div className="flex items-center gap-2 min-w-0">
-          <button onClick={() => selectHouse(null)} className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-          <div className="min-w-0">
-            <p className="text-xs font-bold truncate">{survey.consumer_name || 'Unknown'}</p>
-            <p className="text-[10px] font-mono text-muted-foreground">#{survey.survey_id}</p>
-          </div>
-        </div>
-        <button onClick={() => navigator.clipboard.writeText(survey.survey_id)} className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0" title="Copy ID">
-          <Copy className="h-4 w-4" />
+    <div
+      className="absolute inset-0 bg-background z-10 flex flex-col"
+      onTouchStart={canNav && !galleryOpen ? handleTouchStart : undefined}
+      onTouchEnd={canNav && !galleryOpen ? handleTouchEnd : undefined}
+    >
+      {/* Toolbar — Close, Survey ID, Map */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0 min-h-[52px]">
+        <button onClick={() => selectHouse(null)} className="h-11 w-11 flex items-center justify-center rounded-lg border border-border bg-background hover:bg-muted cursor-pointer shrink-0" aria-label="Close">
+          <X className="h-5 w-5" />
         </button>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-mono font-bold truncate">{survey.survey_id}</p>
+        </div>
+        {survey.lat && survey.lng && (
+          <button onClick={openOnMap} className="h-11 w-11 flex items-center justify-center rounded-lg border border-border bg-background hover:bg-muted cursor-pointer shrink-0" aria-label="Show on map">
+            <MapPin className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Image gallery */}
-        {allImages.length > 0 ? (
-          <div className="relative bg-muted">
-            <img src={currentImage!} alt="" className="w-full h-44 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-            {allImages.length > 1 && (
-              <>
-                {imgIdx > 0 && (
-                  <button onClick={() => setImgIdx(imgIdx - 1)} className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer">
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                )}
-                {imgIdx < allImages.length - 1 && (
-                  <button onClick={() => setImgIdx(imgIdx + 1)} className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer">
-                    <ChevronRight className="h-5 w-5" />
-                  </button>
-                )}
-                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
-                  {allImages.map((_, i) => (
-                    <button key={i} onClick={() => setImgIdx(i)} className={cn('h-1.5 rounded-full transition-all cursor-pointer', i === imgIdx ? 'w-4 bg-white' : 'w-1.5 bg-white/50')} />
-                  ))}
+      <div ref={contentRef} className="flex-1 overflow-y-auto">
+        {/* Hero Image Gallery */}
+        <div className="relative bg-muted">
+          {allImages.length > 0 ? (
+            <>
+              <button
+                onClick={() => openGallery(imgIdx)}
+                className="w-full h-52 cursor-pointer text-left"
+                aria-label="Open gallery"
+              >
+                <img
+                  src={currentImage!}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                />
+              </button>
+              {allImages.length > 1 && (
+                <>
+                  {imgIdx > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setImgIdx(imgIdx - 1) }}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer transition-colors"
+                      aria-label="Previous image"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                  )}
+                  {imgIdx < allImages.length - 1 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setImgIdx(imgIdx + 1) }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer transition-colors"
+                      aria-label="Next image"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                  )}
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                    {allImages.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setImgIdx(i)}
+                        className={cn(
+                          'h-2 rounded-full transition-all cursor-pointer',
+                          i === imgIdx ? 'w-5 bg-white' : 'w-2 bg-white/50'
+                        )}
+                      />
+                    ))}
+                  </div>
+                  <div className="absolute top-2 left-2 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    {imgIdx + 1} / {allImages.length}
+                  </div>
+                </>
+              )}
+              {deliveryPhotos.length > 0 && (
+                <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Camera className="h-3 w-3" /> {deliveryPhotos.length}
                 </div>
-              </>
-            )}
-            {deliveryPhotos.length > 0 && (
-              <div className="absolute top-2 right-2 bg-black/50 text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                <Camera className="h-3 w-3" /> {deliveryPhotos.length}
+              )}
+              <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                {survey.status || 'UNKNOWN'}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="bg-muted h-24 flex items-center justify-center">
-            <Camera className="h-6 w-6 text-muted-foreground/40" />
-          </div>
-        )}
+            </>
+          ) : (
+            <div className="h-52 flex items-center justify-center bg-muted">
+              <Camera className="h-8 w-8 text-muted-foreground/30" />
+            </div>
+          )}
+        </div>
 
-        {/* Delivery photos gallery strip */}
-        {deliveryPhotos.length > 0 && (
-          <div className="px-3 pt-2">
-            <p className="text-[10px] font-semibold text-muted-foreground mb-1 flex items-center gap-1">
-              <Image className="h-3 w-3" /> Delivery photos
-            </p>
-            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              {deliveryPhotos.map((p) => (
-                <a
-                  key={p.id}
-                  href={p.photo_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity"
-                >
-                  <img src={p.photo_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                </a>
+        {/* Identity — 2-column with divider */}
+        <div className="px-4 pt-4 pb-3 border-b border-border">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="border-r border-border pr-4">
+              <h1 className="text-lg font-bold leading-tight">{survey.consumer_name || 'Unknown'}</h1>
+              {survey.address && (
+                <p className="text-xs text-muted-foreground mt-1">{survey.address}</p>
+              )}
+              {survey.psid && (
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="text-xs font-bold text-blue-500">PSID: {survey.psid}</span>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(survey.psid!)}
+                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
+                    title="Copy PSID"
+                  >
+                    <Copy className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="pl-1">
+              <PaymentHistoryCard payments={payments || []} allMonths={billData?.allMonths} currentMonthTag={currentMonth()} />
+            </div>
+          </div>
+        </div>
+
+        {/* Info Grid — compact 3-col, no labels, no district */}
+        {infoValues.length > 0 && (
+          <div className="px-4 py-3 border-b border-border">
+            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2">Information</p>
+            <div className="grid grid-cols-3 gap-x-3 gap-y-2">
+              {infoValues.map((val, i) => (
+                <p key={i} className="text-xs font-medium truncate">{val}</p>
               ))}
             </div>
           </div>
         )}
 
-        {/* House info */}
-        <div className="px-3 pt-3 pb-2">
-          <h1 className="text-base font-bold leading-tight">{survey.consumer_name || 'Unknown'}</h1>
-          {survey.address && <p className="text-xs text-muted-foreground mt-0.5">{survey.address}</p>}
-        </div>
-
-        {/* Info chips */}
-        <div className="flex items-center gap-2 px-3 pb-3 flex-wrap">
-          {survey.uc_name && (
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-              {shortenMCName(survey.uc_name)}
-            </span>
-          )}
-          <span className="text-[10px] text-muted-foreground">{survey.billing_category || '-'}</span>
-          {survey.monthly_fee > 0 && <span className="text-[10px] font-bold">Rs.{survey.monthly_fee}/mo</span>}
-          {survey.tehsil && <span className="text-[10px] text-muted-foreground">{survey.tehsil}</span>}
-          {survey.psid && <span className="text-[10px] font-mono text-muted-foreground">PSID: {survey.psid}</span>}
-        </div>
-
-        {/* Bill + payments */}
-        <div className="p-3 space-y-2.5">
-          {bill && (
-            <div className="rounded-lg border border-border bg-muted/30 p-2.5">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-bold uppercase text-muted-foreground">{bill.bill_month || 'Current'} Bill</span>
-                <Badge variant={isPaid ? 'default' : 'secondary'} className="text-[10px]">{bill.payment_status || 'UNPAID'}</Badge>
-              </div>
-              <div className="text-xs space-y-0.5">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount Due</span>
-                  <span className="font-bold">Rs.{Number(bill.amount_due || 0).toLocaleString()}</span>
-                </div>
-                {Number(bill.amount_paid || 0) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Amount Paid</span>
-                    <span className="font-bold text-green-600">Rs.{Number(bill.amount_paid).toLocaleString()}</span>
-                  </div>
-                )}
-                {Number(bill.arrears || 0) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Arrears</span>
-                    <span className="font-bold text-destructive">Rs.{Number(bill.arrears).toLocaleString()}</span>
-                  </div>
-                )}
-                {Number(bill.fine || 0) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Fine</span>
-                    <span className="font-bold text-destructive">Rs.{Number(bill.fine).toLocaleString()}</span>
-                  </div>
-                )}
-                {Number(bill.total_payable || 0) > 0 && (
-                  <div className="flex justify-between pt-1 border-t border-border mt-1">
-                    <span className="text-muted-foreground font-semibold">Total Payable</span>
-                    <span className="font-bold">Rs.{Number(bill.total_payable).toLocaleString()}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Payment history */}
-          <div>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Payment History</p>
-            {payments?.length ? (
-              <div className="space-y-0.5">
-                {payments.slice(0, 5).map((p: any, i: number) => (
-                  <div key={`${p.psid}-${p.bill_month || i}`} className="flex items-center justify-between py-0.5">
-                    <span className="text-xs font-mono">{p.bill_month}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold">Rs.{Number(p.amount_paid || 0).toLocaleString()}</span>
-                      <Badge variant={p.payment_status?.toLowerCase() === 'paid' ? 'default' : 'secondary'} className="text-[9px]">{p.payment_status || '—'}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[11px] text-muted-foreground py-2 text-center">No payment history</p>
-            )}
+        {/* Bill Summary — placeholder */}
+        <div className="px-4 py-3 border-b border-border">
+          <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2">Bill Summary</p>
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center">
+            <p className="text-[11px] text-muted-foreground/60 italic">Coming soon</p>
           </div>
         </div>
+
+        {/* Delivery Photos */}
+        {deliveryPhotos.length > 0 && (
+          <div className="px-4 py-3 border-b border-border">
+            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2 flex items-center gap-1">
+              <Image className="h-3 w-3" /> Delivery Photos ({deliveryPhotos.length})
+            </p>
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {deliveryPhotos.map((p, i) => (
+                <button
+                  key={p.id}
+                  onClick={() => openGallery(surveyImages.length + i)}
+                  className="shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer"
+                >
+                  <img src={p.photo_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="h-3" />
       </div>
 
-      {/* Fixed bottom bar */}
-      {survey.lat && survey.lng && (
-        <div className="border-t border-border p-2 shrink-0">
-          <div className="flex gap-2">
-            <button
-              onClick={() => openOnMap(survey.lat!, survey.lng!)}
-              className="flex-1 h-10 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <MapPin className="h-4 w-4" />
-              Show on Map
-            </button>
-            {deliveryPhotos.length > 0 && (
-              <a
-                href={deliveryPhotos[0].photo_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="h-10 px-4 text-xs font-bold rounded-lg border border-border hover:bg-muted flex items-center gap-1.5 transition-colors cursor-pointer"
+      {/* Record Navigation Bar */}
+      {canNav && (
+        <div className="border-t bg-card shrink-0">
+          <div className="flex items-center justify-between px-3 py-2">
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="secondary"
+                className="h-11 w-11"
+                disabled={!hasPrev}
+                onClick={firstHouse}
+                aria-label="First"
               >
-                <ExternalLink className="h-4 w-4" />
-                {deliveryPhotos.length}
-              </a>
-            )}
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-11 w-11"
+                disabled={!hasPrev}
+                onClick={prevHouse}
+                aria-label="Previous"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="text-center min-w-0 px-2">
+              <p className="text-[11px] font-medium text-foreground font-mono">
+                {houseListIndex + 1} / {houseListTotal.toLocaleString()}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="secondary"
+                className="h-11 w-11"
+                disabled={!hasNext}
+                onClick={nextHouse}
+                aria-label="Next"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-11 w-11"
+                disabled={!hasNext}
+                onClick={lastHouse}
+                aria-label="Last"
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* Image Gallery Lightbox */}
+      <Lightbox
+        open={galleryOpen}
+        close={() => setGalleryOpen(false)}
+        index={imgIdx}
+        slides={slides}
+        plugins={[Counter, Zoom, Fullscreen]}
+        on={{
+          view: ({ index }) => setImgIdx(index),
+        }}
+      />
     </div>
   )
 }

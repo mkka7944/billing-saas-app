@@ -1,12 +1,12 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react'
+import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { MobileFilterSheet } from '@/components/filter-panel'
-import { Building2, Layers, LogOut, Menu, RefreshCw, Search, X } from 'lucide-react'
+import { Building2, Layers, LogOut, Menu, RefreshCw, Search, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface AppHeaderProps {
@@ -29,15 +29,36 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
   const applyFilters = useBillingStore((s) => s.applyFilters)
   const cancelFilters = useBillingStore((s) => s.cancelFilters)
   const queryClient = useQueryClient()
+  const isFetching = useIsFetching()
+  const isRefreshing = isFetching > 0
+  const [showSuccess, setShowSuccess] = useState(false)
+  const successTimer = useRef<number>(0)
+
+  const handleUpdate = useCallback(() => {
+    queryClient.invalidateQueries()
+  }, [queryClient])
+
+  useEffect(() => {
+    if (isFetching === 0 && showSuccess) {
+      window.clearTimeout(successTimer.current)
+      successTimer.current = window.setTimeout(() => setShowSuccess(false), 2000)
+    }
+    return () => window.clearTimeout(successTimer.current)
+  }, [isFetching, showSuccess])
+
+  useEffect(() => {
+    if (isFetching > 0) setShowSuccess(false)
+  }, [isFetching])
+
+  const handleRefresh = useCallback(() => {
+    setShowSuccess(true)
+    handleUpdate()
+  }, [handleUpdate])
 
   const hasUnapplied = useMemo(
     () => JSON.stringify(filters) !== JSON.stringify(pendingFilters),
     [filters, pendingFilters]
   )
-
-  const handleUpdate = useCallback(() => {
-    queryClient.invalidateQueries()
-  }, [queryClient])
 
   const displayTitle = title || pageTitle || 'TMT'
 
@@ -61,13 +82,32 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
 
         {actions ?? (
           <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={handleUpdate}
-              className="h-11 w-11 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer"
-              title="Refresh data"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="h-11 w-11 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                title={isRefreshing ? 'Updating...' : showSuccess ? 'Updated' : 'Refresh data'}
+              >
+                <RefreshCw
+                  className={cn(
+                    'h-3.5 w-3.5 transition-none',
+                    isRefreshing && 'animate-spin'
+                  )}
+                />
+              </button>
+              {showSuccess && !isRefreshing && (
+                <span className="absolute top-1 right-1 h-3.5 w-3.5 rounded-full bg-green-500 flex items-center justify-center">
+                  <Check className="h-2.5 w-2.5 text-white" />
+                </span>
+              )}
+            </div>
+            {isRefreshing && (
+              <span className="text-[10px] text-muted-foreground font-medium animate-pulse whitespace-nowrap">Syncing...</span>
+            )}
+            {showSuccess && !isRefreshing && (
+              <span className="text-[10px] text-green-600 font-medium whitespace-nowrap">Updated</span>
+            )}
 
             {hasUnapplied && (
               <>

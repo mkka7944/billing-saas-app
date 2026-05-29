@@ -224,7 +224,7 @@ function UcDetailView({
   onCreate, isCreating,
 }: {
   ucName: string
-  bills: { survey_id: string; consumer_name: string | null; address: string | null; psid: string | null; amount_due: number | null; route_seq: number | null }[] | undefined
+  bills: { survey_id: string; consumer_name: string | null; address: string | null; psid: string | null; amount_due: number | null; monthly_fee: number | null; arrears: number | null; route_seq: number | null }[] | undefined
   isLoading: boolean
   selectedPsids: Set<string>
   onTogglePsid: (psid: string) => void
@@ -287,7 +287,7 @@ function UcDetailView({
                 </TableCell>
                   <TableCell className="text-xs max-w-[200px] truncate">{b.consumer_name || '-'}</TableCell>
                   <TableCell className="text-xs font-mono">{b.psid?.slice(-8) || '-'}</TableCell>
-                  <TableCell className="text-xs tabular-nums">{b.amount_due ? `Rs. ${b.amount_due.toLocaleString()}` : '-'}</TableCell>
+                  <TableCell className="text-xs tabular-nums">{(b.monthly_fee ?? 0) + (b.arrears ?? 0) > 0 ? `Rs. ${((b.monthly_fee ?? 0) + (b.arrears ?? 0)).toLocaleString()}` : '-'}</TableCell>
                   <TableCell className="text-xs tabular-nums">{b.route_seq || '-'}</TableCell>
                 </TableRow>
               ))}

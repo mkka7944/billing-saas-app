@@ -115,9 +115,9 @@ export default function DeliverMap({ items, selectedId, onSelect, panTo }: Deliv
                     />
                     <span className="capitalize font-medium">{item.status}</span>
                   </div>
-                  {item.unit?.amount_due != null && (
+                  {((item.unit?.monthly_fee ?? 0) + (item.unit?.arrears ?? 0)) > 0 && (
                     <p className="mt-1">
-                      Bill: <span className="font-bold">Rs.{Number(item.unit.amount_due).toLocaleString()}</span>
+                      Bill: <span className="font-bold">Rs.{((item.unit?.monthly_fee ?? 0) + (item.unit?.arrears ?? 0)).toLocaleString()}</span>
                     </p>
                   )}
                 </div>

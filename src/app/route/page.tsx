@@ -93,7 +93,7 @@ export default function RoutePage() {
                           <TableCell className="text-xs text-muted-foreground tabular-nums">{i + 1}</TableCell>
                           <TableCell className="text-xs max-w-[250px] truncate">{u.consumer_name || '-'}</TableCell>
                           <TableCell className="text-xs font-mono">{u.psid?.slice(-8) || '-'}</TableCell>
-                          <TableCell className="text-xs tabular-nums">{u.amount_due ? `Rs. ${u.amount_due.toLocaleString()}` : '-'}</TableCell>
+                          <TableCell className="text-xs tabular-nums">{(u.monthly_fee ?? 0) + (u.arrears ?? 0) > 0 ? `Rs. ${((u.monthly_fee ?? 0) + (u.arrears ?? 0)).toLocaleString()}` : '-'}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

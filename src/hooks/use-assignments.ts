@@ -19,6 +19,8 @@ export interface UnassignedBill {
   lng: number | null
   psid: string | null
   amount_due: number | null
+  monthly_fee: number | null
+  arrears: number | null
   route_seq: number | null
   route_name: string | null
 }

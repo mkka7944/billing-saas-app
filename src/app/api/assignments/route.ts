@@ -4,7 +4,7 @@ import { currentMonth, today } from '@/lib/constants'
 
 const ASSIGNMENT_COLS = 'id, staff_id, assigned_date, uc_name, total_items, created_by, created_at'
 const ITEM_COLS = 'id, assignment_id, psid, route_seq, status, delivered_at, gps_lat, gps_lng, notes'
-const PSID_COLS = 'survey_id, consumer_name, address, lat, lng, psid, amount_due, route_seq, route_name'
+const PSID_COLS = 'survey_id, consumer_name, address, lat, lng, psid, amount_due, monthly_fee, arrears, route_seq, route_name'
 
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams
@@ -176,7 +176,7 @@ export async function GET(request: Request) {
     const { data: units } = psids.length
       ? await sup
           .from('survey_units')
-          .select('psid, consumer_name, address, lat, lng, amount_due, monthly_fee, route_name, route_seq, uc_name')
+          .select('psid, consumer_name, address, lat, lng, amount_due, monthly_fee, arrears, route_name, route_seq, uc_name')
           .in('psid', psids)
       : { data: [] }
 

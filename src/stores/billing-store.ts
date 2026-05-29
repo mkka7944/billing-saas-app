@@ -1,17 +1,21 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { FilterState } from '@/types'
+import type { FilterState, SurveyUnit } from '@/types'
 import { currentMonth } from '@/lib/constants'
 
 interface BillingState {
   selectedCity: string | null
   activeView: 'map' | 'list' | 'stats' | 'detail' | 'data-insight'
+  previousView: string
   filters: FilterState
   pendingFilters: FilterState
   selectedHouseId: string | null
   mapCenter: [number, number]
   mapZoom: number
   mapType: 'streets' | 'satellite'
+  houseList: SurveyUnit[]
+  houseListIndex: number
+  houseListTotal: number
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
   setFilters: (partial: Partial<FilterState>) => void
@@ -19,7 +23,11 @@ interface BillingState {
   setPendingFilter: (partial: Partial<FilterState>) => void
   applyFilters: () => void
   cancelFilters: () => void
-  selectHouse: (id: string | null) => void
+  selectHouse: (id: string | null, list?: SurveyUnit[], total?: number) => void
+  nextHouse: () => void
+  prevHouse: () => void
+  firstHouse: () => void
+  lastHouse: () => void
   setMapCenter: (center: [number, number]) => void
   setMapZoom: (zoom: number) => void
   setMapType: (type: 'streets' | 'satellite') => void
@@ -47,9 +55,13 @@ export const useBillingStore = create<BillingState>()(
     (set, get) => ({
       selectedCity: null,
       activeView: 'map',
+      previousView: 'map',
       filters: { ...defaultFilters },
       pendingFilters: { ...defaultFilters },
       selectedHouseId: null,
+      houseList: [],
+      houseListIndex: 0,
+      houseListTotal: 0,
       mapCenter: [32.0836, 72.6712],
       mapZoom: 12,
       mapType: 'streets',
@@ -81,14 +93,68 @@ export const useBillingStore = create<BillingState>()(
       setPendingFilter: (partial) => set((s) => ({ pendingFilters: { ...s.pendingFilters, ...partial } })),
       applyFilters: () => set((s) => ({ filters: { ...s.pendingFilters } })),
       cancelFilters: () => set((s) => ({ pendingFilters: { ...s.filters } })),
-      selectHouse: (id) => set({ selectedHouseId: id, activeView: id ? 'detail' : 'map' }),
+      selectHouse: (id, list, total) => {
+        if (!id) {
+          const prev = get().previousView || 'map'
+          return set({ selectedHouseId: null, activeView: prev as BillingState['activeView'], previousView: 'map', houseList: [], houseListIndex: 0, houseListTotal: 0 })
+        }
+        const s = get()
+        const idx = list ? list.findIndex((h) => h.survey_id === id) : -1
+        set({
+          selectedHouseId: id,
+          activeView: 'detail',
+          previousView: s.activeView === 'detail' ? s.previousView : s.activeView,
+          houseList: list || [],
+          houseListIndex: idx >= 0 ? idx : 0,
+          houseListTotal: total ?? list?.length ?? 0,
+        })
+      },
+      nextHouse: () => {
+        const { houseList, houseListIndex, selectedHouseId } = get()
+        if (houseListIndex < houseList.length - 1) {
+          const next = houseListIndex + 1
+          const nextId = houseList[next].survey_id
+          if (nextId !== selectedHouseId) {
+            set({ selectedHouseId: nextId, houseListIndex: next })
+          }
+        }
+      },
+      prevHouse: () => {
+        const { houseList, houseListIndex, selectedHouseId } = get()
+        if (houseListIndex > 0) {
+          const prev = houseListIndex - 1
+          const prevId = houseList[prev].survey_id
+          if (prevId !== selectedHouseId) {
+            set({ selectedHouseId: prevId, houseListIndex: prev })
+          }
+        }
+      },
+      firstHouse: () => {
+        const { houseList, selectedHouseId } = get()
+        if (houseList.length > 0) {
+          const firstId = houseList[0].survey_id
+          if (firstId !== selectedHouseId) {
+            set({ selectedHouseId: firstId, houseListIndex: 0 })
+          }
+        }
+      },
+      lastHouse: () => {
+        const { houseList, selectedHouseId } = get()
+        const last = houseList.length - 1
+        if (last >= 0) {
+          const lastId = houseList[last].survey_id
+          if (lastId !== selectedHouseId) {
+            set({ selectedHouseId: lastId, houseListIndex: last })
+          }
+        }
+      },
       setMapCenter: (center) => set({ mapCenter: center }),
       setMapZoom: (zoom) => set({ mapZoom: zoom }),
       setMapType: (type) => set({ mapType: type }),
     }),
     {
       name: 'billing-store',
-      partialize: (state) => ({ selectedCity: state.selectedCity }),
+      partialize: (state) => ({ selectedCity: state.selectedCity, mapCenter: state.mapCenter, mapZoom: state.mapZoom }),
       merge: (persisted, current) => {
         const merged = { ...current, ...(persisted as Partial<BillingState>) } as BillingState
         if (merged.selectedCity) {

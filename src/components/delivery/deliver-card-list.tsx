@@ -146,9 +146,9 @@ export default function DeliverCardList({
                         <MapPin className="h-3 w-3" /> {item.unit.uc_name}
                       </span>
                     )}
-                    {item.unit?.amount_due != null && (
+                    {((item.unit?.monthly_fee ?? 0) + (item.unit?.arrears ?? 0)) > 0 && (
                       <span className="flex items-center gap-0.5 font-semibold text-foreground">
-                        <CreditCard className="h-3 w-3" /> Rs.{Number(item.unit.amount_due).toLocaleString()}
+                        <CreditCard className="h-3 w-3" /> Rs.{((item.unit?.monthly_fee ?? 0) + (item.unit?.arrears ?? 0)).toLocaleString()}
                       </span>
                     )}
                   </div>

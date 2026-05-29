@@ -25,6 +25,18 @@ export interface DeliveryKpis {
   staff_with_deliveries: number
 }
 
+export interface UnitRow {
+  survey_id: string
+  psid: string
+  consumer_name: string | null
+  status: string
+  amount_due: number
+  surveyor_name: string | null
+  amount_paid: number
+  monthly_fee: number
+  arrears: number
+}
+
 export interface DataInsightResponse {
   kpis: {
     total_units: number
@@ -38,18 +50,21 @@ export interface DataInsightResponse {
   }
   delivery_kpis: DeliveryKpis
   rows: AggregationRow[]
+  unitRows?: UnitRow[]
   total: number
+  level: string
 }
 
 interface UseDataInsightParams {
   filters: FilterState
   page: number
   pageSize: number
+  drillUC?: string | null
 }
 
-export function useDataInsight({ filters, page, pageSize }: UseDataInsightParams) {
+export function useDataInsight({ filters, page, pageSize, drillUC }: UseDataInsightParams) {
   return useQuery<DataInsightResponse>({
-    queryKey: ['data-insight', filters, page, pageSize],
+    queryKey: ['data-insight', filters, page, pageSize, drillUC],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (filters.districts.length) params.set('district', filters.districts[0])
@@ -57,6 +72,7 @@ export function useDataInsight({ filters, page, pageSize }: UseDataInsightParams
       if (filters.ucs.length) params.set('uc', filters.ucs[0])
       if (filters.surveyor) params.set('surveyor', filters.surveyor)
       if (filters.billMonth) params.set('billMonth', filters.billMonth)
+      if (drillUC) params.set('drill', drillUC)
       params.set('status', 'active')
       params.set('page', String(page))
       params.set('pageSize', String(pageSize))

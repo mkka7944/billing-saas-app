@@ -65,7 +65,7 @@ export function MapView() {
         center={[32.0836, 72.6712]}
         zoom={12}
         className="w-full h-full"
-        zoomControl={true}
+        zoomControl={false}
       >
         <TileLayer
           url={tileUrl}

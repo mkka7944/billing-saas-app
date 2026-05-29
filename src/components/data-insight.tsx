@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { useBillingStore } from '@/stores/billing-store'
+import { useState, useMemo, useCallback } from 'react'
+import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
 import { useDataInsight } from '@/hooks/use-data-insight'
-import type { AggregationRow, DeliveryKpis } from '@/hooks/use-data-insight'
+import { useSurveyPayments } from '@/hooks/use-survey-data'
+import { currentMonth } from '@/lib/constants'
+import type { AggregationRow, DeliveryKpis, UnitRow } from '@/hooks/use-data-insight'
+import type { SurveyUnit } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -13,19 +16,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Truck, Camera, PersonStanding, Percent } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Truck, Camera, PersonStanding, Percent } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { PaginationBar } from '@/components/pagination-bar'
+import { PaymentHistoryCard } from '@/components/payment-history-card'
 
-const kpiConfig: { key: string; label: string; color: string; bg: string }[] = [
-  { key: 'total_units', label: 'Total Units', color: 'text-blue-600', bg: 'bg-blue-100' },
-  { key: 'active_units', label: 'Active', color: 'text-green-600', bg: 'bg-green-100' },
-  { key: 'archived_units', label: 'Archived', color: 'text-gray-600', bg: 'bg-gray-100' },
-  { key: 'billed_units', label: 'Billed', color: 'text-emerald-600', bg: 'bg-emerald-100' },
-  { key: 'paid_units', label: 'Paid', color: 'text-purple-600', bg: 'bg-purple-100' },
-  { key: 'total_collected', label: 'Collected', color: 'text-amber-600', bg: 'bg-amber-100' },
-  { key: 'unique_surveyors', label: 'Surveyors', color: 'text-indigo-600', bg: 'bg-indigo-100' },
-  { key: 'no_coords', label: 'No Coords', color: 'text-orange-600', bg: 'bg-orange-100' },
+const kpiConfig: { key: string; label: string; dot: string; accent: string }[] = [
+  { key: 'total_units', label: 'Total', dot: 'bg-blue-500', accent: 'text-blue-500' },
+  { key: 'active_units', label: 'Active', dot: 'bg-green-500', accent: 'text-green-500' },
+  { key: 'archived_units', label: 'Archived', dot: 'bg-gray-500', accent: 'text-gray-500' },
+  { key: 'billed_units', label: 'Billed', dot: 'bg-emerald-500', accent: 'text-emerald-500' },
+  { key: 'paid_units', label: 'Paid', dot: 'bg-purple-500', accent: 'text-purple-500' },
+  { key: 'total_collected', label: 'Collected', dot: 'bg-amber-500', accent: 'text-amber-500' },
+  { key: 'unique_surveyors', label: 'Surveyors', dot: 'bg-indigo-500', accent: 'text-indigo-500' },
 ]
 
 function formatNum(n: number): string {
@@ -38,22 +43,16 @@ function formatCurrency(n: number): string {
 
 function KpiCards({ data: d }: { data: Record<string, number> }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
       {kpiConfig.map((k) => {
         const value = d[k.key] ?? 0
         const display = k.key === 'total_collected' ? formatCurrency(value) : formatNum(value)
         return (
-          <Card key={k.key}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-xs text-muted-foreground font-medium">{k.label}</CardTitle>
-              <div className={`p-1.5 rounded ${k.bg}`}>
-                <span className={`text-xs font-bold ${k.color} px-0.5`}>{display}</span>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xl font-bold">{display}</p>
-            </CardContent>
-          </Card>
+          <div key={k.key} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
+            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${k.dot}`} />
+            <span className="text-[11px] text-muted-foreground truncate">{k.label}</span>
+            <span className={`ml-auto text-sm font-bold ${k.accent}`}>{display}</span>
+          </div>
         )
       })}
     </div>
@@ -67,7 +66,7 @@ const levelLabel: Record<string, string> = {
   unit: 'Survey ID',
 }
 
-function AggregationTable({ rows, level }: { rows: AggregationRow[]; level: string }) {
+function AggregationTable({ rows, level, onDrillDown }: { rows: AggregationRow[]; level: string; onDrillDown?: (ucName: string) => void }) {
   return (
     <Card>
       <CardContent className="p-0">
@@ -85,12 +84,15 @@ function AggregationTable({ rows, level }: { rows: AggregationRow[]; level: stri
                 <TableHead className="text-xs font-semibold text-right">Paid</TableHead>
                 <TableHead className="text-xs font-semibold text-right">Collected</TableHead>
                 <TableHead className="text-xs font-semibold text-right">Surveyors</TableHead>
-                <TableHead className="text-xs font-semibold text-right">No Coords</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row, i) => (
-                <TableRow key={i}>
+                <TableRow
+                  key={i}
+                  className={onDrillDown ? 'cursor-pointer hover:bg-muted/50' : ''}
+                  onClick={() => onDrillDown?.(row.uc_name!)}
+                >
                   <TableCell className="text-sm font-medium">
                     {level === 'uc' ? row.uc_name : level === 'tehsil' ? row.tehsil : row.district}
                   </TableCell>
@@ -103,12 +105,11 @@ function AggregationTable({ rows, level }: { rows: AggregationRow[]; level: stri
                   <TableCell className="text-sm text-right">{formatNum(row.paid)}</TableCell>
                   <TableCell className="text-sm text-right">{formatCurrency(row.collected)}</TableCell>
                   <TableCell className="text-sm text-right">{formatNum(row.surveyors)}</TableCell>
-                  <TableCell className="text-sm text-right">{formatNum(row.no_coords)}</TableCell>
                 </TableRow>
               ))}
               {!rows.length && (
                 <TableRow>
-                  <TableCell colSpan={level === 'district' ? 8 : 9} className="text-center text-sm text-muted-foreground py-8">
+                  <TableCell colSpan={level === 'district' ? 7 : 8} className="text-center text-sm text-muted-foreground py-8">
                     No data matching the current filters
                   </TableCell>
                 </TableRow>
@@ -121,32 +122,122 @@ function AggregationTable({ rows, level }: { rows: AggregationRow[]; level: stri
   )
 }
 
-const dkpiConfig: { key: keyof DeliveryKpis; label: string; icon: typeof Truck; color: string; bg: string; fmt?: (v: number) => string }[] = [
-  { key: 'total_assigned', label: 'Assigned', icon: Truck, color: 'text-blue-600', bg: 'bg-blue-100' },
-  { key: 'total_delivered', label: 'Delivered', icon: Truck, color: 'text-green-600', bg: 'bg-green-100' },
-  { key: 'delivery_rate', label: 'Delivery Rate', icon: Percent, color: 'text-purple-600', bg: 'bg-purple-100', fmt: (v) => `${v}%` },
-  { key: 'total_photos', label: 'Photos', icon: Camera, color: 'text-amber-600', bg: 'bg-amber-100' },
-  { key: 'staff_with_deliveries', label: 'Active Staff', icon: PersonStanding, color: 'text-indigo-600', bg: 'bg-indigo-100' },
+function ExpandedPaymentContent({ surveyId }: { surveyId: string }) {
+  const { data: billData, isLoading, isError } = useSurveyPayments(surveyId)
+
+  if (isLoading) return <p className="text-[10px] text-muted-foreground">Loading payments...</p>
+  if (isError) return <p className="text-[10px] text-red-500">Failed to load payments</p>
+
+  return (
+    <PaymentHistoryCard
+      payments={billData?.payments || []}
+      allMonths={billData?.allMonths}
+      currentMonthTag={currentMonth()}
+    />
+  )
+}
+
+function UnitTable({ unitRows, onOpen }: { unitRows: UnitRow[]; onOpen: (row: UnitRow) => void }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id))
+  }, [])
+
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs font-semibold w-8 p-0 px-1" />
+                <TableHead className="text-xs font-semibold">Survey ID</TableHead>
+                <TableHead className="text-xs font-semibold max-md:hidden">PSID</TableHead>
+                <TableHead className="text-xs font-semibold">Consumer</TableHead>
+                <TableHead className="text-xs font-semibold max-md:hidden">Surveyor</TableHead>
+                <TableHead className="text-xs font-semibold text-right max-md:hidden">Current Bill</TableHead>
+                <TableHead className="text-xs font-semibold text-right max-md:hidden">
+                  <span>Paid</span>
+                  <span className="text-[8px] font-extrabold ml-1 text-blue-600 bg-blue-100 rounded px-0.5">Current</span>
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-right w-20">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {!unitRows.length ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
+                    No units found in this MC/UC
+                  </TableCell>
+                </TableRow>
+              ) : unitRows.flatMap((row) => {
+                const cells = (
+                  <TableRow key={row.psid} className={expandedId === row.psid ? 'border-b-0' : ''}>
+                    <TableCell className="w-8 p-0 pl-1">
+                      <button
+                        onClick={() => toggleExpand(row.psid)}
+                        className="h-7 w-7 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
+                        aria-label="Toggle payment history"
+                      >
+                        <ChevronDown
+                          className={cn(
+                            'h-3.5 w-3.5 text-muted-foreground transition-transform',
+                            expandedId === row.psid && 'rotate-180'
+                          )}
+                        />
+                      </button>
+                    </TableCell>
+                    <TableCell className="text-sm font-mono font-medium">{row.survey_id}</TableCell>
+                    <TableCell className="text-sm font-mono max-md:hidden">{row.psid}</TableCell>
+                    <TableCell className="text-sm truncate max-w-[120px] md:max-w-none">{row.consumer_name || '-'}</TableCell>
+                    <TableCell className="text-sm max-md:hidden">{row.surveyor_name || '-'}</TableCell>
+                    <TableCell className="text-sm text-right max-md:hidden">{formatCurrency((row.monthly_fee ?? 0) + (row.arrears ?? 0))}</TableCell>
+                    <TableCell className="text-sm text-right max-md:hidden">{formatCurrency(row.amount_paid)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => onOpen(row)}>
+                        Open
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+                const expanded = expandedId === row.psid ? (
+                  <TableRow key={`${row.psid}-exp`}>
+                    <TableCell colSpan={8} className="bg-muted/30 p-3">
+                      <ExpandedPaymentContent surveyId={row.survey_id} />
+                    </TableCell>
+                  </TableRow>
+                ) : null
+                return [cells, expanded].filter(Boolean)
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+const dkpiConfig: { key: keyof DeliveryKpis; label: string; icon: typeof Truck; accent: string; fmt?: (v: number) => string }[] = [
+  { key: 'total_assigned', label: 'Assigned', icon: Truck, accent: 'text-blue-500' },
+  { key: 'total_delivered', label: 'Delivered', icon: Truck, accent: 'text-green-500' },
+  { key: 'delivery_rate', label: 'Rate', icon: Percent, accent: 'text-purple-500', fmt: (v) => `${v}%` },
+  { key: 'total_photos', label: 'Photos', icon: Camera, accent: 'text-amber-500' },
+  { key: 'staff_with_deliveries', label: 'Staff', icon: PersonStanding, accent: 'text-indigo-500' },
 ]
 
 function DeliveryKpiCards({ kpis }: { kpis: DeliveryKpis }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
       {dkpiConfig.map((k) => {
         const value = kpis[k.key] ?? 0
         const display = k.fmt ? k.fmt(value) : value.toLocaleString()
         return (
-          <Card key={k.key} className="shadow-none">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-xs text-muted-foreground font-medium">{k.label}</CardTitle>
-              <div className={`p-1.5 rounded ${k.bg}`}>
-                <k.icon className={`h-3.5 w-3.5 ${k.color}`} />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-lg font-bold">{display}</p>
-            </CardContent>
-          </Card>
+          <div key={k.key} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
+            <k.icon className={`h-3.5 w-3.5 shrink-0 ${k.accent}`} />
+            <span className="text-[11px] text-muted-foreground truncate">{k.label}</span>
+            <span className={`ml-auto text-sm font-bold ${k.accent}`}>{display}</span>
+          </div>
         )
       })}
     </div>
@@ -154,27 +245,51 @@ function DeliveryKpiCards({ kpis }: { kpis: DeliveryKpis }) {
 }
 
 export function DataInsight() {
-  const filters = useBillingStore((s) => s.filters)
+  const sharedFilters = useBillingStore((s) => s.filters)
+  const selectedCity = useBillingStore((s) => s.selectedCity)
+  const selectHouse = useBillingStore((s) => s.selectHouse)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(50)
+  const [drillUC, setDrillUC] = useState<string | null>(null)
 
-  const { data, isLoading, isError, error } = useDataInsight({ filters, page, pageSize })
-  const totalPages = Math.ceil((data?.total || 0) / pageSize)
+  const insightFilters = useMemo(() => {
+    const cityCfg = selectedCity ? CITY_CONFIG[selectedCity] : null
+    return {
+      districts: cityCfg?.district ? [cityCfg.district] : sharedFilters.districts,
+      tehsils: cityCfg?.tehsil ? [cityCfg.tehsil] : [],
+      ucs: [],
+      surveyor: null,
+      paymentStatus: 'all' as const,
+      unitType: null,
+      search: '',
+      billMonth: sharedFilters.billMonth,
+    }
+  }, [selectedCity, sharedFilters.billMonth, sharedFilters.districts])
 
-  const handlePageSizeChange = useCallback((size: number) => {
-    setPageSize(size)
+  const { data, isLoading, isError, error } = useDataInsight({ filters: insightFilters, page, pageSize: 50, drillUC })
+  const totalPages = Math.ceil((data?.total || 0) / 50)
+  const totalRecords = data?.total || 0
+  const level = data?.level || 'district'
+
+  const handleDrillDown = useCallback((ucName: string) => {
+    setDrillUC(ucName)
+    setPage(1)
+  }, [])
+
+  const handleBack = useCallback(() => {
+    setDrillUC(null)
     setPage(1)
   }, [])
 
   if (isLoading) {
     return (
-      <div className="p-4 space-y-4 overflow-y-auto h-full">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i}>
-              <CardHeader className="pb-2"><Skeleton className="h-3 w-16" /></CardHeader>
-              <CardContent><Skeleton className="h-6 w-20" /></CardContent>
-            </Card>
+      <div className="p-4 space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
+              <Skeleton className="h-2.5 w-2.5 rounded-full shrink-0" />
+              <Skeleton className="h-3 w-14" />
+              <Skeleton className="h-4 w-10 ml-auto" />
+            </div>
           ))}
         </div>
         <Skeleton className="h-64 w-full" />
@@ -194,60 +309,52 @@ export function DataInsight() {
   }
 
   const kpis = data?.kpis
+  const unitRows = data?.unitRows || []
   const rows = data?.rows || []
-  const level = rows[0]?.level || 'district'
 
   return (
-    <div className="p-4 space-y-4 overflow-y-auto h-full">
-      {kpis && <KpiCards data={kpis as Record<string, number>} />}
+    <div className="absolute inset-0 flex flex-col">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="p-4 space-y-4">
+          {kpis && <KpiCards data={kpis as Record<string, number>} />}
 
-      {data?.delivery_kpis && (
-        <div>
-          <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Delivery KPIs</h3>
-          <DeliveryKpiCards kpis={data.delivery_kpis} />
+          {data?.delivery_kpis && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Delivery KPIs</h3>
+              <DeliveryKpiCards kpis={data.delivery_kpis} />
+            </div>
+          )}
+
+          {level === 'unit' ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleBack} className="h-9 gap-1.5">
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back to MC/UC View
+                </Button>
+                <span className="text-xs text-muted-foreground font-mono">{drillUC}</span>
+              </div>
+              <UnitTable
+                unitRows={unitRows}
+                onOpen={(row) => {
+                  const items = unitRows.map(u => ({ survey_id: u.survey_id })) as SurveyUnit[]
+                  selectHouse(row.survey_id, items, totalRecords)
+                }}
+              />
+            </>
+          ) : (
+            <AggregationTable rows={rows} level={level} onDrillDown={level === 'uc' ? handleDrillDown : undefined} />
+          )}
         </div>
-      )}
+      </div>
 
-      <AggregationTable rows={rows} level={level} />
-
-      {data && data.total > pageSize && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <span>Rows:</span>
-            {[10, 25, 50, 100].map((size) => (
-              <button
-                key={size}
-                onClick={() => handlePageSizeChange(size)}
-                className={`px-2 py-0.5 rounded text-xs font-medium cursor-pointer ${
-                  pageSize === size
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted hover:bg-muted/80'
-                }`}
-              >
-                {size}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <span>Page {page} of {totalPages}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+      {totalRecords > 0 && (
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          totalRecords={totalRecords}
+          onPageChange={setPage}
+        />
       )}
     </div>
   )
