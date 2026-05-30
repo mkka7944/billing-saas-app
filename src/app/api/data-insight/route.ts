@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { currentMonth } from '@/lib/constants'
+import { chunkArray } from '@/lib/utils'
+import type { SortField, SortDirection } from '@/types'
 
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = []
-  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
-  return chunks
+function parseSort(sp: URLSearchParams): { field: string; ascending: boolean } {
+  const field = sp.get('sortField') || 'survey_id'
+  const dir: SortDirection = sp.get('sortDirection') === 'asc' ? 'asc' : 'desc'
+  const allowed: SortField[] = ['survey_id', 'surveyor_name', 'survey_date', 'survey_time']
+  return { field: allowed.includes(field as SortField) ? field : 'survey_id', ascending: dir === 'asc' }
 }
 
 interface AggRow {
@@ -27,6 +30,7 @@ export async function GET(request: Request) {
     const billMonth = sp.get('billMonth') || currentMonth()
     const page = Math.max(1, parseInt(sp.get('page') || '1'))
     const ps = Math.min(100, Math.max(10, parseInt(sp.get('pageSize') || '50')))
+    const sort = parseSort(sp)
 
     const sup = await createClient()
     const lvl: AggRow['level'] = !district ? 'district' : !tehsil ? 'tehsil' : 'uc'
@@ -96,7 +100,7 @@ export async function GET(request: Request) {
 
       let unitQuery = sup
         .from('survey_units')
-        .select('survey_id, psid, consumer_name, status, amount_due, surveyor_name, monthly_fee, arrears', { count: 'exact' })
+        .select('survey_id, psid, consumer_name, status, amount_due, surveyor_name, survey_date, survey_time, monthly_fee, arrears', { count: 'exact' })
         .eq('uc_name', drillUC)
         .eq('status', dbStatus || 'ACTIVE')
 
@@ -104,7 +108,7 @@ export async function GET(request: Request) {
       if (tehsil) unitQuery = unitQuery.eq('tehsil', tehsil)
 
       const { data: units, count: unitTotal, error: unitErr } = await unitQuery
-        .order('psid')
+        .order(sort.field, { ascending: sort.ascending })
         .range((page - 1) * ps, (page - 1) * ps + ps - 1)
 
       if (unitErr) {
@@ -114,7 +118,9 @@ export async function GET(request: Request) {
 
       let unitRows: {
         survey_id: string; psid: string; consumer_name: string | null; status: string
-        amount_due: number; surveyor_name: string | null; amount_paid: number
+        amount_due: number; surveyor_name: string | null
+        survey_date: string | null; survey_time: string | null
+        amount_paid: number
         monthly_fee: number; arrears: number
       }[] = (units || []).map(u => ({
         survey_id: u.survey_id,
@@ -123,6 +129,8 @@ export async function GET(request: Request) {
         status: u.status,
         amount_due: u.amount_due,
         surveyor_name: u.surveyor_name,
+        survey_date: u.survey_date,
+        survey_time: u.survey_time,
         amount_paid: 0,
         monthly_fee: u.monthly_fee ?? 0,
         arrears: u.arrears ?? 0,
@@ -202,8 +210,13 @@ export async function GET(request: Request) {
     if (lvl === 'district') rows.sort((a, b) => b.total_units - a.total_units)
     else if (lvl === 'tehsil') rows.sort((a, b) => (a.tehsil ?? '').localeCompare(b.tehsil ?? ''))
     else if (lvl === 'uc') rows.sort((a, b) => {
-      const aN = parseInt((a.uc_name ?? '').replace(/\D/g, ''), 10) || 0
-      const bN = parseInt((b.uc_name ?? '').replace(/\D/g, ''), 10) || 0
+      const aName = a.uc_name ?? ''
+      const bName = b.uc_name ?? ''
+      const aGroup = aName.startsWith('MC') ? 0 : aName.startsWith('UC') ? 1 : 2
+      const bGroup = bName.startsWith('MC') ? 0 : bName.startsWith('UC') ? 1 : 2
+      if (aGroup !== bGroup) return aGroup - bGroup
+      const aN = parseInt(aName.match(/\d+/)?.[0] || '0', 10)
+      const bN = parseInt(bName.match(/\d+/)?.[0] || '0', 10)
       return aN - bN
     })
 

@@ -39,7 +39,7 @@ export function PaginationBar({ page, totalPages, totalRecords, onPageChange, ce
 
         {/* Center info */}
         <div className="text-center min-w-0 px-2">
-          <p className="text-[11px] font-medium text-foreground truncate">
+          <p className="text-xs font-medium text-foreground truncate">
             {centerInfo || `${totalRecords.toLocaleString()} records`}
           </p>
           {totalPages > 0 && (

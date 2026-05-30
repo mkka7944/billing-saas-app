@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { FilterState, SurveyUnit } from '@/types'
+import type { FilterState, SurveyUnit, SortConfig } from '@/types'
 import { currentMonth } from '@/lib/constants'
 
 interface BillingState {
@@ -19,6 +19,7 @@ interface BillingState {
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
   setFilters: (partial: Partial<FilterState>) => void
+  setSortConfig: (config: SortConfig) => void
   resetFilters: () => void
   setPendingFilter: (partial: Partial<FilterState>) => void
   applyFilters: () => void
@@ -42,6 +43,7 @@ const defaultFilters: FilterState = {
   unitType: null,
   search: '',
   billMonth: currentMonth(),
+  sort: { field: 'survey_id', direction: 'desc' },
 }
 
 export const CITY_CONFIG: Record<string, { district: string; tehsil: string; lat: number; lng: number }> = {
@@ -86,9 +88,13 @@ export const useBillingStore = create<BillingState>()(
         filters: { ...s.filters, ...partial },
         pendingFilters: { ...s.pendingFilters, ...partial },
       })),
+      setSortConfig: (config) => set((s) => ({
+        filters: { ...s.filters, sort: config },
+        pendingFilters: { ...s.pendingFilters, sort: config },
+      })),
       resetFilters: () => set((s) => ({
-        filters: { ...defaultFilters, districts: s.filters.districts, tehsils: s.filters.tehsils },
-        pendingFilters: { ...defaultFilters, districts: s.pendingFilters.districts, tehsils: s.pendingFilters.tehsils },
+        filters: { ...defaultFilters, districts: s.filters.districts, tehsils: s.filters.tehsils, sort: s.filters.sort },
+        pendingFilters: { ...defaultFilters, districts: s.pendingFilters.districts, tehsils: s.pendingFilters.tehsils, sort: s.pendingFilters.sort },
       })),
       setPendingFilter: (partial) => set((s) => ({ pendingFilters: { ...s.pendingFilters, ...partial } })),
       applyFilters: () => set((s) => ({ filters: { ...s.pendingFilters } })),

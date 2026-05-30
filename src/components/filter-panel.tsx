@@ -13,6 +13,7 @@ import { ChevronDown, X, SlidersHorizontal, Search, Check, RefreshCw } from 'luc
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SortSelector } from '@/components/sort-selector'
 
 // ─── Accordion Group ───────────────────────────────────────────
 
@@ -183,7 +184,7 @@ function FilterPanelInner({ onClose }: { onClose?: () => void }) {
             {hasActiveFilters && (
               <button
                 onClick={() => { resetFilters() }}
-                className="text-[11px] font-bold uppercase text-red-500 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-950 transition-colors cursor-pointer"
+                className="text-xs font-bold uppercase text-red-500 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 dark:hover:bg-red-950 transition-colors cursor-pointer"
               >
                 Reset
               </button>
@@ -303,8 +304,8 @@ function FilterDropdown({
           <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
           <DropdownPortal pos={pos}>
             <div className="flex gap-2 mb-2 px-1">
-              <button onClick={() => { onSelectAll(); setOpen(false) }} className="text-[10px] font-bold uppercase text-blue-600 hover:text-blue-700 cursor-pointer">All</button>
-              <button onClick={() => { onSelectNone(); setOpen(false) }} className="text-[10px] font-bold uppercase text-red-500 hover:text-red-600 cursor-pointer">None</button>
+              <button onClick={() => { onSelectAll(); setOpen(false) }} className="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer">All</button>
+              <button onClick={() => { onSelectNone(); setOpen(false) }} className="text-[10px] font-bold uppercase text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 cursor-pointer">None</button>
             </div>
             {items.map((item) => (
               <label key={item.value} className={cn(
@@ -331,6 +332,7 @@ const PENDING_DEFAULTS = {
   unitType: null as string | null,
   search: '',
   billMonth: currentMonth(),
+  sort: { field: 'survey_id', direction: 'desc' },
 }
 
 export function DesktopFilterBar() {
@@ -393,6 +395,7 @@ export function DesktopFilterBar() {
       unitType: null,
       search: '',
       billMonth: currentMonth(),
+      sort: filters.sort,
     })
   }, [setFilters, filters.districts])
 
@@ -494,12 +497,15 @@ export function DesktopFilterBar() {
           <div className="w-px h-6 bg-border mx-1 shrink-0" />
           <button
             onClick={resetPendingFilters}
-            className="h-8 text-[11px] font-bold text-red-500 hover:text-red-600 px-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors whitespace-nowrap cursor-pointer shrink-0"
+            className="h-8 text-xs font-bold text-red-500 hover:text-red-600 px-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors whitespace-nowrap cursor-pointer shrink-0"
           >
             Clear ({activeFilterCount})
           </button>
         </>
       )}
+
+      <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
+      <SortSelector />
 
       <ActionButtons />
     </div>
@@ -567,7 +573,7 @@ function ActionButtons() {
       )}
 
       {showSuccess && !isRefreshing && (
-        <span className="text-[10px] text-green-600 font-medium animate-in fade-in duration-150">Updated</span>
+        <span className="text-[10px] text-green-600 dark:text-green-300 font-medium animate-in fade-in duration-150">Updated</span>
       )}
 
       {hasUnapplied && (
@@ -575,13 +581,13 @@ function ActionButtons() {
           <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
           <button
             onClick={cancelFilters}
-            className="h-8 text-[11px] font-bold px-2.5 rounded-lg border border-border hover:bg-muted cursor-pointer transition-colors"
+            className="h-8 text-xs font-bold px-2.5 rounded-lg border border-border hover:bg-muted cursor-pointer transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={applyFilters}
-            className="h-8 text-[11px] font-bold px-3 rounded-lg flex items-center gap-1 bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
+            className="h-8 text-xs font-bold px-3 rounded-lg flex items-center gap-1 bg-primary text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer"
           >
             <Check className="h-3 w-3" />
             Apply
@@ -619,7 +625,7 @@ export function MobileFilterSheet() {
         <SlidersHorizontal className="h-3.5 w-3.5" />
         Filters
         {activeCount > 0 && (
-          <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+          <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
             {activeCount}
           </span>
         )}

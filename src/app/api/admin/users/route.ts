@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-
-function toEmail(input: string): string {
-  return input.includes('@') ? input : `${input}@billing.local`
-}
+import { toEmail } from '@/lib/utils'
 
 export async function GET() {
   try {

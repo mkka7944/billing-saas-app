@@ -54,6 +54,14 @@ export interface FilterState {
   unitType: string | null
   search: string
   billMonth: string | null
+  sort: SortConfig
+}
+
+export type SortField = 'survey_id' | 'surveyor_name' | 'survey_date' | 'survey_time'
+export type SortDirection = 'asc' | 'desc'
+export interface SortConfig {
+  field: SortField
+  direction: SortDirection
 }
 
 export interface FinanceSummary {
@@ -133,4 +141,54 @@ export interface AssignmentItemUnit {
 
 export interface AssignmentItemWithUnit extends AssignmentItem {
   unit: AssignmentItemUnit | null
+}
+
+// ─── Chart / Dashboard Types ───────────────────────────────
+
+export interface MonthlyTrendRow {
+  bill_month: string
+  amount: number
+  bills: number
+  fine_total: number
+}
+
+export interface DailyDetailRow {
+  paid_date: string
+  amount: number
+  bills: number
+}
+
+export interface CategorySummaryRow {
+  category_group: string
+  amount: number
+  bills: number
+}
+
+export interface TehsilBreakdownRow {
+  tehsil: string
+  bill_month: string
+  amount: number
+  bills: number
+}
+
+export interface MonthlyCurveRow {
+  bill_month: string
+  day: number
+  daily_amount: number
+  cumulative_amount: number
+  day_label: number
+}
+
+export interface ChartKpi {
+  total_units: number
+  collected: number
+}
+
+export interface BillingChartsData {
+  monthly_trend: MonthlyTrendRow[]
+  daily_detail: DailyDetailRow[]
+  category_summary: CategorySummaryRow[]
+  tehsil_breakdown: TehsilBreakdownRow[]
+  monthly_curves: MonthlyCurveRow[]
+  kpi: ChartKpi
 }

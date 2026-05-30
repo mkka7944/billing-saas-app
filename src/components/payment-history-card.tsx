@@ -48,7 +48,7 @@ export function PaymentHistoryCard({ payments, allMonths, currentMonthTag, maxPr
   if (!merged.length) {
     return (
       <div className="flex items-center justify-center min-h-[40px]">
-        <p className="text-[10px] text-muted-foreground/60 italic">No payments</p>
+        <p className="text-[10px] text-muted-foreground/60 dark:text-muted-foreground/80 italic">No payments</p>
       </div>
     )
   }
@@ -57,16 +57,16 @@ export function PaymentHistoryCard({ payments, allMonths, currentMonthTag, maxPr
     <div className="space-y-1">
       <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider">Payments</p>
       {visible.map((p, i) => (
-        <div key={`${p.psid || 'empty'}-${p.bill_month || i}`} className="flex items-center justify-between gap-2">
+          <div key={`${p.psid || 'empty'}-${p.bill_month || i}`} className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[10px] font-mono font-medium">{parseBillMonth(p.bill_month)}</span>
             {currentMonthTag === p.bill_month && (
-              <span className="text-[8px] font-extrabold uppercase tracking-wider text-blue-600 bg-blue-100 rounded px-1 shrink-0">Current</span>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded px-1 shrink-0">Current</span>
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-[10px] font-bold">Rs.{Number(p.amount_paid || 0).toLocaleString()}</span>
-            <Badge variant={p.payment_status?.toLowerCase() === 'paid' ? 'default' : 'secondary'} className="text-[8px] h-3.5 px-1">
+            <Badge variant={p.payment_status?.toLowerCase() === 'paid' ? 'default' : 'secondary'} className="text-[10px] h-3.5 px-1">
               {p.payment_status === 'paid' ? '✓' : '—'}
             </Badge>
           </div>
@@ -75,7 +75,7 @@ export function PaymentHistoryCard({ payments, allMonths, currentMonthTag, maxPr
       {merged.length > maxPreview && (
         <button
           onClick={() => setShowAll(!showAll)}
-          className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+          className="text-xs font-semibold text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200 transition-colors cursor-pointer"
         >
           {showAll ? 'Show Less' : `View All (${merged.length - maxPreview} more)`}
         </button>

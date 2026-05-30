@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { currentMonth } from '@/lib/constants'
+import { chunkArray } from '@/lib/utils'
+import type { SortField, SortDirection } from '@/types'
 
 const COLS = 'survey_id, consumer_name, address, lat, lng, city_district, tehsil, uc_name, surveyor_name, survey_date, survey_time, monthly_fee, billing_category, status, psid, amount_due, arrears, route_name, route_seq, current_bill_month, image_urls'
 
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = []
-  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
-  return chunks
+function parseSort(sp: URLSearchParams): { field: string; ascending: boolean } {
+  const field = sp.get('sortField') || 'consumer_name'
+  const dir: SortDirection = sp.get('sortDirection') === 'asc' ? 'asc' : 'desc'
+  const allowed: SortField[] = ['survey_id', 'surveyor_name', 'survey_date', 'survey_time']
+  return { field: allowed.includes(field as SortField) ? field : 'consumer_name', ascending: dir === 'asc' }
 }
 
 export async function GET(request: Request) {
@@ -32,6 +35,7 @@ export async function GET(request: Request) {
   const ps = Math.min(100, Math.max(10, parseInt(sp.get('pageSize') || '50')))
 
   const from = (page - 1) * ps
+  const sort = parseSort(sp)
 
   let q = sup.from('survey_units').select(COLS, { count: 'exact' }).eq('status', 'ACTIVE')
   if (districts.length) q = q.in('city_district', districts)
@@ -41,7 +45,7 @@ export async function GET(request: Request) {
   if (search) q = q.or(`consumer_name.ilike.%${search}%,survey_id.ilike.%${search}%`)
 
   if (paymentStatus === 'all') {
-    const { data, count, error } = await q.order('consumer_name').range(from, from + ps - 1)
+    const { data, count, error } = await q.order(sort.field, { ascending: sort.ascending }).range(from, from + ps - 1)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ data: data || [], total: count ?? 0 })
   }
@@ -102,7 +106,7 @@ export async function GET(request: Request) {
     .from('survey_units')
     .select(COLS)
     .in('psid', pagePsids)
-    .order('consumer_name')
+    .order(sort.field, { ascending: sort.ascending })
 
   return NextResponse.json({ data: pageData || [], total })
 }

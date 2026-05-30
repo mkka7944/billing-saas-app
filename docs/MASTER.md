@@ -540,6 +540,7 @@ Run these in order in the Supabase SQL Editor:
 | 13 | House GPS coordinates are wrong — staff needs to correct | Staff long-presses correct location on map → pin drops. Saved to `house_corrections` with original+corrected lat/lng, staff ID, and delivery date. Admin reviews and can update `survey_units.lat/lng`. |
 | 14 | Legacy `verified_houses` and `staff_sync_logs` data | No import — corrections are stale, old photo logs lack house linkage. Archive to JSON file in `scripts/archive/` before dropping tables. |
 | 15 | Multiple PSIDs per survey_id — which one is the "primary" for `survey_units.psid`? | First PSID from lifecycle data (earliest start_month). Only one PSID stored on `survey_units`. |
+| 16 | `survey_units.psid = null` — survey exists in the field but has no lifecycle PSID | **New/unregistered survey.** Units surveyed by field staff but not yet assigned a PSID from the SWMC billing lifecycle. These have `survey_id` but no matching entry in `payment_history` or `bills.json`. No payment history, no current bill. Frontend keys and expand states use `survey_id` (always non-null) instead of `psid` to avoid React duplicate-key warnings and auto-expand bugs (`null === null`). |
 
 ---
 ## 10. Implementation Phases
@@ -750,6 +751,56 @@ The goal is a **server-side ingestion pipeline** that eliminates local script de
 | Update enrich-survey-units.py to write start_month | 15 min | `enrich-survey-units.py` | Read "Start Month" from lifecycle XLSX and include in the upsert |
 | Backfill start_month from lifecycle XLSX archives | 1 hr | ad-hoc Python | If XLSX files in `scripts/data/processed_pdfs/` are accessible, extract start_month per PSID |
 | Switch allMonths to use start_month | 15 min | `/api/surveys/payments` | Replace `24-month lookback` with queried `survey_units.start_month` |
+
+### 16.8 Billing Charts Architecture — Established Pattern (2026-05-30)
+
+**Problem:** Dashboard charts need to aggregate 122K+ `payment_history` rows. Cannot fit through REST API (1MB limit, 1000-row limit). Client-side aggregation is impossible.
+
+**Solution:** One PL/pgSQL RPC (`get_charts_data`) does all aggregation at DB level. SSR API route (`/api/billing-charts`) calls the RPC and adds display-level transforms in TypeScript.
+
+**Architecture:**
+```
+payment_history (122K rows)
+  ↓
+  PL/pgSQL RPC: get_charts_data() ←─ City/tehsil filter params
+  ↓ (single JSON response)
+  /api/billing-charts/route.ts
+    ├── Calls sup.rpc('get_charts_data', ...)
+    ├── Transforms: adds day_label from paid_date (display logic only)
+    └── Returns BillingChartsData
+  ↓
+  useBillingCharts() hook (React Query, staleTime: 5min)
+  ↓
+  Dashboard component renders 5 charts
+```
+
+**Key Rules for Future Chart Work:**
+
+| Rule | Details |
+|------|---------|
+| **No SQL changes for display** | `day_label`, formatting, sorting — all in `route.ts` TypeScript. Only edit SQL for new metrics or filter params. |
+| **One RPC call** | All chart data comes from a single `get_charts_data()` call. No separate queries per chart. |
+| **No survey_units join in aggregation** | Join causes timeout even with index. Use `EXISTS` for filtering, LATERAL only for display enrichment on filtered subset. |
+| **No client-side aggregation** | RPC does all summing/counting/windowing. Chart components only reshape (pivot) the data for recharts. |
+| **Month sort: chronological** | Use `to_date(bill_month, 'MonYYYY')` in SQL ORDER BY. Use `sortMonths()` helper on client if re-sorting. Never use alphabetical `.sort()`. |
+| **Cycle day = 16th→15th** | Day 1 = 16th of bill month. Formula: `(paid_date - (to_date(bill_month, 'MonYYYY') + 15) + 1)::int`. Display label computed from `paid_date.getDate()` in route.ts. |
+| **Tooltip: daily, not cumulative** | Curves chart shows cumulative lines but tooltip shows daily_amount per month in table format. |
+| **Re-run SQL** | `CREATE OR REPLACE FUNCTION get_charts_data(...)` — only when aggregation logic changes. |
+
+**Approved RPCs for client-facing charts:** This is a second exception (beyond admin-only Data Insight RPCs in `007-data-insight-rpcs.sql`). Rationale: 122K payment rows physically cannot be fetched through REST API for aggregation.
+
+**File map:**
+| File | Purpose |
+|------|---------|
+| `scripts/sql/021-charts-aggregation.sql` | PL/pgSQL RPC definition (final, run once) |
+| `src/app/api/billing-charts/route.ts` | SSR endpoint: RPC caller + display transforms |
+| `src/hooks/use-billing-charts.ts` | React Query hook |
+| `src/components/dashboard.tsx` | Dashboard layout with tabs + KPI cards |
+| `src/components/charts/monthly-curves.tsx` | Cumulative curve chart with table tooltip |
+| `src/components/charts/office-breakdown.tsx` | Tehsil × month bar chart |
+| `src/components/charts/monthly-trend.tsx` | Monthly bar trend |
+| `src/components/charts/category-breakdown.tsx` | Category pie/bar |
+| `src/types/index.ts` | `MonthlyCurveRow` (includes `day_label`), `BillingChartsData`, etc. |
 
 ---
 ## 12. Session Log
@@ -1012,9 +1063,99 @@ The goal is a **server-side ingestion pipeline** that eliminates local script de
 - `staff-light-mode` applied at AppShell level affects all pages for staff users.
 - `navHistory` unbounded growth (L9 in audit) resolved by removing the feature entirely.
 
----
 
-## 13. File Inventory (Phase 0)
+
+### 2026-05-30 (Audit Cleanup + Data Insight Sorting + UI Fixes) — Location: Office
+**Focus:** Complete audit cleanup items, add global sort system, fix payment history layout and data insight bugs
+**Done:**
+
+#### Audit Cleanup (from Phase Z):
+- **3 empty `catch {}` blocks** → Added `console.warn()` in `auth-store.ts:110`, `settings/page.tsx:120`, `payments/route.ts:68`
+- **3 unused icon imports** → Removed `RotateCw` (`deliver-card-list.tsx`), `PanelLeftOpen` (`BillingSidebar.tsx`), `ArrowRight` (`deliver/page.tsx`)
+- **`chunkArray` and `toEmail`** → Extracted to `src/lib/utils.ts`, updated imports in 3 route files (`surveys`, `data-insight`, `admin/users`). Redundant inline definitions removed.
+- **Month array consolidation** → 4 redundant `['JAN','FEB',...]` arrays in `payments/route.ts` consolidated into single `MONTHS` export in `constants.ts`. Also used by `currentMonth()` function.
+- **`import * as React`** → Replaced with `import type { ReactNode }` in `query-provider.tsx`
+- **Dead SQL files archived** → `007-data-insight-rpcs.sql` and `015-revise-rpcs.sql` moved to `scripts/sql/_old/`
+- **StaleTime named constants** → `STALE_BILLING` (5min), `STALE_HIERARCHY` (30min), `STALE_ASSIGNMENT` (2min) in `constants.ts`. `query-provider.tsx` updated to use `STALE_BILLING`.
+
+#### Payment History UI Fixes:
+- **Column header** → Empty expand chevron column renamed to "History" with `w-8`
+- **Repositioned** → History column moved from position 1 to position 7 (just before Action column)
+- **Desktop spacing** → Removed `justify-between` from `PaymentHistoryCard` rows (caused month/amount to spread edge-to-edge on wide screens). Replaced with `gap-3`.
+- **Right-aligned expanded content** → Expanded row uses `colSpan={8}` with `ml-auto w-fit max-w-[220px]` wrapper so payment info sits under History/Action area
+- **Sep 2025 cap** → `allMonths` range in `payments/route.ts` now clamped to `SEP2025` minimum (no unpaid months shown before Sep 2025)
+
+#### House Detail Sheet Improvements:
+- **PSID display** → Removed "PSID:" label, shows just `mono bold blue` value + copy button
+- **Current Bill badge** → Added below PSID: emerald pill "Current Bill" badge + `monthly_fee + arrears` amount
+
+#### Data Insight State Persistence:
+- **CSS hide instead of conditional render** → `DataInsight` component now stays mounted in DOM (hidden via `className`) when switching to detail view. Preserves `drillUC`, `page`, `expandedId` state when returning from house detail sheet.
+- One-line change in `map/page.tsx`: `{activeView === 'data-insight' && <DataInsight />}` → `<div className={activeView !== 'data-insight' ? 'hidden' : 'absolute inset-0'}><DataInsight /></div>`
+
+#### MC/UC Sorting Fix:
+- **Grouped sort** → MCs sort first (by first numeric value), then UCs, then others. Uses `match(/\d+/)?.[0]` (first number only) instead of `replace(/\D/g, '')` (all digits concatenated). Fixes "MC-17, Block 5/11" sorting as 17 instead of 17511.
+- Applied in `data-insight/route.ts` UC sort function.
+
+#### Global Sort System:
+- **Types** → Added `SortConfig`, `SortField` (`survey_id`/`surveyor_name`/`survey_date`/`survey_time`), `SortDirection` to `types/index.ts`. Included `sort: SortConfig` in `FilterState`.
+- **Store** → Added `setSortConfig` action to `billing-store.ts`. Default sort: `{ field: 'survey_id', direction: 'desc' }` (latest first for drill-down). Sort preserved across filter resets.
+- **API routes** — Both `surveys/route.ts` and `data-insight/route.ts` accept `sortField`/`sortDirection` query params. Replace hardcoded `.order('consumer_name')` / `.order('psid')` with dynamic sort. Default `survey_id desc` for data insight, `consumer_name` for survey list.
+- **Hooks** → `use-survey-data.ts` and `use-data-insight.ts` pass `filters.sort` to API calls.
+- **SortSelector component** → `src/components/sort-selector.tsx` — reusable dropdown + direction toggle. Field select (Survey ID / Surveyor / Date / Time) + asc/desc arrow button. Placed in `DesktopFilterBar` before ActionButtons.
+- **House detail sheet inheritance** → `nextHouse`/`prevHouse` navigation order inherits sort via `houseList` (which is sorted by the same API query).
+
+#### Bug Fix: Duplicate null keys + auto-expand
+- **Root cause:** Survey rows with `psid = null` caused `key={row.psid}` to produce duplicate `null` keys. Also `expandedId === row.psid` → `null === null` → `true` for every null-psid row, auto-expanding all of them.
+- **Fix:** Changed all keys and expand state to use `row.survey_id` (always unique, non-null) instead of `row.psid`.
+- **Note:** Survey records with `psid = null` are **new/unregistered surveys** — units surveyed in the field but not yet assigned a PSID from the billing lifecycle system. These have `survey_id` but no matching entry in `payment_history` or `bills.json`.
+
+**Key decisions:**
+- `survey_id` as canonical key for frontend lists (not `psid`) — it's always unique and non-null
+- MC/UC sort grouped: MCs first by first number, then UCs, then others — prevents "MC-17, Block 5/11" from sorting after UC-17511
+- Sort state lives in `FilterState` and flows through existing filter pipeline (no new mechanism needed)
+- CSS hide over Zustand for DataInsight state persistence — avoids new store fields, component tree is idle when hidden
+- `justify-between` removed from PaymentHistoryCard rows — items cluster naturally via `gap-3` at all widths
+
+**Next session:**
+- Re-run `019-aggregation-rpcs.sql` to fix `psid` ambiguity in `get_hierarchy_stats` (Data Insight broken until done)
+- Phase A: Admin Assignment API (`GET/POST /api/assignments`) + `/assignments` page UI
+- Phase B: Field Staff Delivery UI
+- Backlog: `.range(0, 1_000_000)` already removed from all routes ✅
+- Backlog: Refactor audit items from Phase Z as scheduled
+
+### 2026-05-30 (Billing Charts Dashboard — RPC Aggregation + Full Data) — Location: Home
+**Focus:** Build billing charts API with 122K-row aggregation, connect to dashboard, fix month sorting + cycle-relative day labels
+**Done:**
+- **Created `021-charts-aggregation.sql`** — `get_charts_data` PL/pgSQL RPC that aggregates ALL paid `payment_history` rows at DB level:
+  - Returns: `monthly_trend`, `daily_detail`, `category_summary`, `tehsil_breakdown`, `monthly_curves`, `kpi`
+  - City/tehsil filtering via `EXISTS (SELECT 1 FROM survey_units WHERE psid = ph.psid AND ...)` — uses psid index, short-circuits when no filter
+  - LATERAL join only for display enrichment (tehsil, billing_category) on the filtered subset
+  - Month sorting via `ORDER BY to_date(bill_month, 'MonYYYY')` — chronological (Sep → Oct → ... → May)
+  - Day calculation: `(paid_date - (to_date(bill_month, 'MonYYYY') + 15) + 1)::int` — Day 1 = 16th of bill month
+  - Cumulative sum via window function `sum(sum(amount_paid)) OVER (PARTITION BY bill_month ORDER BY paid_date)`
+- **Rewrote `/api/billing-charts/route.ts`** — 30-line RPC caller + adds `day_label` (from `paid_date.getDate()`) via TypeScript transform. All future display logic lives here, not SQL.
+- **Connected Dashboard UI** — KPI cards, Monthly Trend, Category Breakdown, Daily Collection Comparison, Office Breakdown all pull from `useBillingCharts`. Removed broken `useBillingStore` dependency. Removed `useBillingStats` dependency.
+- **Fixed month sort in chart components** — Added `sortMonths()` helper (`year*12 + monthIndex`) to `MonthlyCurvesChart` and `OfficeBreakdownChart`, replacing alphabetical `.sort()` which gave wrong order (APR before FEB).
+- **Fixed cycle-relative day display** — X-axis tickFormatter shows `16, 17, ...31, 1, ...15` cycle labels. Tooltip shows daily amount in table format (not cumulative). Tooltip `labelMap` uses exact `day_label` from paid_date per row.
+- **Removed broken survey_units LATERAL join** (first version timed out on 122K rows). Replaced with EXISTS-based filtering.
+- **Dashboard file changes:** `dashboard.tsx`, `monthly-curves.tsx`, `office-breakdown.tsx`, `route.ts`, `types/index.ts`, `021-charts-aggregation.sql`
+- **All changes pass `npx tsc --noEmit` with zero errors**.
+**Key decisions:**
+- Charts aggregation RPC is the **only RPC exception for client-facing features** (beyond admin-only Data Insight). Rationale: 122K payment rows cannot fit through REST API (1MB limit, 1000-row PostgREST limit).
+- **Display logic lives in route.ts (TypeScript)**, not SQL. Day labels, formatting, any future presentation tweaks — edit `route.ts`, no SQL re-run.
+- `+ 15` for cycle offset (16th = Day 1). Month has 30-31 days; X-axis uses approximate labels (16→31, 1→15), tooltip shows exact `paid_date` via `day_label`.
+- **No survey_units join in main aggregation** — the join caused 30s timeout even with psid index. EXISTS + LATERAL on filtered subset is the fastest approach.
+- SQL is `CREATE OR REPLACE FUNCTION` — re-run SQL only when aggregation logic changes (new metric, filter field, grouping). Chart display changes need only TS edits + server restart.
+**Confirmed working:**
+- API returns 9 months (SEP2025–MAY2026), ₹75.7M collected, 60.9K unique units, 228 curve days
+- Dashboard renders all 5 charts with full data
+- `/map` page loads with dashboard tab (200 OK)
+**Next session:**
+- Connect city filter bar to billing-charts API
+- Any pending chart styling/polish
+- Phase A: Admin Assignment UI or other pending feature work
+
 Source files copied from `F:\qoder\billing-system\` + `F:\Routing-Station-Pro` into `scripts/`
 ```
 scripts/ root (6 files, 86 KB):
@@ -1083,6 +1224,8 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-27 | 11.0 | **RBAC system implementation.** Created `roles` table (super_admin/admin/field_staff), added username + role_id + suspension + soft-delete to profiles. Username-based auth for staff. `/settings` page with Users tab (CRUD, freeze, password reset, delete/restore). Sidebar shows admin-only items based on role. All role comparisons updated to use `roleName` with new role values. DB migration applied, admin backfilled as super_admin. |
 | 2026-05-27 | 12.0 | **Navigation unification — single layout for all users.** Removed dual-layout system (staff `fixed inset-0` overlay). Delivered page rendered inside AppShell. Back-button system eliminated (`forceBack`/`onBack`/`navHistory`/`goBack` removed). Staff gets search/filter access on mobile and desktop. Bottom tabs for all users. Sidebar CSS fixed for desktop. |
 | 2026-05-29 | 13.0 | **Payment history fix + amount_due→fee+arrears + KPI redesign.** Chronological sort fix for payment months (alpha sort broke allMonths). 24-month lookback replaces unavailable `start_month` (bill_items dropped). amount_due replaced by monthly_fee+arrears in all UI surfaces (12 files). KPI cards redesigned: compact single-line, single value, dark-mode safe .500 accent colors. Data model updated: bill_items removed from docs, enrich-survey-units.py replaces import-lifecycle-data.py. New Section 16: Future workflow proposal. |
+| 2026-05-30 | 14.0 | **Audit cleanup + global sort system + Data Insight/History UI fixes.** Audit: 3 empty catches, 3 unused icon imports, chunkArray/toEmail extraction, month array consolidation, `import * as React` removed, 2 dead SQL files archived, staleTime constants created. Payment History: column renamed "History", repositioned before Action, desktop spacing fixed (`justify-between` removed), right-aligned expanded content. Sep 2025 cap for unpaid months. HouseDetailSheet: PSID value-only (no label), Current Bill badge. DataInsight: CSS hide preserves drill-down state across view switches. MC/UC grouped numeric sort (MCs first). Global sort system: SortConfig type in FilterState, setSortConfig in billing-store, parseSort in both API routes, SortSelector component in DesktopFilterBar. Bug fix: `key={survey_id}` replaces `key={psid}` — fixes null-key warning + auto-expand bug. Note: `psid = null` = new/unregistered surveys. |
+| 2026-05-30 | 15.0 | **Billing charts dashboard — RPC aggregation for 122K payment rows.** Created `get_charts_data` RPC in `021-charts-aggregation.sql` (EXISTS-based city/tehsil filtering, cumulative curves, cycle-relative day labels from 16th). Rewrote `/api/billing-charts` route to add `day_label` in TypeScript (display logic in TS, not SQL). Connected Dashboard to `useBillingCharts`. Fixed month sort (chronological via `sortMonths` helper). Fixed tooltip: daily amounts in table format. Removed broken `useBillingStats` dependency. All chart display changes now require only TS edits + server restart — no SQL changes needed. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)

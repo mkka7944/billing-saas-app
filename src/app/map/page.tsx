@@ -7,7 +7,7 @@ import { useBillingStore } from '@/stores/billing-store'
 
 import { SurveyList } from '@/components/survey-list'
 import { MapView } from '@/components/map-view'
-import { KpiCards } from '@/components/kpi-cards'
+import { Dashboard } from '@/components/dashboard'
 import { HouseDetailSheet } from '@/components/house-detail-sheet'
 import { DataInsight } from '@/components/data-insight'
 import { AppShell } from '@/components/layout/AppShell'
@@ -34,9 +34,11 @@ export default function MapPage() {
         <div className="flex-1 relative">
           {activeView === 'map' && <MapView />}
           {activeView === 'list' && <SurveyList />}
-          {activeView === 'stats' && <KpiCards />}
+          {activeView === 'stats' && <Dashboard />}
           {activeView === 'detail' && selectedHouseId && <HouseDetailSheet />}
-          {activeView === 'data-insight' && <DataInsight />}
+          <div className={activeView !== 'data-insight' ? 'hidden' : 'absolute inset-0'}>
+            <DataInsight />
+          </div>
         </div>
       </div>
     </AppShell>

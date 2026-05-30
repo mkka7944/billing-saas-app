@@ -107,7 +107,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         await supabase.auth.signOut()
         return { error: 'Account is frozen. Contact your admin.' }
       }
-    } catch {}
+    } catch { console.warn('fetchSession: failed to check account frozen status') }
 
     set({ session, user, ...profile, isLoading: false })
     return { error: null }

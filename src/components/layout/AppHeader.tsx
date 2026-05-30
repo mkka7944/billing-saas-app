@@ -106,21 +106,21 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
               <span className="text-[10px] text-muted-foreground font-medium animate-pulse whitespace-nowrap">Syncing...</span>
             )}
             {showSuccess && !isRefreshing && (
-              <span className="text-[10px] text-green-600 font-medium whitespace-nowrap">Updated</span>
+              <span className="text-[10px] text-green-600 dark:text-green-300 font-medium whitespace-nowrap">Updated</span>
             )}
 
             {hasUnapplied && (
               <>
                 <button
                   onClick={cancelFilters}
-                  className="h-11 text-[11px] font-bold px-3 rounded-lg border border-border hover:bg-muted cursor-pointer"
+                  className="h-11 text-xs font-bold px-3 rounded-lg border border-border hover:bg-muted cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={applyFilters}
                   className={cn(
-                    'h-11 text-[11px] font-bold px-3 rounded-lg flex items-center gap-1 cursor-pointer',
+                    'h-11 text-xs font-bold px-3 rounded-lg flex items-center gap-1 cursor-pointer',
                     'bg-primary text-primary-foreground hover:bg-primary/90'
                   )}
                 >
@@ -132,7 +132,7 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
             <div className="flex items-center gap-1">
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/50">
                 <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                  <span className="text-[9px] font-black text-primary">
+                  <span className="text-[10px] font-black text-primary">
                     {(displayName || user?.email)?.charAt(0).toUpperCase() || 'U'}
                   </span>
                 </div>
@@ -140,14 +140,14 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
                   <div className="text-[10px] font-medium text-foreground truncate max-w-[80px] leading-tight">
                     {displayName || user?.email?.split('@')[0] || ''}
                   </div>
-                  <div className="text-[8px] font-semibold text-muted-foreground uppercase leading-tight">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase leading-tight">
                     {roleName === 'super_admin' ? 'Super Admin' : roleName === 'admin' ? 'Admin' : 'Staff'}
                   </div>
                 </div>
               </div>
               <button
                 onClick={async () => { await signOut(); window.location.href = '/login' }}
-                className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer text-muted-foreground hover:text-rose-500 transition-colors"
+                className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer text-muted-foreground hover:text-rose-500 dark:hover:text-rose-300 transition-colors"
                 title="Sign Out"
               >
                 <LogOut className="h-3.5 w-3.5" />

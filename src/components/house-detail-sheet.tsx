@@ -210,7 +210,7 @@ export function HouseDetailSheet() {
               )}
               {survey.psid && (
                 <div className="flex items-center gap-1.5 mt-2">
-                  <span className="text-xs font-bold text-blue-500">PSID: {survey.psid}</span>
+                  <span className="text-xs font-mono font-bold text-blue-500 dark:text-blue-300">{survey.psid}</span>
                   <button
                     onClick={() => navigator.clipboard.writeText(survey.psid!)}
                     className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
@@ -218,6 +218,14 @@ export function HouseDetailSheet() {
                   >
                     <Copy className="h-3 w-3 text-muted-foreground" />
                   </button>
+                </div>
+              )}
+              {survey.monthly_fee > 0 && (
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5 shrink-0">
+                    Current Bill
+                  </span>
+                  <span className="text-xs font-bold">Rs.{((survey.monthly_fee ?? 0) + (survey.arrears ?? 0)).toLocaleString()}</span>
                 </div>
               )}
             </div>
@@ -243,7 +251,7 @@ export function HouseDetailSheet() {
         <div className="px-4 py-3 border-b border-border">
           <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2">Bill Summary</p>
           <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center">
-            <p className="text-[11px] text-muted-foreground/60 italic">Coming soon</p>
+            <p className="text-xs text-muted-foreground/60 dark:text-muted-foreground/80 italic">Coming soon</p>
           </div>
         </div>
 
@@ -296,7 +304,7 @@ export function HouseDetailSheet() {
             </div>
 
             <div className="text-center min-w-0 px-2">
-              <p className="text-[11px] font-medium text-foreground font-mono">
+              <p className="text-xs font-medium text-foreground font-mono">
                 {houseListIndex + 1} / {houseListTotal.toLocaleString()}
               </p>
             </div>

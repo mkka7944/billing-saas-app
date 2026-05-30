@@ -32,6 +32,8 @@ export interface UnitRow {
   status: string
   amount_due: number
   surveyor_name: string | null
+  survey_date: string | null
+  survey_time: string | null
   amount_paid: number
   monthly_fee: number
   arrears: number
@@ -73,6 +75,10 @@ export function useDataInsight({ filters, page, pageSize, drillUC }: UseDataInsi
       if (filters.surveyor) params.set('surveyor', filters.surveyor)
       if (filters.billMonth) params.set('billMonth', filters.billMonth)
       if (drillUC) params.set('drill', drillUC)
+      if (filters.sort) {
+        params.set('sortField', filters.sort.field)
+        params.set('sortDirection', filters.sort.direction)
+      }
       params.set('status', 'active')
       params.set('page', String(page))
       params.set('pageSize', String(pageSize))

@@ -16,7 +16,6 @@ import {
   Building2,
   LogOut,
   PanelLeftClose,
-  PanelLeftOpen,
   Moon,
   Sun,
   FileSpreadsheet,
@@ -189,7 +188,7 @@ export function BillingSidebar() {
                     <button
                       onClick={() => handleNavClick(item)}
                       className={cn(
-                        'flex items-center rounded-lg text-[13px] font-bold transition-all cursor-pointer w-full',
+                        'flex items-center rounded-lg text-sm font-bold transition-all cursor-pointer w-full',
                         sidebarCollapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5',
                         active
                           ? 'bg-sidebar-accent/60 text-sidebar-primary border border-sidebar-border shadow-sm'
@@ -238,7 +237,7 @@ export function BillingSidebar() {
           ) : (
             <button
               onClick={toggleTheme}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[12px] font-medium text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/30 transition-all cursor-pointer mb-2"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/30 transition-all cursor-pointer mb-2"
             >
               <ThemeIcon className="h-[18px] w-[18px]" />
               <span>{theme === 'dark' ? 'Dark mode' : 'Light mode'}</span>
@@ -255,7 +254,7 @@ export function BillingSidebar() {
               </div>
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-lg transition-all text-sidebar-foreground/60 hover:text-rose-500 hover:bg-rose-500/10 cursor-pointer"
+                className="p-2 rounded-lg transition-all text-sidebar-foreground/60 hover:text-rose-500 dark:hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
                 title="Sign Out"
               >
                 <LogOut size={16} />
@@ -270,7 +269,7 @@ export function BillingSidebar() {
                   </span>
                 </div>
                 <div className="overflow-hidden min-w-0 flex-1">
-                  <div className="text-[12px] font-bold truncate text-sidebar-foreground capitalize">
+                  <div className="text-xs font-bold truncate text-sidebar-foreground capitalize">
                     {displayName || user?.email?.split('@')[0] || 'Operator'}
                   </div>
                   <div className="text-[10px] font-medium truncate text-sidebar-foreground/60 mt-0.5">
@@ -280,7 +279,7 @@ export function BillingSidebar() {
               </div>
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-lg transition-all shrink-0 text-sidebar-foreground/60 hover:text-rose-500 hover:bg-rose-500/10 cursor-pointer"
+                className="p-2 rounded-lg transition-all shrink-0 text-sidebar-foreground/60 hover:text-rose-500 dark:hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
                 title="Sign Out"
               >
                 <LogOut size={16} />

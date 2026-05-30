@@ -8,7 +8,7 @@ import { usePhotoQueue } from '@/hooks/use-photo-queue'
 import { useOnlineStatus } from '@/hooks/use-online-status'
 import { cacheAssignment, getCachedAssignment } from '@/lib/offline-cache'
 import dynamic from 'next/dynamic'
-import { Map, List, BarChart3, Upload, Loader2, WifiOff, CheckCircle2, XCircle, Clock, ArrowRight } from 'lucide-react'
+import { Map, List, BarChart3, Upload, Loader2, WifiOff, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AssignmentItemWithUnit } from '@/types'
 import DeliverCardList from '@/components/delivery/deliver-card-list'
@@ -45,8 +45,8 @@ function TodayStats({ items }: { items: AssignmentItemWithUnit[] }) {
       <div className="grid grid-cols-3 gap-3">
         {stats.map((s) => (
           <div key={s.label} className="rounded-xl border border-border p-4 text-center space-y-2">
-            <div className={cn('p-2 rounded-lg inline-flex mx-auto', s.bg)}>
-              <s.icon className={cn('h-5 w-5', s.color)} />
+            <div className={cn('p-2 rounded-lg inline-flex mx-auto', s.bg, s.bg.replace('bg-', 'dark:bg-').replace('100', '900/30'))}>
+              <s.icon className={cn('h-5 w-5', s.color, s.color.replace('text-', 'dark:text-').replace('600', '300'))} />
             </div>
             <p className="text-2xl font-bold tabular-nums">{s.value}</p>
             <p className="text-xs text-muted-foreground font-medium">{s.label}</p>
@@ -226,7 +226,7 @@ export default function DeliverPage() {
       {(!isOnline || queueCount > 0 || useCache) && (
       <div className="shrink-0 px-4 py-1.5 border-b bg-muted/30 flex items-center gap-3">
         {!isOnline && (
-          <span className="text-[10px] text-amber-600 flex items-center gap-1 font-medium">
+          <span className="text-[10px] text-amber-600 dark:text-amber-300 flex items-center gap-1 font-medium">
             <WifiOff className="h-3 w-3" />
             Offline
           </span>
@@ -242,7 +242,7 @@ export default function DeliverPage() {
           </span>
         )}
         {useCache && (
-          <span className="text-[9px] text-amber-600 font-medium">(cached)</span>
+          <span className="text-[10px] text-amber-600 dark:text-amber-300 font-medium">(cached)</span>
         )}
       </div>
       )}
@@ -252,7 +252,7 @@ export default function DeliverPage() {
         <div className="shrink-0 px-4 py-2 border-b bg-muted/30 flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px] font-bold text-foreground">
+              <span className="text-xs font-bold text-foreground">
                 {deliveredCount}/{totalCount} delivered
               </span>
               <span className="text-[10px] text-muted-foreground tabular-nums">
@@ -267,7 +267,7 @@ export default function DeliverPage() {
             </div>
           </div>
           {useCache && (
-            <span className="text-[9px] text-amber-600 font-medium shrink-0">(cached)</span>
+            <span className="text-[10px] text-amber-600 dark:text-amber-300 font-medium shrink-0">(cached)</span>
           )}
         </div>
       )}
@@ -294,8 +294,8 @@ export default function DeliverPage() {
         </div>
       ) : items.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
-          <CheckCircle2 className="h-12 w-12 text-green-500" />
-          <p className="text-sm font-semibold text-green-600">All caught up!</p>
+          <CheckCircle2 className="h-12 w-12 text-green-500 dark:text-green-300" />
+          <p className="text-sm font-semibold text-green-600 dark:text-green-300">All caught up!</p>
           <p className="text-xs text-muted-foreground">
             Every bill has been delivered or marked.
           </p>

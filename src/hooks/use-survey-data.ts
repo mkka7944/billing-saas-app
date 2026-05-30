@@ -16,6 +16,8 @@ export function useSurveyData(filters: FilterState, page = 1, pageSize = 50) {
       if (filters.search) params.set('search', filters.search)
       if (filters.billMonth) params.set('billMonth', filters.billMonth)
       if (filters.paymentStatus !== 'all') params.set('paymentStatus', filters.paymentStatus)
+      params.set('sortField', filters.sort.field)
+      params.set('sortDirection', filters.sort.direction)
       params.set('page', String(page))
       params.set('pageSize', String(pageSize))
 

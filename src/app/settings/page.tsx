@@ -117,7 +117,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/admin/users')
       const json = await res.json()
       if (json.data) setUsers(json.data)
-    } catch {} finally {
+    } catch { console.warn('fetchUsers: failed to fetch user list') } finally {
       setLoading(false)
     }
   }, [])
@@ -299,7 +299,7 @@ export default function SettingsPage() {
                         <div className="flex justify-between text-sm"><span className="text-muted-foreground">Username</span><span className="font-semibold">{addResult.username}</span></div>
                         <div className="flex justify-between text-sm"><span className="text-muted-foreground">Password</span><span className="font-mono font-semibold text-destructive">{addResult.password}</span></div>
                       </div>
-                      <p className="text-[11px] text-muted-foreground">This password will not be shown again. Save it now.</p>
+                      <p className="text-xs text-muted-foreground">This password will not be shown again. Save it now.</p>
                     </div>
                   ) : (
                     <div className="space-y-3 py-2">

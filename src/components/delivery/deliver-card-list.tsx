@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback } from 'react'
 import { cn } from '@/lib/utils'
-import { Camera, MapPin, CreditCard, RotateCw, Loader2 } from 'lucide-react'
+import { Camera, MapPin, CreditCard, Loader2 } from 'lucide-react'
 import type { AssignmentItemWithUnit } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -130,17 +130,17 @@ export default function DeliverCardList({
                         {item.unit?.consumer_name || 'Unknown'}
                       </p>
                       {item.unit?.address && (
-                        <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
                           {item.unit.address}
                         </p>
                       )}
                     </div>
-                    <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white shrink-0', STATUS_BG[item.status] || 'bg-blue-500')}>
+                    <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white shrink-0', STATUS_BG[item.status] || 'bg-blue-500')}>
                       {STATUS_LABELS[item.status] || 'Pending'}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
                     {item.unit?.uc_name && (
                       <span className="flex items-center gap-0.5">
                         <MapPin className="h-3 w-3" /> {item.unit.uc_name}

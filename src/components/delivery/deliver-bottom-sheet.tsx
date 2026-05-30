@@ -302,7 +302,7 @@ export default function DeliverBottomSheet({
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => setShowMissedInput(false)}
-                        className="px-3 h-11 text-[11px] font-medium rounded-lg border border-border hover:bg-muted cursor-pointer"
+                        className="px-3 h-11 text-xs font-medium rounded-lg border border-border hover:bg-muted cursor-pointer"
                       >
                         Cancel
                       </button>
@@ -315,7 +315,7 @@ export default function DeliverBottomSheet({
                           }
                         }}
                         disabled={!missedReason.trim()}
-                        className="px-4 h-12 text-[11px] font-bold rounded-lg bg-red-600 text-white hover:bg-red-700 cursor-pointer disabled:opacity-50"
+                        className="px-4 h-12 text-xs font-bold rounded-lg bg-red-600 text-white hover:bg-red-700 cursor-pointer disabled:opacity-50"
                       >
                         Confirm Missed
                       </button>

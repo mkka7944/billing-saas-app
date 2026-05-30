@@ -110,19 +110,19 @@ export default function StatsPage() {
         {totals && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Assigned</CardTitle><div className="p-1 rounded bg-blue-100"><Users className="h-4 w-4 text-blue-600" /></div></CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Assigned</CardTitle><div className="p-1 rounded bg-blue-100 dark:bg-blue-900/30"><Users className="h-4 w-4 text-blue-600 dark:text-blue-300" /></div></CardHeader>
               <CardContent><p className="text-xl font-bold">{totals.assigned}</p></CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Delivered</CardTitle><div className="p-1 rounded bg-green-100"><CheckCircle2 className="h-4 w-4 text-green-600" /></div></CardHeader>
-              <CardContent><p className="text-xl font-bold text-green-600">{totals.delivered}</p></CardContent>
+              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Delivered</CardTitle><div className="p-1 rounded bg-green-100 dark:bg-green-900/30"><CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-300" /></div></CardHeader>
+              <CardContent><p className="text-xl font-bold text-green-600 dark:text-green-300">{totals.delivered}</p></CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Missed</CardTitle><div className="p-1 rounded bg-red-100"><XCircle className="h-4 w-4 text-red-600" /></div></CardHeader>
-              <CardContent><p className="text-xl font-bold text-red-600">{totals.missed}</p></CardContent>
+              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Missed</CardTitle><div className="p-1 rounded bg-red-100 dark:bg-red-900/30"><XCircle className="h-4 w-4 text-red-600 dark:text-red-300" /></div></CardHeader>
+              <CardContent><p className="text-xl font-bold text-red-600 dark:text-red-300">{totals.missed}</p></CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Rate</CardTitle><div className="p-1 rounded bg-purple-100"><TrendingUp className="h-4 w-4 text-purple-600" /></div></CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Rate</CardTitle><div className="p-1 rounded bg-purple-100 dark:bg-purple-900/30"><TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-300" /></div></CardHeader>
               <CardContent><p className="text-xl font-bold">{overallRate}%</p></CardContent>
             </Card>
           </div>
@@ -151,8 +151,8 @@ export default function StatsPage() {
                   <tr key={s.staff_id} className="border-b border-border last:border-0 hover:bg-muted/30 cursor-pointer" onClick={() => handleRowClick(s.staff_id, s.staff_name)}>
                     <td className="px-3 py-2 font-medium">{s.staff_name}</td>
                     <td className="px-3 py-2 text-right">{s.total_assigned}</td>
-                    <td className="px-3 py-2 text-right text-green-600 font-medium">{s.delivered}</td>
-                    <td className="px-3 py-2 text-right text-red-600">{s.missed}</td>
+                    <td className="px-3 py-2 text-right text-green-600 dark:text-green-300 font-medium">{s.delivered}</td>
+                    <td className="px-3 py-2 text-right text-red-600 dark:text-red-300">{s.missed}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{s.pending}</td>
                     <td className="px-3 py-2 text-right font-bold">{s.rate}%</td>
                     <td className="px-3 py-2 text-right"><Star className="h-3.5 w-3.5 inline text-muted-foreground" /></td>
@@ -214,10 +214,10 @@ export default function StatsPage() {
                   {perfRecords.slice(0, 5).map((pr) => (
                     <div key={pr.id} className="p-2 rounded-lg bg-muted/30">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] text-muted-foreground">{pr.assigned_date}</span>
-                        {pr.rating && <span className="text-xs font-bold text-yellow-700">{'★'.repeat(pr.rating)}</span>}
+                        <span className="text-xs text-muted-foreground">{pr.assigned_date}</span>
+                        {pr.rating && <span className="text-xs font-bold text-yellow-700 dark:text-yellow-300">{'★'.repeat(pr.rating)}</span>}
                       </div>
-                      {pr.notes && <p className="text-[11px] mt-0.5 text-muted-foreground">{pr.notes}</p>}
+                      {pr.notes && <p className="text-xs mt-0.5 text-muted-foreground">{pr.notes}</p>}
                     </div>
                   ))}
                 </div>
