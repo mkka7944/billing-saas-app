@@ -202,19 +202,18 @@ Your local Python scripts process these into two outputs: (1) the **lifecycle XL
 ### 5.4 Routes
 Route data is embedded in the lifecycle XLSX (Route Segment, Route Seq columns). Some UCs/MCs have routes from a separate route CSV exported from the Routing Station app. Staff can also assign custom route numbers via the House Intel module (Routing Station Pro). These custom routes are also used in final print sorting. Route enrichment into lifecycle is handled during the pdf-psid-extractor step.
 
-### 5.5 import-lifecycle-data.py
-**Purpose:** Reads the lifecycle XLSX (already produced by pdf-psid-extractor.py) and populates the database.
+### 5.5 enrich-survey-units.py (replaces import-lifecycle-data.py)
+**Purpose:** Reads the lifecycle XLSX (already produced by pdf-psid-extractor.py) and enriches `survey_units` in the database.
 **Insert targets:**
-- `bill_items` — one row per PSID (current month snapshot). Includes `tehsil` from lifecycle XLSX `Tehsil` column. DB trigger `trg_bill_items_set_tehsil` provides fallback from `survey_units` if column is missing.
-- `survey_units.monthly_fee` + `billing_category` — enriched from lifecycle
-- `saved_routes` — route data per UC/MC
+- `survey_units` — upserts columns: psid, monthly_fee, billing_category, amount_due, arrears, route_name, route_seq, current_bill_month
 - `hierarchy`, `surveyors`, `bill_months` — upsert reference tables for filter dropdowns
-**Does NOT:** generate PDFs, modify pdf-bill-printer.py
+**Note:** `bill_items` table was dropped — all enrichment happens directly on `survey_units`.
 **CLI:**
 ```bash
-python scripts/import-lifecycle-data.py
-python scripts/import-lifecycle-data.py --city Sargodha --month May-2026 --dry-run
+python scripts/enrich-survey-units.py
 ```
+
+**Historical fallback:** `run_historical_migration.py` was used once for the initial bulk migration of CSVs/XLSXs. It writes to `bill_items` (for reference) + `survey_units` + `payment_history`.
 
 ### 5.6 Biller CSVs — SKIPPED
 All 21 `Biller_{City}_{Month}.csv` files (8 months × 3 cities) are **redundant**. The lifecycle XLSX already contains the Survey ID ↔ PSID linkage and all financial columns. The Biller CSVs were only needed as a bridge; the lifecycle XLSX is the authoritative source.
@@ -225,8 +224,7 @@ All 21 `Biller_{City}_{Month}.csv` files (8 months × 3 cities) are **redundant*
 
 | Table | Key | Purpose | Size |
 |-------|-----|---------|------|
-| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category, psid (stable biller ID), last_verified_month | ~212K |
-| `bill_items` | psid | Monthly biller snapshot — one row per billed PSID from lifecycle XLSX. Includes `is_issued` flag (PDF issued this month), route info. Overwritten each month. | ~70K/mo |
+| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category, psid (stable biller ID), arrears, amount_due, current_bill_month, route_name/seq, last_verified_month | ~212K |
 | `payment_history` | id | All payments — one row per (PSID, month) from daily combined Payment CSV. Append-only, all months. | ~122K |
 | `payment_summary` | bill_month | Pre-computed monthly totals (paid count + collected amount) | ~10 |
 | `roles` | id | Role definitions: super_admin, admin, field_staff | 3 |
@@ -243,24 +241,24 @@ All 21 `Biller_{City}_{Month}.csv` files (8 months × 3 cities) are **redundant*
 | `surveyors` | id | Reference: distinct surveyor names for ACTIVE units | ~70 |
 | `bill_months` | month | Reference: distinct months in payment_history | ~10 |
 
-**Dropped:** `bills` (replaced by `bill_items` + `payment_history`), `verified_houses` (replaced by `house_corrections`), `staff_sync_logs` (replaced by `delivery_photos` + `assignment_items`)
+**Dropped:** `bills`, `bill_items` (merged into `survey_units` columns: monthly_fee, arrears, amount_due, billing_category, route_name/seq), `verified_houses` (replaced by `house_corrections`), `staff_sync_logs` (replaced by `delivery_photos` + `assignment_items`)
 
 ### 6.2 Domain Separation (Critical)
 
 **Biller data and payments are two separate domains. Do not couple them.**
 
-- **Biller Data** (`bill_items`): Monthly snapshot — who was billed, amounts, route info, `is_issued` (PDF issued flag from lifecycle). Overwritten each month. Only current month is relevant.
+- **Biller Data** (`survey_upserted columns`): Monthly enrichment from lifecycle XLSX overwrites `monthly_fee`, `arrears`, `amount_due`, `billing_category`, `route_name`, `route_seq`, `current_bill_month` on `survey_units`. Only the current month snapshot is stored — history lives in lifecycle XLSX files as JSON exports.
 
 - **Payments** (`payment_history`): Append-only log — who paid, how much, when, channel. All months historically complete.
 
-- **The bridge** is `psid` (stable biller ID assigned to a property). To decouple the domains, `survey_units` must have a `psid` column — the stable mapping lives on the property record, not in the monthly snapshot. This lets payment queries join `payment_history.psid → survey_units.psid` for geography without touching `bill_items`.
+- **The bridge** is `psid` (stable biller ID assigned to a property). `survey_units.psid` is the stable mapping. Payment queries join `payment_history.psid → survey_units.psid` for geography — no intermediate table needed.
 
-- **PDF bill number** per month comes from the separate `pdf-bill-printer.py` run (not from lifecycle files). Lifecycle files only have a boolean `is_issued` (PDF Issued) column. The printer creates a mapping file (PSID → PDF filename/number). This mapping gets stored in `bill_items` as a `pdf_bill_number` column post-print run.
+- **PDF bill number** per month comes from the separate `pdf-bill-printer.py` run. Stored in exported JSON (`bills.json`) alongside the current month's data.
 
 - **Three UIs:**
   1. **Survey records** — browse/search properties with their PSID, geography, type (uses `survey_units`)
   2. **Payments per survey unit** — per-property payment lookup (uses `payment_history` + `survey_units.psid`)
-  3. **Recovery reports** — district/tehsil/UC aggregates for recovery data (uses `payment_history` + `survey_units` geography, independent of `bill_items`)
+  3. **Recovery reports** — district/tehsil/UC aggregates for recovery data (uses `payment_history` + `survey_units` geography, independent of biller columns)
 
 ### 6.3 Reference Tables (New)
 
@@ -405,16 +403,17 @@ CREATE TABLE public.staff_daily_stats (
 );
 ```
 
-Indexes: `bill_items(survey_id)`, `bill_items(deleted_in_portal)`, `bill_items(tehsil)`, `bill_items(city)`, `bill_items(uc_name)`, `bill_items(bill_month)`, `payment_history(psid)`, `payment_history(psid, bill_month)`, `payment_history(bill_month)`, `survey_units(status)`, `survey_units(psid)` UNIQUE WHERE NOT NULL, `house_corrections(survey_id)`
+Indexes: `payment_history(psid)`, `payment_history(psid, bill_month)`, `payment_history(bill_month)`, `survey_units(status)`, `survey_units(psid)` UNIQUE WHERE NOT NULL, `survey_units(current_bill_month)`, `house_corrections(survey_id)`
 
 ### 6.4 Database Triggers
 
 | Trigger | Table | Event | Purpose |
 |---------|-------|-------|---------|
-| `trg_bill_items_set_tehsil` | `bill_items` | BEFORE INSERT | Auto-populates `tehsil` from `survey_units` via `survey_id` FK. Allows override if `tehsil` is explicitly provided. |
 | `trg_payment_history_refresh_summary` | `payment_history` | AFTER INSERT/UPDATE/DELETE | Recomputes `payment_summary` for the affected `bill_month`. |
 | `trg_survey_units_upsert_hierarchy` | `survey_units` | AFTER INSERT/UPDATE/DELETE | Upserts `hierarchy` reference table when city_district/tehsil/uc_name/status changes. |
 | `trg_refresh_staff_stats` | `assignment_items` | AFTER INSERT/UPDATE/DELETE | Recomputes `staff_daily_stats` for affected staff+date. Updates delivered/missed counts. |
+
+**Dropped:** `trg_bill_items_set_tehsil` (table `bill_items` no longer exists)
 
 ### 6.5 Data Sources → Field Mapping
 
@@ -437,21 +436,18 @@ Indexes: `bill_items(survey_id)`, `bill_items(deleted_in_portal)`, `bill_items(t
 | Image URL 1–4 / URL 1–4 | image_urls[] |
 | *(from lifecycle)* | monthly_fee, billing_category (enriched) |
 
-#### Lifecycle XLSX (current month, 3 files) → `bill_items` + `survey_units` enrichment
+#### Lifecycle XLSX (current month, 1 per city) → `survey_units` enrichment (via `enrich-survey-units.py`)
 | XLSX column | DB field |
 |---|---|
-| Biller PSID | bill_items.psid |
-| Survey ID | bill_items.survey_id (→ survey_units FK) |
-| Total Payable | bill_items.amount_due |
-| Arrears | bill_items.arrears |
-| Monthly Fee | survey_units.monthly_fee (enrichment) |
-| Billing Category | survey_units.billing_category (enrichment) |
-| Deleted in Portal | bill_items.deleted_in_portal |
-| Start Month | bill_items.start_month |
-| per-month PDF Issued column | bill_items.is_issued |
-| Route Segment / Route Seq | bill_items.route_name / route_seq |
-| UC, City | bill_items.uc_name, city |
-| Tehsil | bill_items.tehsil — fallback: trigger auto-populates from `survey_units` |
+| Biller PSID | survey_units.psid |
+| Survey ID | survey_units.survey_id |
+| Total Payable | *(not used — computed as monthly_fee + arrears in UI)* |
+| Arrears | survey_units.arrears |
+| Monthly Fee | survey_units.monthly_fee |
+| Billing Category | survey_units.billing_category |
+| Start Month | *(not stored in DB since bill_items dropped)* |
+| Route Segment | survey_units.route_name |
+| Route Seq | survey_units.route_seq |
 
 #### Payment CSV (1 combined file) → `payment_history`
 | CSV column | DB field |
@@ -480,8 +476,10 @@ Run these in order in the Supabase SQL Editor:
 8. `013-add-verification-tracking.sql` — adds `last_verified_month` to survey_units
 9. `014-house-corrections-table.sql` — creates `house_corrections` (replaces `verified_houses`)
 10. `015-revise-rpcs.sql` — updates 5 RPCs to use `survey_units.psid` + reference tables
- 11. `016-delivery-tracking-tables.sql` — creates 4 delivery tables + triggers
- 12. `020-rbac-system.sql` — creates `roles` table, adds username/role_id/suspension/deletion to profiles, drops legacy role/permissions columns, adds RLS policies
+11. `016-delivery-tracking-tables.sql` — creates 4 delivery tables + triggers
+12. `020-rbac-system.sql` — creates `roles` table, adds username/role_id/suspension/deletion to profiles, drops legacy role/permissions columns, adds RLS policies
+
+**Note:** Migrations 008, 009, 011, 012 reference `bill_items` which has been dropped from the database. These are included for reference only — if re-applying, create `bill_items` first or skip these steps.
 
 ---
 ## 7. Monthly Data Workflow
@@ -490,7 +488,8 @@ Run these in order in the Supabase SQL Editor:
 1. **16th:** SWMC portal provides biller list CSV + original A4 PDFs
 2. **16th–18th:** `pdf-psid-extractor.py` reads PDFs, extracts PSIDs, matches with biller list + survey data → generates `test_lifecycle_Biller_{City}_{Month}.xlsx`
 3. **19th–20th:** `pdf-bill-printer.py` runs → generates A5 print PDFs with overlays
-4. **18th–20th:** `import-lifecycle-data.py` runs → populates `bill_items`, enriches `survey_units`, upserts reference tables (`hierarchy`, `surveyors`, `bill_months`)
+4. **18th–20th:** `enrich-survey-units.py` runs → reads lifecycle XLSX, upserts `survey_units` columns (psid, monthly_fee, arrears, amount_due, billing_category, route_name, route_seq, current_bill_month), upserts reference tables (`hierarchy`, `surveyors`, `bill_months`)
+   - Fallback: `run_historical_migration.py` for initial bulk import (runs once)
 
 ### Daily
 1. **Admin:** Runs `bill-extractor-v4.py` → fetches updated payment CSV → upserts `payment_history`
@@ -498,15 +497,15 @@ Run these in order in the Supabase SQL Editor:
 2. **Admin:** Opens `/settings` → Users tab → creates/manages staff accounts (username + password, role assignment, freeze/delete)
 3. **Admin:** Opens `/assignments` → picks UC → sees unassigned bills → picks staff → sets count → creates daily chunk
    - Creates `daily_assignments` + `assignment_items` rows
-3. **Field Staff:** Opens `/deliver` → sees today's assigned bills only (from `assignment_items` joined to `daily_assignments`)
-4. **Staff:** Navigates house-to-house in route sequence order:
+4. **Field Staff:** Opens `/deliver` → sees today's assigned bills only (from `assignment_items` joined to `daily_assignments`)
+5. **Staff:** Navigates house-to-house in route sequence order:
    - Arrives at house → taps "Deliver" → camera opens → captures 1-3 photos
    - Photos compressed locally → queued in IndexedDB if offline
    - GPS captured at delivery time → saved to `assignment_items.gps_lat/gps_lng`
    - Status set to `delivered` or `missed` (with reason + photo)
-5. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL → saved to `delivery_photos`
-6. **Route derivation:** After 2-3 months, actual delivery timestamps from `assignment_items.delivered_at` form the optimal route order for each UC
-7. **House corrections:** Staff long-presses map to correct GPS → saved to `house_corrections` with original+corrected coords + staff ID + delivery date
+6. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL → saved to `delivery_photos`
+7. **Route derivation:** After 2-3 months, actual delivery timestamps from `assignment_items.delivered_at` form the optimal route order for each UC
+8. **House corrections:** Staff long-presses map to correct GPS → saved to `house_corrections` with original+corrected coords + staff ID + delivery date
 
 ---
 ## 8. Performance Rules (Must Follow)
@@ -526,21 +525,21 @@ Run these in order in the Supabase SQL Editor:
 
 | # | Edge Case | Decision |
 |---|---|---|
-| 1 | PSID in lifecycle with `Deleted in Portal = Yes` | Keep in `bill_items`. Staff app filters at query: `WHERE deleted_in_portal != 'Yes'`. Shows house with "No active bill" context. |
-| 2 | PSID was active last month, removed entirely from current lifecycle | Naturally drops out of `bill_items`. House still on map. Shows "No bill this month". Payment history remains accessible. |
+| 1 | PSID in lifecycle with `Deleted in Portal = Yes` | Keep in `survey_units`. Staff app filters at query: `survey_units.status != 'ARCHIVED'`. Shows house with "No active bill" context. |
+| 2 | PSID was active last month, removed entirely from current lifecycle | `enrich-survey-units.py` overwrites current month's columns. House still on map with stale enrichment. Shows "No bill this month". Payment history remains accessible. |
 | 3 | Multiple PSIDs per active Survey ID (neither deleted) | **Keep all PSIDs.** Staff sees all PSIDs per house with their payment history. App highlights the one with recent payment. Staff chooses which to deliver. |
 | 4 | Admin-only RPCs for aggregate queries | RPCs are banned for client-facing features but allowed for admin-only aggregate queries (Data Insight, admin dashboards). |
 | 5 | PSID has payment history but NOT in current lifecycle | Payment history still in `payment_history`. House shows "No active bill" + past payments. |
 | 6 | Same PSID paid in multiple months (including current) | `payment_history` has all records. Staff app cross-references current `bill_month`: if paid, shows "Already paid" — do not deliver. |
 | 7 | Survey exists but no PSID in current lifecycle | Valid unbilled survey. Map shows house with "No bill this month". Gets PSID next month. |
-| 8 | `bill_items.tehsil` missing during import | Trigger auto-populates from `survey_units` on INSERT. |
+| 8 | `survey_units` enrichment missing for current month | `enrich-survey-units.py` must be re-run. Old enrichment remains until overwritten. |
 | 9 | `payment_summary` stale after payment import | Trigger auto-refreshes on payment_history changes. |
 | 10 | Reference table out of sync after bulk import | Import script upserts reference tables. Trigger provides real-time sync for incremental changes. |
-| 11 | Staff assigned to UC that disappears from hierarchy | Assignment references bill_items.psid directly, not UC name. House still renders even if UC renamed. |
+| 11 | Staff assigned to UC that disappears from hierarchy | Assignment references `assignment_items.psid` directly, not UC name. House still renders even if UC renamed. |
 | 12 | Photo taken offline, assignment completed hours later | Photo queued in IndexedDB with assignment_item_id. On sync, photo metadata links to assignment. Count reflects sync'd count, not taken count. |
 | 13 | House GPS coordinates are wrong — staff needs to correct | Staff long-presses correct location on map → pin drops. Saved to `house_corrections` with original+corrected lat/lng, staff ID, and delivery date. Admin reviews and can update `survey_units.lat/lng`. |
 | 14 | Legacy `verified_houses` and `staff_sync_logs` data | No import — corrections are stale, old photo logs lack house linkage. Archive to JSON file in `scripts/archive/` before dropping tables. |
-| 15 | Multiple PSIDs per survey_id — which one is the "primary" for `survey_units.psid`? | First PSID from lifecycle data (earliest start_month). Secondary PSIDs remain in `bill_items` for delivery. |
+| 15 | Multiple PSIDs per survey_id — which one is the "primary" for `survey_units.psid`? | First PSID from lifecycle data (earliest start_month). Only one PSID stored on `survey_units`. |
 
 ---
 ## 10. Implementation Phases
@@ -648,6 +647,109 @@ Every task is broken into short atomic steps (max 1-2 file changes per step).
 
 Never skip ahead or batch multiple steps without explicit approval.
 When in a phase/step and the user asks a question: Answer the question, then return to the current phase/step without advancing unless told to proceed.
+
+---
+## 16. Future Workflow — Data Pipeline Streamlining
+
+### 16.1 Current State (Manual, Error-Prone)
+
+| Step | Tool | Frequency | Pain Points |
+|------|------|-----------|-------------|
+| Lifecycle enrichment | `enrich-survey-units.py` | Monthly manual run | Must have lifecycle XLSX on disk, run per-city, no error feedback |
+| Payment sync | `bill-extractor-v4.py` | Daily manual run | Must download CSV from SWMC portal, run locally, no automation |
+| PDF generation | `pdf-bill-printer.py` | Monthly manual run | Local-only, Python deps, fragile PyMuPDF setup |
+| Export bills JSON | `export-bills-json.py` | Monthly manual run | Required for HouseDetailSheet bill display |
+| Payment CSV → DB | Supabase upsert via script | Manual trigger | No scheduled sync, inconsistent data freshness |
+
+**Data flows are entirely local (engineer's PC).** There is no server-side ingestion, no cron scheduling, no webhook — meaning:
+- If the engineer is unavailable, data doesn't get imported
+- Live payment data is always at least 1 day stale
+- New survey units from lifecycle must be manually enriched
+
+### 16.2 Target State — Automated Daily Pipeline
+
+The goal is a **server-side ingestion pipeline** that eliminates local script dependencies:
+
+```
+┌─────────────┐    ┌──────────────────┐    ┌──────────────────────┐
+│ SWMC Portal │───→│ Supabase Ingest  │───→│ survey_units         │
+│ (CSV export) │    │ (Edge Function)  │    │  monthly_fee + arrears│
+└─────────────┘    └──────────────────┘    │  current_bill_month  │
+        │                                   │  psid, route info    │
+        │         ┌──────────────────┐      └──────────────────────┘
+        └────────→│ Payment Ingest   │───→ payment_history
+                  │ (Edge Function)  │      upsert per PSID+month
+                  └──────────────────┘
+```
+
+### 16.3 Priority Implementation (Phase P — Pipeline)
+
+#### P.1 Payment CSV Auto-Ingest (~4 hrs)
+**Goal:** Eliminate manual `bill-extractor-v4.py` — payments sync automatically.
+
+| Step | Time | Task |
+|------|------|------|
+| P.1a | 60 min | Create `POST /api/ingest/payments` endpoint — accepts CSV body or URL, parses with `papaparse`, upserts `payment_history` using Supabase admin client |
+| P.1b | 30 min | Add idempotency: skip rows where `(psid, bill_month)` already has matching `payment_status` and `amount_paid` |
+| P.1c | 60 min | Build mini admin UI at `/ingest` — drag-and-drop CSV upload, preview rows, confirm import, show results (inserted/skipped/errors) |
+| P.1d | 30 min | **Calculation fix:** If `bill_items` start_month ever gets re-imported, use it as the lookup floor for `allMonths` generation (currently using 24-month rolling window as fallback) |
+
+#### P.2 Lifecycle Enrichment via Server (~3 hrs)
+**Goal:** Load lifecycle XLSX through the app instead of local Python scripts.
+
+| Step | Time | Task |
+|------|------|------|
+| P.2a | 60 min | Create `POST /api/ingest/lifecycle` endpoint — accepts XLSX file upload, reads with `xlsx` npm package (or converts to JSON client-side), upserts `survey_units` columns + reference tables |
+| P.2b | 30 min | Add validation: detect duplicate PSIDs, missing survey_ids, mismatched cities |
+| P.2c | 60 min | Build upload page: file picker, city/month selector, preview+diff before apply |
+| P.2d | 30 min | **Store `start_month`** on `survey_units` if present in the lifecycle XLSX. Requires a one-time migration: `ALTER TABLE survey_units ADD COLUMN start_month text`. This enables precise billing cycle range for PaymentHistoryCard instead of the 24-month rolling window. |
+
+#### P.3 Scheduled Payment Sync (~3 hrs)
+**Goal:** Payments auto-fetch from SWMC portal without manual CSV download.
+
+| Step | Time | Task |
+|------|------|------|
+| P.3a | 60 min | Create a **Vercel Cron Job** (`/api/cron/payments`) that fetches the payment CSV from a configurable URL (SWMC portal or GDrive upload), parses it, and upserts `payment_history` |
+| P.3b | 30 min | Add config UI (`/settings`) to set the payment CSV source URL, sync schedule (daily/6hr/manual), and last-sync timestamp |
+| P.3c | 30 min | Notification on failure: email or in-app alert when payment sync fails (wrong format, empty rows, access denied) |
+| P.3d | 60 min | **Historical backfill:** One-time script to import all previous months' payment CSVs through the ingest endpoint |
+
+#### P.4 Data Quality & Verification (~2 hrs)
+
+| Step | Time | Task |
+|------|------|------|
+| P.4a | 30 min | **Add `start_month` migration** (`021-add-start-month.sql`): `ALTER TABLE survey_units ADD COLUMN start_month text;` Backfill from archives or lifecycle XLSX files if available. |
+| P.4b | 30 min | Dashboard at `/ingest/history` showing: last sync time, rows imported, errors count, month coverage |
+| P.4c | 30 min | Alert system: email notification when payment sync fails or lifecycle enrichment detects anomalies |
+| P.4d | 30 min | **Calculation finalization:** Update `GET /api/surveys/payments` to use `survey_units.start_month` as the `allMonths` lower bound (replacing the 24-month lookback). Document that this requires the P.4a migration to be applied first. |
+
+### 16.4 Migration Scripts to Create
+
+| File | Purpose | Depends On |
+|------|---------|------------|
+| `scripts/sql/021-add-start-month.sql` | Adds `start_month text` to `survey_units` for precise billing cycle range | P.2d, P.4a |
+| `scripts/sql/022-payment-ingest-tables.sql` | Creates `ingest_log` table for tracking CSV import history (optional) | P.1a |
+
+### 16.5 Summary of Calculation Changes
+
+| Change | Component | What Changed | Migrations Needed |
+|--------|-----------|-------------|-------------------|
+| `amount_due` display → `monthly_fee + arrears` | All UI surfaces | Display calculation only; DB column unchanged | None |
+| `allMonths` lower bound → min(oldestPayment, 24-month lookback) | `/api/surveys/payments` | Server-side sort + rolling window; no `start_month` available | None (until P.4a) |
+| `allMonths` lower bound → `start_month` (future) | `/api/surveys/payments` | Replace lookback with `survey_units.start_month` | P.4a (`021-add-start-month.sql`) |
+| Month sort: alphabetical → chronological | `/api/surveys/payments` | Added `monthKey()` helper for `year*12+monthIndex` sort | None |
+| KPI cards: double value → compact single-value | `data-insight.tsx` | Removed CardHeader/CardContent, single source of truth | None |
+
+### 16.6 Total Phase P Estimate: ~12 hours
+
+### 16.7 Quick Wins (can be done immediately, no pipeline work)
+
+| Task | Time | File | Description |
+|------|------|------|-------------|
+| Add `start_month` column to survey_units | 15 min | New SQL migration | `ALTER TABLE survey_units ADD COLUMN start_month text;` — column only, no backfill |
+| Update enrich-survey-units.py to write start_month | 15 min | `enrich-survey-units.py` | Read "Start Month" from lifecycle XLSX and include in the upsert |
+| Backfill start_month from lifecycle XLSX archives | 1 hr | ad-hoc Python | If XLSX files in `scripts/data/processed_pdfs/` are accessible, extract start_month per PSID |
+| Switch allMonths to use start_month | 15 min | `/api/surveys/payments` | Replace `24-month lookback` with queried `survey_units.start_month` |
 
 ---
 ## 12. Session Log
@@ -800,14 +902,41 @@ When in a phase/step and the user asks a question: Answer the question, then ret
 
 ### ═══ SESSION CONTINUATION POINT ═══
 ### Start here on next session
-### RBAC complete — roles table, username auth, settings Users tab, role-based sidebar
-### All prior phases (0b-0g) complete + Phase D + Phase A + Phase B + Phase C
-### DB schema: survey_units with monthly_fee/psid/last_verified_month, payment_history,
-###   roles, profiles with role_id/username/suspended_at/deleted_at,
-###   reference tables (hierarchy/surveyors/bill_months), delivery tables,
-###   house_corrections
-### RBAC migration (020) applied, admin backfilled as super_admin
-### Supabase Access Token saved in `.env.local` as `SUPABASE_ACCESS_TOKEN`
+### PaymentHistoryCard fix, amount_due→monthly_fee+arrears everywhere, KPI card redesign
+### bill_items confirmed dropped from Supabase — all enrichment on survey_units
+### Chronological sort fix for payment months (alpha sort was wrong)
+### 24-month lookback for allMonths generation
+### See Section 16 for future workflow streamlining proposal
+
+### 2026-05-29 (Payment History Fix + amount_due → monthly_fee+arrears + KPI Redesign) — Location: Home
+**Focus:** Fix payment history full timeline, replace amount_due with monthly_fee+arrears, compact KPI cards for dark mode
+**Done:**
+- **PaymentHistoryCard complete history fix** (`src/app/api/surveys/payments/route.ts`):
+  - Removed Supabase `.order('bill_month')` — alphabetical sort was wrong ("APR" < "JAN" < "MAR")
+  - Added `monthKey()` helper — converts `"MMMYYYY"` → `year*12 + monthIndex` for real chronological sort
+  - Client-side `.sort()` by monthKey ensures correct oldest→newest ordering
+  - 24-month lookback (`d.setMonth(d.getMonth() - 23)`) replaces `start_month` (bill_items was dropped, no start_month available)
+  - `earliestMonth` = min(oldestPayment, lookback) so all months from 2yr ago to present are generated
+- **amount_due → monthly_fee + arrears** across all surfaces (12 files):
+  - Added `monthly_fee`, `arrears` to types: `UnitRow`, `RouteUnit`, `UnassignedBill`, `AssignmentItemUnit`
+  - Added `monthly_fee, arrears` to API SELECTs: data-insight drill-down, assignments PSID_COLS, staff items query, routes ROUTE_UNIT_COLS
+  - Changed UI displays: data-insight unit table "Current Bill" column, route page Amount cell, assignments page Amount cell, deliver-bottom-sheet/map/card-list bill display
+  - Data Insight unit table: removed Status + old Due columns, added "Current Bill" (monthly_fee+arrears), renamed Paid header with blue "Current" badge
+- **KPI cards compact redesign** (`src/components/data-insight.tsx`):
+  - Before: CardHeader (label + badge with value) + CardContent (same value duplicated) — double values, broken in dark mode (`bg-blue-100`, `text-blue-600`)
+  - After: Single-line compact divs — colored dot (bg-*-500) + label (text-muted-foreground) + single value (text-*-500 accent)
+  - Dark mode safe: `.500` accent colors are saturated enough on both white/gray backgrounds; text uses CSS variables (auto-adapt)
+  - Data KPIs: `grid-cols-2 sm:4 lg:7 gap-2` (was 3 cols with Card gap)
+  - Delivery KPIs: same compact pattern — icon + label + single value
+  - Loading skeleton updated to match compact layout
+  - Removed unused `CardHeader`, `CardTitle` imports
+- **MASTER.md updated:** bill_items references removed from sections 5, 6, 7, 9. Data model table updated. Pipeline renamed to enrich-survey-units.py. New Section 16 added (future workflow proposal).
+**Key decisions:**
+- No `start_month` available in database (bill_items was dropped). Using 24-month rolling lookback instead.
+- amount_due column kept in DB unchanged — only display calculation changed to monthly_fee + arrears
+- `.500` accent colors for dark mode compatibility (not `.600`/`.100` light-only colors)
+- Supabase's `.order()` uses alphabetical sort, which is wrong for "MMMYYYY" — sort client-side with monthKey
+- `bill_items` does NOT exist in this Supabase project — all enrichment targets `survey_units` directly
 
 ### 2026-05-24 (Architecture Reset) — Location: Home
 **Focus:** MASTER.md rewrite with mobile-first field staff UX + reference table architecture + visual rehaul plan
@@ -953,6 +1082,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-27 | 10.0 | **Full app audit + efficiency scoring.** Removed all 4 `.range(0, 1_000_000)` hacks, paginated psid fetch in surveys route, leaner route tree queries. Found and documented 40+ performance/code-quality issues. Efficiency score: **61/100**. Estimated monthly egress under 70-staff load: ~2.5GB of 5GB budget. Fixing HIGH+MEDIUM issues would bring score to **86/100** and egress under ~900MB. See Section 15. |
 | 2026-05-27 | 11.0 | **RBAC system implementation.** Created `roles` table (super_admin/admin/field_staff), added username + role_id + suspension + soft-delete to profiles. Username-based auth for staff. `/settings` page with Users tab (CRUD, freeze, password reset, delete/restore). Sidebar shows admin-only items based on role. All role comparisons updated to use `roleName` with new role values. DB migration applied, admin backfilled as super_admin. |
 | 2026-05-27 | 12.0 | **Navigation unification — single layout for all users.** Removed dual-layout system (staff `fixed inset-0` overlay). Delivered page rendered inside AppShell. Back-button system eliminated (`forceBack`/`onBack`/`navHistory`/`goBack` removed). Staff gets search/filter access on mobile and desktop. Bottom tabs for all users. Sidebar CSS fixed for desktop. |
+| 2026-05-29 | 13.0 | **Payment history fix + amount_due→fee+arrears + KPI redesign.** Chronological sort fix for payment months (alpha sort broke allMonths). 24-month lookback replaces unavailable `start_month` (bill_items dropped). amount_due replaced by monthly_fee+arrears in all UI surfaces (12 files). KPI cards redesigned: compact single-line, single value, dark-mode safe .500 accent colors. Data model updated: bill_items removed from docs, enrich-survey-units.py replaces import-lifecycle-data.py. New Section 16: Future workflow proposal. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
