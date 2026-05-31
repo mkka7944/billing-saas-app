@@ -4,6 +4,17 @@
 **Scale:** ~350K households, ~70 field staff, 3 cities (Bhalwal/Khushab/Sargodha)
 > This file is the single source of truth. All prior plan documents are archived to `docs/archive/`.  
 > Every session **starts** by reading this file and **ends** by appending to the Session Log.
+
+**Schema & Supabase:**
+- Full schema reference: `docs/SCHEMA.md` (tables, RPCs, triggers, indexes, known issues)
+- Direct DB access: read `SUPABASE_ACCESS_TOKEN` from `.env.local`, POST to Management API
+  ```
+  POST https://api.supabase.com/v1/projects/qrxbsoqepfaryolwcedk/database/query
+  Authorization: Bearer <token>
+  Content-Type: application/json
+  Body: {"query": "SQL here"}
+  ```
+- Project ref: `qrxbsoqepfaryolwcedk`
 ---
 ## Table of Contents
 1. [Project Identity & Architecture](#1-project-identity--architecture)
@@ -20,6 +31,8 @@
 12. [Session Log](#12-session-log)
 13. [File Inventory](#13-file-inventory)
 14. [Changelog](#14-changelog)
+15. [Full App Audit Report](#15-full-app-audit-report-2026-05-27)
+16. [Database Gaps Report](#16-database-gaps-report-2026-05-31)
 ---
 ## 1. Project Identity & Architecture
 ### 1.1 Company Context
@@ -541,6 +554,7 @@ Run these in order in the Supabase SQL Editor:
 | 14 | Legacy `verified_houses` and `staff_sync_logs` data | No import — corrections are stale, old photo logs lack house linkage. Archive to JSON file in `scripts/archive/` before dropping tables. |
 | 15 | Multiple PSIDs per survey_id — which one is the "primary" for `survey_units.psid`? | First PSID from lifecycle data (earliest start_month). Only one PSID stored on `survey_units`. |
 | 16 | `survey_units.psid = null` — survey exists in the field but has no lifecycle PSID | **New/unregistered survey.** Units surveyed by field staff but not yet assigned a PSID from the SWMC billing lifecycle. These have `survey_id` but no matching entry in `payment_history` or `bills.json`. No payment history, no current bill. Frontend keys and expand states use `survey_id` (always non-null) instead of `psid` to avoid React duplicate-key warnings and auto-expand bugs (`null === null`). |
+| 17 | `payment_history` PSID doesn't match any `survey_units.psid` (orphaned) | **Orphaned PSID from deleted survey ID.** The govt survey app created duplicate PSIDs, then survey IDs were deleted on portal but PSIDs remain in biller list (~20K). `payment_history` lacks a `city`/`tehsil` column — the RPC joins to `survey_units` which returns NULL for orphans → "Unknown" in charts. **Short-term fix:** Add `city`/`tehsil` columns to `payment_history` so chart geography is independent of `survey_units` match. **Long-term fix:** Staff marking system over 2-3 billing cycles to identify and filter ghost PSIDs. |
 
 ---
 ## 10. Implementation Phases
@@ -802,6 +816,236 @@ payment_history (122K rows)
 | `src/components/charts/category-breakdown.tsx` | Category pie/bar |
 | `src/types/index.ts` | `MonthlyCurveRow` (includes `day_label`), `BillingChartsData`, etc. |
 
+### 16.9 Data Quality & Cleanup Strategy (2026-05-30 Planning)
+
+#### 16.9.1 The Real Data Problem
+
+The govt survey app has two fundamental bugs that create data chaos:
+
+| Bug | Result | Scale |
+|-----|--------|-------|
+| Network issues → survey goes to "unsent" → user clears queue → re-submits | Multiple survey IDs created for the same house | Unknown, several thousand |
+| Same survey ID saved multiple times | Multiple PSIDs generated against one survey ID | ~20K+ orphaned PSIDs |
+| Portal has no "deactivate PSID" option | Stale PSIDs live forever in biller list | ~20K+ |
+| Only option: delete the survey ID on portal | PSID disconnected from survey record but still in payment history + lifecycle files | ~20K+ |
+
+**Result in the app:**
+- `payment_history` has records for PSIDs whose `survey_id` was deleted on the portal
+- `LEFT JOIN LATERAL` to `survey_units` in the RPC returns NULL for these → `coalesce(tehsil, 'Unknown')` → "2 unknown cities" in Office Breakdown chart
+- One house can have multiple PSIDs (staff manually picks the one with payment history)
+- One house can have multiple survey IDs (different names, same address)
+
+#### 16.9.2 Strategy: 2-3 Billing Cycle Cleanup
+
+Not a one-time fix. An **iterative cleanup over 2-3 monthly billing cycles** using the app as the data quality tool:
+
+```
+Cycle 1: Display → Staff marks → Export → Filter next import
+Cycle 2: Remaining ghosts identified → Mark → Export → Filter
+Cycle 3: Verification pass
+```
+
+**Staff workflow in the app:**
+1. HouseDetailSheet shows ALL PSIDs for a house (from payment_history + lifecycle)
+2. Each PSID shows: payment history, current bill amount, "Deleted in Portal" flag if available
+3. Staff taps "Mark as Ghost" → PSID is flagged for exclusion
+4. Flagged PSIDs are collected into an exportable list
+5. Next month's `enrich-survey-units.py` reads the flagged list and excludes those PSIDs during enrichment
+
+#### 16.9.3 Bill-Printer Metadata Integration
+
+`pdf-bill-printer.py` currently generates sorted A5 PDFs with survey_id printed in the metadata/page. This metadata should be:
+
+1. **Stored per PSID** — link each printed bill (PDF page number, print date) to the PSID
+2. **Displayed in HouseDetailSheet** — staff sees which physical bill corresponds to which PSID
+3. **Used for duplicate bill printing** — if a customer loses their bill, staff can find it by survey_id/PSID and re-print
+
+**Implementation:**
+- `pdf-bill-printer.py` already outputs a mapping file (PSID → survey_id → PDF page number)
+- This mapping JSON gets imported via an API endpoint or stored alongside the lifecycle data
+- HouseDetailSheet reads this mapping and shows: "Bill #42 in May-2026 print batch"
+
+#### 16.9.4 Immediate Schema Fix: Add City to payment_history
+
+**Problem:** `payment_history` has no `city` or `tehsil` column. The RPC must join to `survey_units` for geography, which fails for orphaned PSIDs.
+
+**Fix:** Add `city` and `tehsil` columns to `payment_history` and populate from the source payment CSV (which already contains city info — `bill-extractor-v4.py` drops it during upsert).
+
+```sql
+ALTER TABLE payment_history ADD COLUMN city text;
+ALTER TABLE payment_history ADD COLUMN tehsil text;
+```
+
+**Impact:**
+- `get_charts_data` RPC can use `ph.city`/`ph.tehsil` directly — no LATERAL join needed
+- "Unknown" cities disappear — every payment has its source city
+- Chart geography is independent of survey_units completeness
+- 30-minute fix, but a prerequisite for correct chart data
+
+#### 16.9.5 Pipeline Architecture
+
+Since govt portal blocks external IPs (no GitHub Actions, no Vercel Cron), the pipeline architecture must be:
+
+```
+┌─────────────────────────────────────────────┐
+│ Office PC (local)                           │
+│                                             │
+│  bill-extractor-v4.py  ← daily, manual     │
+│  enrich-survey-units.py ← monthly, manual  │
+│  pdf-bill-printer.py   ← monthly, manual   │
+│                                             │
+│  All write to: scripts/data/ + Supabase DB  │
+│  via service_role key (API routes)          │
+└─────────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────┐
+│ App (Next.js SSR)                           │
+│                                             │
+│  - Ingestion endpoints (/api/ingest/*)      │
+│  - Staff marking UI (HouseDetailSheet)      │
+│  - Ghost PSID export (/api/export/ghosts)   │
+│  - Dashboard + charts (already built)       │
+└─────────────────────────────────────────────┘
+```
+
+**Local scripts run on office PC; app provides:**
+- API endpoints for data ingestion (CSV upload, XLSX upload)
+- Staff-facing UI for marking ghost PSIDs
+- Export endpoints for flagged data
+- Dashboard for monitoring data quality
+
+#### 16.9.6 Future Work Items (Data Quality)
+
+| # | Item | Time | Depends On |
+|---|------|------|------------|
+| DQ.1 | Add `city`/`tehsil` to `payment_history` (SQL migration) | 15m | None |
+| DQ.2 | Update `bill-extractor-v4.py` to write city/tehsil into payment_history | 30m | DQ.1 |
+| DQ.3 | Update `get_charts_data` RPC to use `ph.city`/`ph.tehsil` instead of LATERAL join | 15m | DQ.1 |
+| DQ.4 | Add `flagged_psids` table (psid, staff_id, note, flagged_at) | 15m | None |
+| DQ.5 | HouseDetailSheet: show all PSIDs per survey_id, ghost marking button | 1.5h | DQ.4 |
+| DQ.6 | API endpoint: POST /api/psids/flag, GET /api/psids/flagged, GET /api/export/ghosts | 1h | DQ.4 |
+| DQ.7 | Update enrich-survey-units.py to accept/exclude flagged PSIDs list | 30m | DQ.6 |
+| DQ.8 | pdf-bill-printer metadata: store mapping JSON, import to DB | 1h | None |
+| DQ.9 | HouseDetailSheet: show bill print metadata per PSID | 1h | DQ.8 |
+| DQ.10 | 022-add-payment-history-city.sql migration | 15m | None |
+
+**Total data quality cleanup: ~6 hrs (spread across 2-3 billing cycles)**
+
+### 16.10 Pipeline Streamlining Report (2026-05-30 Analysis)
+
+#### 16.10.1 Current Data Landscape
+
+What exists in the repo:
+
+| Source | File Pattern | Key Columns | Location |
+|--------|-------------|-------------|----------|
+| Payment history | `COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv` (33MB) | PSID, **City**, **Tehsil**, **UC**, District, Month, Amount, Fine, Paid Date, Paid Amount, Status, Channel | `scripts/data/scraped_data/` |
+| Lifecycle XLSX | `test_lifecycle_Biller_{City}_{Month}.xlsx` (41 cols) | **Biller PSID**, **Survey ID**, **City Name**, Tehsil, UC, Monthly Fee, Arrears, Total Payable, Start Month, Billing Category, Deleted in Portal, monthly PDF issued flags, monthly payment flags, Surveyor Name | `scripts/data/processed_pdfs/` |
+| Biller CSVs | `Biller_{City}_{Month}.csv` | Monthly Fee, Current Bill, Biller PSID, Tehsil, Office, UC, Name, Total Payable, Survey ID | `scripts/data/excel_dumps/` |
+
+What's missing from repo (on office PC only):
+
+| Script | Purpose | Input → Output |
+|--------|---------|----------------|
+| `bill-extractor-v4.py` | Daily: downloads payment CSV from SWMC portal, cleans, upserts to DB | Portal CSV → `COMBINED_...csv` + `payment_history` upsert |
+| `pdf-psid-extractor.py` | Monthly: reads A4 PDFs from govt, extracts PSIDs, links to survey data | A4 PDFs → `test_lifecycle_Biller_*.xlsx` |
+| `pdf-bill-printer.py` | Monthly: sorts lifecycle data MC/UC, cuts A4→A5, prints metadata on each bill | Lifecycle XLSX + A4 PDFs → sorted A5 PDFs + print mapping |
+
+**Critical finding:** The payment CSV already has **City, Tehsil, UC, District** columns for every row, but `payment_history` stores none of these. The `enrich-survey-units.py` script reads the lifecycle XLSX and writes to `survey_units`, but the payment ingestion script only upserts core columns. City data is discarded during CSV→DB upsert.
+
+#### 16.10.2 Proposed Workflow
+
+```
+MONTHLY (18th-20th):
+  Govt A4 PDFs → pdf-psid-extractor.py
+    ├──→ test_lifecycle_Biller_{City}_{Month}.xlsx (41 cols)
+    │
+    ├──→ enrich-survey-units.py → Supabase: survey_units
+    │    (upserts psid, monthly_fee, arrears, route_name,
+    │     current_bill_month, billing_category, city, tehsil)
+    │
+    └──→ pdf-bill-printer.py → Sorted A5 PDFs + mapping JSON
+         (future: import mapping to DB for HouseDetailSheet)
+
+DAILY:
+  SWMC Portal → CSV download (manual) → bill-extractor-v4.py
+    ├──→ COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv
+    └──→ Supabase: payment_history (psid, city, tehsil, uc, amount, ...)
+```
+
+#### 16.10.3 Required Changes
+
+| # | Change | Est. | Impact |
+|---|--------|------|--------|
+| 1 | **Copy 3 major scripts** into repo from office PC | 10m | Foundation — everything depends on having them in version control |
+| 2 | **Add `city`/`tehsil`/`uc_name` to `payment_history`** (SQL migration 022) + update bill-extractor-v4.py | 30m | Fixes "Unknown" cities in charts. Every future dashboard feature depends on correct geography |
+| 3 | **Update `enrich-survey-units.py`** to write `city_district`/`tehsil` to `survey_units` | 20m | Makes enrichment complete — current month records get geography |
+| 4 | **Update `get_charts_data` RPC** to use `ph.city`/`ph.tehsil` instead of LATERAL join | 15m | Eliminates survey_units join entirely for chart data |
+| 5 | **Add `flagged_psids` table** + staff marking UI (DQ.4-DQ.6) | 2h | Enables the 2-3 cycle cleanup workflow |
+| 6 | **Centralize data paths** to `config.py` | 15m | Prevents path fragmentation across scripts |
+| 7 | **Build `ingest-payments.py` + `ingest-lifecycle.py`** wrappers | 2h | Standardized CLI interface for all scripts |
+
+#### 16.10.4 New Pipeline Scripts (To Create)
+
+##### P.1 — `scripts/ingest-payments.py`
+```bash
+python scripts/ingest-payments.py                          # processes latest CSV
+python scripts/ingest-payments.py --file path/to/file.csv  # specific file
+python scripts/ingest-payments.py --upload                 # sends to /api/ingest/payments
+```
+- Reads payment CSV, validates columns, logs bad rows
+- Upserts to `payment_history` INCLUDING `city`, `tehsil`, `uc_name`
+- Reports: inserted count, skipped, errors
+- Optionally uploads to app's ingest API endpoint
+
+##### P.2 — `scripts/ingest-lifecycle.py`
+```bash
+python scripts/ingest-lifecycle.py                          # auto-detect latest XLSX
+python scripts/ingest-lifecycle.py --month May2026          # specific month
+python scripts/ingest-lifecycle.py --exclude-ghosts         # skip flagged PSIDs
+python scripts/ingest-lifecycle.py --dry-run                # preview only
+```
+- Reads lifecycle XLSX, enriches `survey_units`
+- Upserts reference tables (`hierarchy`, `surveyors`, `bill_months`)
+- Skips PSIDs in `flagged_psids` table (if `--exclude-ghosts`)
+- Writes `city`, `tehsil` to `survey_units`
+- Produces diff report (what changed vs previous month)
+
+##### P.3 — `scripts/export-bill-mapping.py`
+```bash
+python scripts/export-bill-mapping.py --month May2026
+```
+- Reads PDF print mapping output from pdf-bill-printer.py
+- Creates `bill_print_log` linking PSID → survey_id → PDF page number → print batch
+- Feeds HouseDetailSheet: "Bill #42 in May-2026 print batch"
+
+#### 16.10.5 App-Controlled Pipeline (Future Phase)
+
+Once scripts are stable, app controls them via:
+
+```
+App (Next.js SSR)                     Local Server (office PC)
+  /api/ingest/payments ──POST──→     Node.js/Python Flask
+  /api/ingest/lifecycle ──POST──→     → triggers Python scripts
+  /api/ingest/status    ──GET──→      → returns result report
+  /api/export/ghosts    ──GET──→      → exports flagged PSIDs
+```
+
+#### 16.10.6 Priority Order
+
+| Priority | Action | Est. |
+|----------|--------|------|
+| **P0** | Copy the 3 major scripts into `scripts/` from office PC | 10m |
+| **P1** | Add `city`/`tehsil`/`uc_name` to `payment_history` + update extractor | 30m |
+| **P2** | Update `enrich-survey-units.py` to write city/tehsil | 20m |
+| **P3** | Update `get_charts_data` RPC to use `ph.city`/`ph.tehsil` | 15m |
+| **P4** | Add `flagged_psids` table + staff marking UI | 2h |
+| **P5** | Centralize paths to `config.py` | 15m |
+| **P6** | Build wrapper scripts (ingest-payments, ingest-lifecycle) | 2h |
+
+**Total: ~6 hrs for full pipeline streamlining.** This is additive to the DQ items in 16.9.6. The first 3 items (P0-P3, ~1 hr) are the critical path — everything else can be done incrementally.
+
 ---
 ## 12. Session Log
 ### 2026-05-25 (Domain Separation Discovery) — Location: Home
@@ -953,11 +1197,12 @@ payment_history (122K rows)
 
 ### ═══ SESSION CONTINUATION POINT ═══
 ### Start here on next session
-### PaymentHistoryCard fix, amount_due→monthly_fee+arrears everywhere, KPI card redesign
-### bill_items confirmed dropped from Supabase — all enrichment on survey_units
-### Chronological sort fix for payment months (alpha sort was wrong)
-### 24-month lookback for allMonths generation
-### See Section 16 for future workflow streamlining proposal
+### Strategic planning: data accuracy + pipeline architecture discussion
+### Key discovery: payment_history missing city/tehsil → "Unknown" cities in charts
+### Real data problem: govt survey app creates 20K+ orphaned PSIDs from deleted survey IDs
+### Strategy: 2-3 cycle cleanup via staff marking system + bill-printer metadata
+### Pipeline: local scripts + app control (govt portal blocks external IPs)
+### See Section 16.9+ for updated data cleanup strategy
 
 ### 2026-05-29 (Payment History Fix + amount_due → monthly_fee+arrears + KPI Redesign) — Location: Home
 **Focus:** Fix payment history full timeline, replace amount_due with monthly_fee+arrears, compact KPI cards for dark mode
@@ -1156,6 +1401,63 @@ payment_history (122K rows)
 - Any pending chart styling/polish
 - Phase A: Admin Assignment UI or other pending feature work
 
+### 2026-05-30 (Strategic Planning: Data Accuracy + Pipeline Architecture) — Location: Home
+**Focus:** Deep discussion on real data quality problems, pipeline constraints, and 2-3 cycle cleanup strategy
+**Done:**
+- **Root cause of "Unknown" cities in Office Breakdown chart identified:**
+  - `payment_history` has NO `city` or `tehsil` column — RPC must LEFT JOIN LATERAL to `survey_units`
+  - Orphaned PSIDs (survey ID deleted on govt portal, ~20K+ of them) have no matching `survey_units` record
+  - `coalesce(tehsil, 'Unknown')` in RPC creates the phantom "Unknown" bars
+  - When specific city filter is selected, EXISTS clause filters them out — only "All Cities" reveals them
+- **Real data problem documented:**
+  - The govt survey app creates duplicate survey IDs and PSIDs (network issues → unsent queue → re-submit)
+  - Portal refuses to deactivate stale PSIDs — only option was deleting the survey ID
+  - Deleting survey ID removes the record but the PSID remains in biller list forever (~20K orphans)
+  - One survey ID can have multiple PSIDs; one house can have multiple survey IDs
+  - Currently dealt with manually by field staff
+- **Pipeline constraint clarified:**
+  - GitHub Actions / Vercel Cron blocked — govt portal firewalls external IPs
+  - Local Python scripts + app-controlled orchestration is the only viable path
+- **AGENTS.md updated:** Removed `bill_items.tehsil` trigger reference, changed `import-lifecycle-data.py` to `enrich-survey-units.py`, removed stale trigger listing
+**Key decisions:**
+- `payment_history` needs `city` and `tehsil` columns to decouple chart geography from `survey_units` match (quick structural fix)
+- 2-3 billing cycle cleanup: staff marks ghost PSIDs from app → export list → next month's enrichment uses it as filter
+- pdf-bill-printer metadata (survey_id on each bill PDF) should be integrated into HouseDetailSheet for staff reference
+- Pipeline remains local scripts + app control; no cloud automation for data fetching
+- Edge case #17 added (orphaned PSIDs in payment_history)
+- Strategic deep-planning deferred to next session
+**Next session:**
+- Continue strategic deep-planning for data pipeline + cleanup workflow
+- Implement quick fixes (add city/tehsil to payment_history, update RPC)
+- Evaluate Section 16 (Data Cleanup Strategy) and AGENTS.md updates
+- Phase A/B feature work deferred until data strategy is finalized
+
+### 2026-05-31 (Database Gaps Analysis + Schema Documentation) — Location: Home
+**Focus:** Comprehensive database schema documentation, real Supabase verification, gap analysis for pipeline streamlining
+**Done:**
+- Created `docs/SCHEMA.md` — full schema reference with all 15 tables, 10 RPCs, 5 trigger functions, 4 live triggers, migration history, key queries, and 5 known issues (no secrets)
+- Verified all DB objects directly via Supabase Management API (PAT from `.env.local`)
+- Confirmed `flagged_psids`, `bill_print_log`, `payment_summary` tables do NOT exist
+- Confirmed `trg_payment_history_refresh_summary` trigger + `refresh_payment_summary()` function exist but target table missing — production blocker
+- Confirmed `get_billing_summary` and `get_billing_group_stats` RPCs reference dropped `bill_items`
+- Discovered 490 orphaned PSIDs in payment_history (no matching survey_units)
+- Discovered 39,948 survey_units with blank city_district (legacy import data)
+- Confirmed `staff` and `profiles` both have 1 field_staff row each
+- Added Schema & Supabase reference block to MASTER.md header
+- Added `docs/MASTER.md` pointer for future session access
+- AGENTS.md updated: removed `bill_items.tehsil` trigger reference, changed `import-lifecycle-data.py` to `enrich-survey-units.py`, removed stale trigger listing
+**Key discoveries:**
+- Geography suppressed at 2 boundaries: payment CSV→payment_history drops city/tehsil/uc, lifecycle XLSX→survey_units never refreshes geography during enrichment
+- Source data is correct — the database implementation is what's lacking
+- The broken trigger on payment_history is a production blocker (needs DROP before any other work)
+- 3-city geography needs a computed `city` dimension: SARGODHA=SARGODHA::SARGODHA, BHALWAL=SARGODHA::BHALWAL, KHUSHAB=KHUSHAB::KHUSHAB
+- Office PC has 3 scripts not in repo: `bill-extractor-v4.py`, `pdf-psid-extractor.py`, `pdf-bill-printer.py`
+**Next session (in office):**
+- Drop broken trigger on payment_history (#1 — production blocker, 10min)
+- Start SQL migrations 022–024 for geography + pipeline tables
+- Fix staff sync so assignments page works
+- MC-17 test run if time permits: sync staff, verify enrichment, create assignment, test delivery flow
+
 Source files copied from `F:\qoder\billing-system\` + `F:\Routing-Station-Pro` into `scripts/`
 ```
 scripts/ root (6 files, 86 KB):
@@ -1226,6 +1528,8 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-29 | 13.0 | **Payment history fix + amount_due→fee+arrears + KPI redesign.** Chronological sort fix for payment months (alpha sort broke allMonths). 24-month lookback replaces unavailable `start_month` (bill_items dropped). amount_due replaced by monthly_fee+arrears in all UI surfaces (12 files). KPI cards redesigned: compact single-line, single value, dark-mode safe .500 accent colors. Data model updated: bill_items removed from docs, enrich-survey-units.py replaces import-lifecycle-data.py. New Section 16: Future workflow proposal. |
 | 2026-05-30 | 14.0 | **Audit cleanup + global sort system + Data Insight/History UI fixes.** Audit: 3 empty catches, 3 unused icon imports, chunkArray/toEmail extraction, month array consolidation, `import * as React` removed, 2 dead SQL files archived, staleTime constants created. Payment History: column renamed "History", repositioned before Action, desktop spacing fixed (`justify-between` removed), right-aligned expanded content. Sep 2025 cap for unpaid months. HouseDetailSheet: PSID value-only (no label), Current Bill badge. DataInsight: CSS hide preserves drill-down state across view switches. MC/UC grouped numeric sort (MCs first). Global sort system: SortConfig type in FilterState, setSortConfig in billing-store, parseSort in both API routes, SortSelector component in DesktopFilterBar. Bug fix: `key={survey_id}` replaces `key={psid}` — fixes null-key warning + auto-expand bug. Note: `psid = null` = new/unregistered surveys. |
 | 2026-05-30 | 15.0 | **Billing charts dashboard — RPC aggregation for 122K payment rows.** Created `get_charts_data` RPC in `021-charts-aggregation.sql` (EXISTS-based city/tehsil filtering, cumulative curves, cycle-relative day labels from 16th). Rewrote `/api/billing-charts` route to add `day_label` in TypeScript (display logic in TS, not SQL). Connected Dashboard to `useBillingCharts`. Fixed month sort (chronological via `sortMonths` helper). Fixed tooltip: daily amounts in table format. Removed broken `useBillingStats` dependency. All chart display changes now require only TS edits + server restart — no SQL changes needed. |
+| 2026-05-30 | 16.0 | **Strategic planning: data accuracy + pipeline architecture.** Identified root cause of "Unknown" cities in Office Breakdown (payment_history lacks city/tehsil column → orphaned PSIDs → NULL in RPC join). Documented real data problem: govt survey app creates 20K+ orphaned PSIDs from deleted survey IDs. Strategy: 2-3 cycle cleanup via staff marking system + bill-printer metadata. Pipeline constraint: local scripts + app control (govt portal blocks external IPs). Added edge case #17. Updated Section 16 with DQ cleanup plan. AGENTS.md updated. |
+| 2026-05-31 | 17.0 | **Database gaps report — 8 gaps blocking pipeline streamlining.** Payment_history lacks city/tehsil/uc_name (forces LATERAL join → "Unknown" bars). Dead trigger on payment_history (calls non-existent table). No computed city dimension for 3 cities. start_month never written. 0 pipeline tables (flagged_psids, bill_print_log, ingest_log). Dead RPCs referencing dropped bill_items. Staff/profiles disconnect. Enrich script doesn't write geography. docs/SCHEMA.md created. AGENTS.md updated to remove stale references. See Section 16. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -1332,3 +1636,91 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | Z.8 | 15 min | Fix setFilters overwriting pendingFilters (M10) |
 | Z.9 | 30 min | Cleanup: dead code (L6), dead exports (L3-L4), duplicate getUcColor (L7), inline SVGs (L8) |
 | Z.10 | 15 min | Fix MapFollower initial flyTo jank (M13), PanTo remount bug (H10) |
+
+---
+## 16. Database Gaps Report (2026-05-31)
+
+**Context:** 3 cities — SARGODHA (district+tehsil), KHUSHAB (district+tehsil), BHALWAL (tehsil under SARGODHA district). Source data from SWMC portal is correct; the implementation to Supabase is where design and logic fall short.
+
+### Verified DB State
+
+| Metric | Value |
+|--------|-------|
+| survey_units total rows | 212,428 |
+| survey_units distinct PSIDs | 207,746 |
+| survey_units NULL psid (new/unregistered surveys) | 4,682 |
+| survey_units blank city_district / UNKNOWN tehsil | 39,948 |
+| payment_history rows | 122,199 |
+| payment_history distinct PSIDs | 60,908 |
+| Orphaned PSIDs (payment_history only, no survey_units match) | 490 |
+| field_staff in profiles (role_id=3) | 1 |
+| staff table rows | 1 |
+
+### Gap #1: Broken Trigger on payment_history (PRODUCTION BLOCKER)
+
+`trg_payment_history_refresh_summary` fires on every INSERT/UPDATE/DELETE on `payment_history`, calling `refresh_payment_summary()` function. The `payment_summary` table **does not exist** — any mutation on payment_history throws error.
+**Fix:** DROP the trigger and function immediately.
+
+### Gap #2: Missing Geography Columns on payment_history
+
+Payment CSV has City, Tehsil, UC, District, but `bill-extractor-v4.py` only upserts (psid, bill_month, amount_paid, paid_date, payment_method, status, fine). Geography is dropped on import.
+**Consequence:** Charts RPC must LEFT JOIN LATERAL to survey_units via psid. Orphaned PSIDs (490) produce NULL tehsil → "Unknown" bars in Office Breakdown.
+**Fix:** Migration 022: add `city`, `tehsil`, `uc_name` to `payment_history`. Update `bill-extractor-v4.py` to include them. Update `get_charts_data` RPC to use `ph.tehsil` directly, eliminating the LATERAL join.
+
+### Gap #3: No Computed `city` Dimension (3-Value Normalization)
+
+`survey_units.city_district` + `tehsil` encode 3 cities but every query must replicate the derivation logic. The app hardcodes `CITY_CONFIG` mapping. 39,948 rows have blank/UNKNOWN geography.
+**Fix:** Add a `city` column (computed or enriched) to `survey_units` and `payment_history`:
+| city_district | tehsil | → city |
+|---|---|---|
+| SARGODHA | SARGODHA | SARGODHA |
+| SARGODHA | BHALWAL | BHALWAL |
+| KHUSHAB | KHUSHAB | KHUSHAB |
+| (other) | UNKNOWN | UNKNOWN |
+
+### Gap #4: `start_month` Never Written to survey_units
+
+Lifecycle XLSX has "Start Month" column. `enrich-survey-units.py` ignores it. App uses 24-month rolling lookback as fallback.
+**Fix:** Add `start_month` column to `survey_units`. Update enrich script to upsert it. PaymentHistoryCard can use it instead of the fallback.
+
+### Gap #5: Zero Pipeline Orchestration Tables
+
+| Table | Purpose | Status |
+|-------|---------|--------|
+| `flagged_psids` | Staff marks ghost/duplicate PSIDs for 2-3 cycle cleanup | **Does not exist** |
+| `bill_print_log` | pdf-bill-printer metadata (PSID→survey_id→PDF page mapping) | **Does not exist** |
+| `ingest_log` | Pipeline audit trail (files processed, row counts, errors per run) | **Does not exist** |
+
+### Gap #6: Dead RPCs Referencing Dropped `bill_items`
+
+| Object | Issue |
+|--------|-------|
+| `get_billing_summary()` RPC | References `bill_items` — dropped in storage crisis (v7.0) |
+| `get_billing_group_stats()` RPC | References `bill_items` — same issue |
+| `set_bill_items_tehsil()` function | References `bill_items` — may still exist as dead code |
+
+### Gap #7: Staff Table / Profiles Disconnect
+
+RBAC creates users in `profiles` (role_id=3). Staff table has 2022-2023 data with different columns. `/api/staff` and `/api/assignments` query `staff` → incomplete/empty results. **Decision needed:** retire `staff` and use `profiles` directly, or keep `staff` synced as a view.
+
+### Gap #8: Enrich Script Doesn't Refresh Geography
+
+`enrich-survey-units.py` writes: psid, monthly_fee, billing_category, amount_due, arrears, route_name, route_seq, current_bill_month. It does NOT write: city_district, tehsil, uc_name, consumer_name, address — even though lifecycle XLSX likely has these. This means geography is set once during initial survey import and never refreshed. The 39,948 UNKNOWN rows are a symptom.
+
+### Summary — Priority-Ordered Fix List
+
+| # | Area | Fix | Est. Time |
+|---|---|---|---|
+| 1 | **Dead trigger** (CRITICAL) | DROP `trg_payment_history_refresh_summary` + `refresh_payment_summary()` | 10min |
+| 2 | **Payment geography** | Migration 022: add city/tehsil/uc_name to payment_history + update RPC + update script | 30min |
+| 3 | **City dimension** | Add `city` column to survey_units (computed or enriched) | 15min |
+| 4 | **Start month** | Add `start_month` to survey_units + update enrich script | 20min |
+| 5 | **Dead RPCs** | Migration 023: DROP dead RPCs referencing bill_items | 10min |
+| 6 | **Staff sync** | Sync staff from profiles OR migrate queries to profiles | 30min |
+| 7 | **Pipeline tables** | Migration 024: CREATE flagged_psids, bill_print_log, ingest_log | 20min |
+| 8 | **Enrich script** | Update enrich-survey-units.py to write geography columns | 30min |
+| 9 | **Payment script** | Update bill-extractor-v4.py to include city/tehsil/uc_name | 20min |
+| 10 | **updated_at** | Add updated_at column to payment_history | 5min |
+| | **Total** | | ~3 hrs |
+
+**Core insight:** The source data is correct, but the database schema suppresses geography at two boundaries: (1) payment CSV → payment_history drops city/tehsil/uc on import, (2) lifecycle XLSX → survey_units never refreshes geography during enrichment. Adding these columns and normalizing the 3-city dimension makes the geography pipeline self-correcting with every monthly import.

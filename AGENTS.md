@@ -12,7 +12,7 @@ All plans, data model, workflow, edge case decisions, and session history live t
 - **Reference tables for filter dropdowns** — `hierarchy`, `surveyors`, `bill_months` tables. Never query 212K-row tables for filter options.
 - **No RPCs for client-facing features** — RPCs allowed for admin-only aggregate queries (Data Insight, admin dashboards). See `scripts/sql/007-data-insight-rpcs.sql` for approved RPCs.
 - **SSR API routes for all client data** — hooks fetch from `/api/*` endpoints, NOT direct Supabase client queries. The server creates the Supabase client (service_role). This reduces egress, hides credentials, enables server-side JOINs.
-- **DB triggers for data integrity** — `bill_items.tehsil` auto-populates on INSERT (migration `009`). `payment_summary` auto-refreshes on `payment_history` changes. `hierarchy` reference table upserted on `survey_units` changes.
+- **DB triggers for data integrity** — `payment_summary` auto-refreshes on `payment_history` changes (INSERT/UPDATE/DELETE). `hierarchy` reference table upserted on `survey_units` changes. Tehsil enrichment happens during `enrich-survey-units.py` import, not via DB trigger.
 - Photos via Google Drive Apps Script webhook (zero Supabase Storage egress)
 - Maps via react-leaflet + Google Maps tiles (not MapTiler)
 - Offline photo queue via IndexedDB
@@ -65,7 +65,7 @@ Every task is broken into short atomic steps (max 1-2 file changes per step).
 1. **16th**: SWMC portal → biller list CSV + original A4 PDFs
 2. **16th-18th**: Run `python pdf-psid-extractor.py` → generates lifecycle XLSX
 3. **19th-20th**: Run `python pdf-bill-printer.py` → generates A5 print PDFs
-4. **18th-20th**: Run `python scripts/import-lifecycle-data.py --city <city> --month <Month-YYYY>` → populates `bill_items` + upserts reference tables
+4. **18th-20th**: Run `python scripts/enrich-survey-units.py --city <city> --month <Month-YYYY>` → enriches `survey_units` columns (monthly_fee, arrears, route_name, route_seq, current_bill_month) + upserts reference tables (hierarchy, surveyors, bill_months)
 5. **Daily**: Run `bill-extractor-v4.py` → updates `payment_history`
 6. **Daily (Admin)**: `/assignments` → create staff daily chunks
 7. **Daily (Staff)**: `/deliver` → navigate, capture photo, mark delivered/missed
@@ -75,4 +75,4 @@ Every task is broken into short atomic steps (max 1-2 file changes per step).
 - Superadmin: `kashifkhalil74@gmail.com` (credentials in `scripts/sql/superadmin-credentials.txt`)
 - Schema: `scripts/sql/reset-and-create.sql` (base) + migration files `005`–`010` (apply in order)
 - RPCs: `scripts/sql/007-data-insight-rpcs.sql` — approved admin-only aggregate functions
-- Triggers: `scripts/sql/009-triggers-and-automation.sql` + `010-reference-tables.sql` — tehsil auto-populate, payment_summary refresh, hierarchy upsert
+- Triggers: `scripts/sql/009-triggers-and-automation.sql` + `010-reference-tables.sql` — payment_summary refresh on payment_history changes, hierarchy reference table upsert on survey_units changes
