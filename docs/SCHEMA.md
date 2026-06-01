@@ -1,6 +1,6 @@
 # Billing SaaS App — Database Schema Reference
 
-> **Last verified:** 2026-05-30 (live Supabase query)
+> **Last verified:** 2026-06-01 (live Supabase query)
 > **Project ref:** `qrxbsoqepfaryolwcedk`
 > **How to query:** Read `SUPABASE_ACCESS_TOKEN` from `.env.local`, POST to Management API
 
@@ -164,6 +164,9 @@ All payments, one row per (PSID, month). Append-only, all months.
 | `payment_method` | `text` | |
 | `payment_status` | `text` | |
 | `fine` | `numeric` | |
+| `city_district` | `text` | added by migration 023 (2026-06-01) |
+| `tehsil` | `text` | added by migration 023 (2026-06-01) |
+| `uc_name` | `text` | added by migration 023 (2026-06-01) |
 | `created_at` | `timestamptz` | default `now()` |
 
 **Indexes:**
@@ -172,8 +175,8 @@ All payments, one row per (PSID, month). Append-only, all months.
 - `idx_payment_psid` BTREE (psid)
 - `idx_payment_psid_month` BTREE (psid, bill_month)
 - `idx_payment_month` BTREE (bill_month)
-
-**🔴 Known issue:** Trigger `trg_payment_history_refresh_summary` exists on this table and calls `refresh_payment_summary()`, but the target table `payment_summary` does NOT exist in the database. The trigger function would fail. Needs a cleanup migration.
+- `idx_payment_city` BTREE (city_district) — added by migration 023
+- `idx_payment_tehsil` BTREE (tehsil) — added by migration 023
 
 ---
 
@@ -301,6 +304,7 @@ Core table — household identity, GPS, billing enrichment. ~212K rows.
 | `route_name` | `text` | |
 | `route_seq` | `int4` | |
 | `current_bill_month` | `text` | last enriched month |
+| `start_month` | `text` | first billed month (e.g. SEP2025) — added by migration 028 |
 | `image_urls` | `_text` | legacy, may be dropped |
 
 **Indexes:**
@@ -314,6 +318,7 @@ Core table — household identity, GPS, billing enrichment. ~212K rows.
 - `idx_survey_units_city_district` BTREE (city_district)
 - `idx_survey_units_psid` BTREE (psid)
 - `idx_survey_units_tehsil` BTREE (tehsil)
+- `idx_survey_units_start_month` BTREE (start_month) — added by migration 028
 
 **Triggers:** `trg_survey_units_upsert_hierarchy` AFTER INSERT/UPDATE/DELETE → `sync_hierarchy()`
 
@@ -333,6 +338,72 @@ Reference table for surveyor filter dropdown.
 - `surveyors_pkey` UNIQUE BTREE (id)
 - `surveyors_name_key` UNIQUE BTREE (name)
 - `idx_surveyors_name` BTREE (name)
+
+### 1.16 `flagged_psids`
+Field staff marks ghost/duplicate PSIDs during delivery. Used for 2-3 cycle cleanup.
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | `int8` | PK (identity) |
+| `psid` | `text` | NOT NULL |
+| `survey_id` | `text` | |
+| `reason` | `text` | NOT NULL, CHECK: duplicate/ghost/wrong_address/wrong_bill/other |
+| `notes` | `text` | |
+| `flagged_by` | `uuid` | FK → profiles(id) ON DELETE SET NULL |
+| `flagged_at` | `timestamptz` | default `now()` |
+| `bill_month` | `text` | |
+| `city_district` | `text` | |
+| `tehsil` | `text` | |
+| `resolved_at` | `timestamptz` | |
+| `resolution` | `text` | CHECK: confirmed_duplicate/confirmed_valid/ignored |
+
+**Indexes:**
+- `idx_flagged_psids_psid` BTREE (psid)
+- `idx_flagged_psids_month` BTREE (bill_month)
+- `idx_flagged_psids_district` BTREE (city_district)
+
+### 1.17 `bill_print_log`
+Tracks which PSIDs were printed in which PDF page for each month.
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | `int8` | PK (identity) |
+| `bill_month` | `text` | NOT NULL |
+| `psid` | `text` | NOT NULL |
+| `survey_id` | `text` | |
+| `page_number` | `int4` | NOT NULL |
+| `file_name` | `text` | |
+| `city_district` | `text` | |
+| `tehsil` | `text` | |
+| `created_at` | `timestamptz` | default `now()` |
+
+**Unique:** (bill_month, psid)
+**Indexes:**
+- `idx_bill_print_log_month` BTREE (bill_month)
+- `idx_bill_print_log_psid` BTREE (psid)
+
+### 1.18 `ingest_log`
+Audit trail for data pipeline runs.
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| `id` | `int8` | PK (identity) |
+| `script_name` | `text` | NOT NULL |
+| `bill_month` | `text` | |
+| `city_district` | `text` | |
+| `status` | `text` | NOT NULL, CHECK: running/success/failed/partial |
+| `rows_processed` | `int4` | default 0 |
+| `rows_inserted` | `int4` | default 0 |
+| `rows_updated` | `int4` | default 0 |
+| `rows_errors` | `int4` | default 0 |
+| `error_message` | `text` | |
+| `started_at` | `timestamptz` | default `now()` |
+| `completed_at` | `timestamptz` | |
+| `metadata` | `jsonb` | |
+
+**Indexes:**
+- `idx_ingest_log_script` BTREE (script_name)
+- `idx_ingest_log_status` BTREE (status)
 
 ---
 
@@ -378,10 +449,11 @@ Reference table for surveyor filter dropdown.
 
 | # | Issue | Impact | Fix |
 |---|-------|--------|-----|
-| 1 | `payment_summary` table doesn't exist, but `trg_payment_history_refresh_summary` trigger + `refresh_payment_summary()` function exist | Any INSERT/UPDATE/DELETE on `payment_history` throws an error | Drop the trigger and function, or create the table |
+| 1 | ~~`payment_summary` table doesn't exist, but trigger referenced it~~ | ✅ **Fixed** (2026-06-01) — trigger + function dropped in migration 022 | Done |
 | 2 | `set_bill_items_tehsil()` function exists but targets dropped `bill_items` table | No trigger references it, so no runtime impact | Safe to drop |
 | 3 | `staff` table likely empty — RBAC creates users in `profiles` only | Assignments page staff dropdown shows nothing | Sync SQL needed: INSERT staff SELECT from profiles |
-| 4 | `get_charts_data` RPC uses `LEFT JOIN LATERAL` for tehsil — orphaned PSIDs get NULL → 'Unknown' | Office Breakdown chart shows "Unknown" bars | Add city/tehsil columns to payment_history, update RPC |
+| 4 | ~~`get_charts_data` RPC used `LEFT JOIN LATERAL` for tehsil~~ | ✅ **Fixed** (2026-06-01) — now uses `ph.tehsil` directly (migration 023). LATERAL only for billing_category. | Done |
+| 5 | ~~`get_billing_summary` and `get_billing_group_stats` reference `bill_items`~~ | ✅ **Fixed** (2026-06-01) — both RPCs + `set_bill_items_tehsil()` dropped in migration 025 | Done |
 | 5 | `get_billing_summary` and `get_billing_group_stats` reference `bill_items` (dropped table) | These RPCs will fail if called | Update to use `survey_units` enrichment columns or drop |
 
 ---
@@ -405,11 +477,24 @@ Reference table for surveyor filter dropdown.
 | 017 | `017-storage-optimization.sql` | ✅ Applied | Dropped image_urls, VACUUM FULL |
 | 019 | `019-aggregation-rpcs.sql` | ✅ Applied | get_billing_stats, get_hierarchy_stats |
 | 020 | `020-rbac-system.sql` | ✅ Applied | Roles, profiles migration |
-| 021 | `021-charts-aggregation.sql` | ✅ Applied | get_charts_data RPC |
+| 021 | `021-charts-aggregation.sql` | ✅ Applied | get_charts_data RPC (v2: direct geography columns, no LATERAL join) |
+| 022 | `022-drop-dead-payment-trigger.sql` | ✅ Applied (2026-06-01) | Drops `trg_payment_history_refresh_summary` + `refresh_payment_summary()` |
+| 023 | `023-add-payment-geography.sql` | ✅ Applied (2026-06-01) | Adds city_district/tehsil/uc_name to payment_history + backfill + indexes |
+| 024 | `024-add-city-dimension.sql` | ❌ Skipped | Not needed — city_district+tehsil already encodes 3 cities |
+| 025 | `025-drop-dead-rpcs.sql` | ✅ Applied (2026-06-01) | Drops 3 dead functions referencing bill_items |
+| 026 | `026-staff-sync-trigger.sql` | ✅ Applied (2026-06-01) | Trigger `trg_sync_profile_to_staff` auto-syncs field_staff profiles → staff table |
+| 027 | `027-pipeline-tables.sql` | ✅ Applied (2026-06-01) | Creates `flagged_psids`, `bill_print_log`, `ingest_log` tables + indexes + RLS |
+| 028 | `028-start-month.sql` | ✅ Applied (2026-06-01) | Adds `start_month text` to `survey_units` for precise billing cycle range |
 
 **Missing:** Migration 018 was skipped/never created.
 
 ---
+
+## 4.1 Trigger Functions
+
+| Function | Event | Table | Description |
+|----------|-------|-------|-------------|
+| `sync_profile_to_staff()` | `AFTER INSERT OR UPDATE OR DELETE` | `profiles` | Auto-syncs field_staff rows to `staff` table. On INSERT/UPDATE with `role_id=field_staff`, creates/updates staff row. On role change away from field_staff, deactivates staff. On DELETE, soft-deactivates staff. |
 
 ## 5. Key Queries for Verification
 

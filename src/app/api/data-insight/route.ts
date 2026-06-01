@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const tehsil = sp.get('tehsil') || ''
     const uc = sp.get('uc') || ''
     const surveyor = sp.get('surveyor') || ''
-    const statusParam = sp.get('status') || 'active'
+    const statusParam = sp.get('status') || ''
     const billMonth = sp.get('billMonth') || currentMonth()
     const page = Math.max(1, parseInt(sp.get('page') || '1'))
     const ps = Math.min(100, Math.max(10, parseInt(sp.get('pageSize') || '50')))
@@ -34,8 +34,8 @@ export async function GET(request: Request) {
 
     const sup = await createClient()
     const lvl: AggRow['level'] = !district ? 'district' : !tehsil ? 'tehsil' : 'uc'
-    const dbStatus = statusParam === 'active' ? 'ACTIVE' : statusParam === 'archived' ? 'ARCHIVED' : null
-    const drillUC = sp.get('drill') || ''
+    const dbStatus = statusParam === 'active' ? 'ACTIVE' : statusParam === 'archived' ? 'ARCHIVED' : ''
+    const drillUC = (sp.get('drill') || '').toLowerCase()
 
     // --- Delivery KPIS (independent queries, no psid dependency) ---
     const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
@@ -101,8 +101,9 @@ export async function GET(request: Request) {
       let unitQuery = sup
         .from('survey_units')
         .select('survey_id, psid, consumer_name, status, amount_due, surveyor_name, survey_date, survey_time, monthly_fee, arrears', { count: 'exact' })
-        .eq('uc_name', drillUC)
-        .eq('status', dbStatus || 'ACTIVE')
+        .eq('uc_name', drillUC.toLowerCase())
+
+      if (dbStatus) unitQuery = unitQuery.eq('status', dbStatus)
 
       if (district) unitQuery = unitQuery.eq('city_district', district)
       if (tehsil) unitQuery = unitQuery.eq('tehsil', tehsil)

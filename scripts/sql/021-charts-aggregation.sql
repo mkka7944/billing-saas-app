@@ -1,7 +1,7 @@
 -- 021-charts-aggregation.sql
 -- Single RPC returning all billing chart data for the admin dashboard.
--- Fast city/tehsil filtering via EXISTS (uses psid index, short-circuits when empty).
--- Month sorting via to_date() for chronological order.
+-- Uses payment_history geography columns (city_district, tehsil) directly.
+-- LATERAL join only for billing_category enrichment (lightweight).
 
 CREATE OR REPLACE FUNCTION get_charts_data(
   p_district text DEFAULT '',
@@ -12,30 +12,20 @@ RETURNS jsonb
 LANGUAGE plpgsql STABLE AS $$
 DECLARE result jsonb;
 BEGIN
-  WITH filtered AS (
-    SELECT psid, bill_month, amount_paid, paid_date, fine
+  WITH base AS (
+    SELECT ph.psid, ph.bill_month, ph.amount_paid, ph.paid_date, ph.fine,
+      ph.city_district, ph.tehsil,
+      su.billing_category
     FROM payment_history ph
-    WHERE payment_status = 'paid'
-      AND (
-        (p_district = '' AND p_tehsil = '')
-        OR EXISTS (
-          SELECT 1 FROM survey_units su
-          WHERE su.psid = ph.psid
-            AND (p_district = '' OR su.city_district = p_district)
-            AND (p_tehsil = '' OR su.tehsil = p_tehsil)
-        )
-      )
-  ),
-  base AS (
-    SELECT f.psid, f.bill_month, f.amount_paid, f.paid_date, f.fine,
-      su.tehsil, su.billing_category
-    FROM filtered f
     LEFT JOIN LATERAL (
-      SELECT tehsil, billing_category
+      SELECT billing_category
       FROM survey_units
-      WHERE psid = f.psid
+      WHERE psid = ph.psid
       LIMIT 1
     ) su ON true
+    WHERE ph.payment_status = 'paid'
+      AND (p_district = '' OR ph.city_district = p_district)
+      AND (p_tehsil = '' OR ph.tehsil = p_tehsil)
   ),
   monthly_trend AS (
     SELECT bill_month,
@@ -74,7 +64,7 @@ BEGIN
   ),
   monthly_curves AS (
     SELECT bill_month, paid_date,
-      (paid_date - (to_date(bill_month, 'MonYYYY') + 15) + 1)::int AS day,
+      greatest((paid_date - (to_date(bill_month, 'MonYYYY') + 15) + 1)::int, 1) AS day,
       coalesce(sum(amount_paid), 0) AS daily_amount,
       coalesce(sum(sum(amount_paid)) OVER (
         PARTITION BY bill_month ORDER BY paid_date

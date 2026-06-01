@@ -1,6 +1,62 @@
 -- 019-aggregation-rpcs.sql
 -- Server-side aggregation RPCs (replaces .range(0,1_000_000) hack)
 
+-- ============================================================
+-- HIERARCHY SUMMARY CACHE (for Data Insight — instant responses)
+-- Pre-computed UC-level aggregates per bill_month (~300 rows)
+-- Refreshed after each monthly enrichment + payment import
+-- ============================================================
+CREATE TABLE IF NOT EXISTS hierarchy_summary (
+  city_district text NOT NULL,
+  tehsil text NOT NULL,
+  uc_name text NOT NULL,
+  bill_month text NOT NULL,
+  total_units integer NOT NULL DEFAULT 0,
+  active_units integer NOT NULL DEFAULT 0,
+  archived_units integer NOT NULL DEFAULT 0,
+  no_coords integer NOT NULL DEFAULT 0,
+  surveyors integer NOT NULL DEFAULT 0,
+  billed_units integer NOT NULL DEFAULT 0,
+  paid_units integer NOT NULL DEFAULT 0,
+  total_collected numeric(12,2) NOT NULL DEFAULT 0,
+  PRIMARY KEY (city_district, tehsil, uc_name, bill_month)
+);
+
+CREATE OR REPLACE FUNCTION refresh_hierarchy_summary(p_month text DEFAULT '')
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF p_month = '' THEN
+    p_month := upper(to_char(CURRENT_DATE - interval '5 days', 'MonYYYY'));
+    p_month := upper(substr(p_month, 1, 3)) || substr(p_month, 4);
+  END IF;
+  DELETE FROM hierarchy_summary WHERE bill_month = p_month;
+  INSERT INTO hierarchy_summary
+  SELECT
+    COALESCE(NULLIF(trim(su.city_district), ''), 'UNKNOWN'),
+    COALESCE(NULLIF(trim(su.tehsil), ''), 'UNKNOWN'),
+    COALESCE(LOWER(NULLIF(trim(su.uc_name), '')), 'UNKNOWN'),
+    p_month,
+    COUNT(*)::int,
+    COUNT(*) FILTER (WHERE su.status IS NULL OR su.status = 'ACTIVE')::int,
+    COUNT(*) FILTER (WHERE su.status IS NOT NULL AND su.status != 'ACTIVE')::int,
+    COUNT(*) FILTER (WHERE su.lat IS NULL OR su.lng IS NULL)::int,
+    COUNT(DISTINCT su.surveyor_name) FILTER (WHERE su.surveyor_name IS NOT NULL)::int,
+    COUNT(*) FILTER (WHERE su.current_bill_month = p_month AND su.amount_due > 0)::int,
+    COUNT(ph.psid)::int,
+    COALESCE(SUM(ph.total_paid), 0)
+  FROM survey_units su
+  LEFT JOIN (
+    SELECT psid, SUM(amount_paid) AS total_paid
+    FROM payment_history
+    WHERE bill_month = p_month AND payment_status = 'paid'
+    GROUP BY psid
+  ) ph ON ph.psid = su.psid
+  GROUP BY su.city_district, su.tehsil, LOWER(NULLIF(trim(su.uc_name), ''));
+END;
+$$;
+
 -- RPC 1: Billing stats — grand totals + tehsil/UC/category breakdowns
 CREATE OR REPLACE FUNCTION get_billing_stats(
   p_month text DEFAULT '',
@@ -81,77 +137,61 @@ END;
 $$;
 
 
--- RPC 2: Data insight hierarchy aggregation (includes payment data)
+-- RPC 2: Data insight hierarchy aggregation (reads from hierarchy_summary cache)
+-- ~1s response instead of 14s from full table scan
 CREATE OR REPLACE FUNCTION get_hierarchy_stats(
   p_month text DEFAULT '',
   p_district text DEFAULT '',
   p_tehsil text DEFAULT '',
   p_uc text DEFAULT '',
-  p_status text DEFAULT 'ACTIVE'
+  p_status text DEFAULT ''
 )
 RETURNS json
 LANGUAGE plpgsql
 AS $$
 DECLARE
   result json;
-  f text := '';
 BEGIN
-  IF p_district != '' THEN f := f || format(' AND su.city_district = %L', p_district); END IF;
-  IF p_tehsil != '' THEN f := f || format(' AND su.tehsil = %L', p_tehsil); END IF;
-  IF p_uc != '' THEN f := f || format(' AND su.uc_name = %L', p_uc); END IF;
-  IF p_status != '' THEN f := f || format(' AND su.status = %L', p_status); END IF;
-
-  EXECUTE format($sql$
-    WITH base AS (
-      SELECT
-        su.city_district, su.tehsil, su.uc_name, su.psid, su.lat, su.lng,
-        su.amount_due, su.surveyor_name, su.status, su.current_bill_month
-      FROM survey_units su
-      WHERE 1=1%s
-    ),
-    pays AS (
-      SELECT ph.psid, sum(ph.amount_paid) AS total_paid
-      FROM payment_history ph
-      WHERE ph.bill_month = %L AND ph.payment_status = 'paid'
-        AND ph.psid IN (SELECT psid FROM base)
-      GROUP BY ph.psid
-    ),
-    kpi AS (
-      SELECT
-        count(*) AS total_units,
-        count(*) FILTER (WHERE status = 'ACTIVE') AS active_units,
-        count(*) FILTER (WHERE status != 'ACTIVE') AS archived_units,
-        count(*) FILTER (WHERE lat IS NULL OR lng IS NULL) AS no_coords,
-        count(DISTINCT surveyor_name) FILTER (WHERE surveyor_name IS NOT NULL) AS unique_surveyors,
-        count(*) FILTER (WHERE current_bill_month = %L AND amount_due > 0) AS billed_units,
-        count(pays.psid) AS paid_units,
-        coalesce(sum(pays.total_paid), 0) AS total_collected
-      FROM base
-      LEFT JOIN pays ON pays.psid = base.psid
-    ),
-    grouped AS (
-      SELECT
-        CASE WHEN %L = '' THEN city_district
-             WHEN %L = '' THEN tehsil
-             WHEN %L = '' THEN uc_name
-             ELSE base.psid END AS gk,
-        count(*) AS total_units,
-        count(*) FILTER (WHERE status = 'ACTIVE') AS active,
-        count(*) FILTER (WHERE current_bill_month = %L AND amount_due > 0) AS billed,
-        count(DISTINCT surveyor_name) AS surveyors,
-        count(*) FILTER (WHERE lat IS NULL OR lng IS NULL) AS no_coords,
-        count(pays.psid) AS paid,
-        coalesce(sum(pays.total_paid), 0) AS collected
-      FROM base
-      LEFT JOIN pays ON pays.psid = base.psid
-      GROUP BY gk
-    )
-    SELECT json_build_object(
-      'kpis', (SELECT row_to_json(k) FROM kpi k),
-      'rows', (SELECT coalesce(json_agg(r ORDER BY r.total_units DESC), '[]'::json)
-               FROM (SELECT gk, total_units, active, billed, paid, collected, surveyors, no_coords FROM grouped) r)
-    )
-  $sql$, f, p_month, p_month, p_district, p_tehsil, p_uc, p_month) INTO result;
+  WITH base AS (
+    SELECT * FROM hierarchy_summary
+    WHERE bill_month = p_month
+      AND (p_district = '' OR city_district = p_district)
+      AND (p_tehsil = '' OR tehsil = p_tehsil)
+      AND (p_uc = '' OR uc_name = LOWER(trim(p_uc)))
+  ),
+  kpi AS (
+    SELECT
+      CASE WHEN p_status = 'ACTIVE' THEN SUM(base.active_units) ELSE SUM(base.total_units) END AS total_units,
+      SUM(base.active_units) AS active_units,
+      SUM(base.archived_units) AS archived_units,
+      SUM(base.no_coords) AS no_coords,
+      SUM(base.surveyors) AS unique_surveyors,
+      SUM(base.billed_units) AS billed_units,
+      SUM(base.paid_units) AS paid_units,
+      SUM(base.total_collected) AS total_collected
+    FROM base
+  ),
+  grouped AS (
+    SELECT
+      CASE WHEN p_district = '' THEN base.city_district
+           WHEN p_tehsil = '' THEN base.tehsil
+           WHEN p_uc = '' THEN base.uc_name
+           ELSE base.uc_name END AS gk,
+      CASE WHEN p_status = 'ACTIVE' THEN SUM(base.active_units) ELSE SUM(base.total_units) END AS total_units,
+      SUM(base.active_units) AS active,
+      SUM(base.billed_units) AS billed,
+      SUM(base.paid_units) AS paid,
+      SUM(base.total_collected) AS collected,
+      SUM(base.surveyors) AS surveyors,
+      SUM(base.no_coords) AS no_coords
+    FROM base
+    GROUP BY gk
+  )
+  SELECT json_build_object(
+    'kpis', (SELECT row_to_json(k) FROM kpi k),
+    'rows', (SELECT COALESCE(json_agg(r ORDER BY r.total_units DESC), '[]'::json)
+             FROM (SELECT * FROM grouped) r)
+  ) INTO result;
 
   RETURN result;
 END;

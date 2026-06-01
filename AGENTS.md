@@ -12,7 +12,7 @@ All plans, data model, workflow, edge case decisions, and session history live t
 - **Reference tables for filter dropdowns** — `hierarchy`, `surveyors`, `bill_months` tables. Never query 212K-row tables for filter options.
 - **No RPCs for client-facing features** — RPCs allowed for admin-only aggregate queries (Data Insight, admin dashboards). See `scripts/sql/007-data-insight-rpcs.sql` for approved RPCs.
 - **SSR API routes for all client data** — hooks fetch from `/api/*` endpoints, NOT direct Supabase client queries. The server creates the Supabase client (service_role). This reduces egress, hides credentials, enables server-side JOINs.
-- **DB triggers for data integrity** — `payment_summary` auto-refreshes on `payment_history` changes (INSERT/UPDATE/DELETE). `hierarchy` reference table upserted on `survey_units` changes. Tehsil enrichment happens during `enrich-survey-units.py` import, not via DB trigger.
+- **DB triggers for data integrity** — `payment_summary` auto-refreshes on `payment_history` changes (INSERT/UPDATE/DELETE). `hierarchy` reference table upserted on `survey_units` changes. Staff profiles auto-sync to `staff` table via trigger. Tehsil enrichment happens during `enrich-survey-units.py` import, not via DB trigger.
 - Photos via Google Drive Apps Script webhook (zero Supabase Storage egress)
 - Maps via react-leaflet + Google Maps tiles (not MapTiler)
 - Offline photo queue via IndexedDB
@@ -62,17 +62,87 @@ Every task is broken into short atomic steps (max 1-2 file changes per step).
 **When in a phase/step and the user asks a question:** Answer the question, then return to the current phase/step without advancing unless told to proceed.
 
 ## Monthly Workflow
-1. **16th**: SWMC portal → biller list CSV + original A4 PDFs
-2. **16th-18th**: Run `python pdf-psid-extractor.py` → generates lifecycle XLSX
-3. **19th-20th**: Run `python pdf-bill-printer.py` → generates A5 print PDFs
-4. **18th-20th**: Run `python scripts/enrich-survey-units.py --city <city> --month <Month-YYYY>` → enriches `survey_units` columns (monthly_fee, arrears, route_name, route_seq, current_bill_month) + upserts reference tables (hierarchy, surveyors, bill_months)
-5. **Daily**: Run `bill-extractor-v4.py` → updates `payment_history`
-6. **Daily (Admin)**: `/assignments` → create staff daily chunks
-7. **Daily (Staff)**: `/deliver` → navigate, capture photo, mark delivered/missed
 
-## Key Supabase Info
+### CRITICAL: Billing Cycle Definition
+A billing month runs from the **16th of the current month to the 15th of the next month** (midnight).
+- **MAY2026** billing cycle = May 16, 2026 → June 15, 2026 (midnight)
+- **JUN2026** billing cycle = June 16, 2026 → July 15, 2026 (midnight)
+- The `currentMonth()` helper in `src/lib/constants.ts` implements this: if `d.getDate() < 16`, use previous calendar month.
+- **May 31 does NOT signify end of billing cycle.** The cycle always runs 16th → 15th.
+
+### Monthly (16th–20th) — Office PC
+1. **16th**: SWMC portal → biller list CSV + original A4 PDFs
+2. **16th–18th**: Run `python pdf-psid-extractor.py` → generates `test_lifecycle_Biller_{City}_{Month}.xlsx` (57 cols)
+3. **19th–20th**: Run `python pdf-bill-printer.py` → generates A5 print PDFs + `index_cache_{city}_{month}.json`
+4. **18th–20th**: Run `python scripts/ingest-all.py` → select `[1] Full Monthly Import`
+   - Runs `enrich-survey-units.py` → lifecycle XLSX → survey_units (21 fields)
+   - Runs `load-payments.py` → payment CSV → payment_history
+   - Writes audit log to `ingest_log`
+
+### Daily — Office PC
+1. Run `python bill-extractor-v4.py --status PAID` → fetches updated payment CSV
+2. Run `python scripts/ingest-all.py` → select `[2] Daily Update`
+   - Runs `load-payments.py` → upserts new records to `payment_history` (idempotent, safe to run multiple times)
+3. Optional: After `survey_filtered.py`, run `ingest-all.py` → `[3] Quick Sync`
+
+### Output File Paths (Ingest Scripts Read from Office PC)
+Ingest scripts (`load-payments.py`, `enrich-survey-units.py`) read directly from the Office PC output folders:
+- **Lifecycle XLSX**: `F:\qoder\billing-system\01_Local_Engine\outputs\processed_pdfs\` (monthly)
+- **Payment CSV**: `F:\qoder\billing-system\01_Local_Engine\outputs\scraped_data\COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv` (daily)
+With local fallback to `scripts/data/` when Office PC folder is unavailable.
+
+### Daily — App
+1. Admin opens `/assignments` → picks UC → picks staff → sets count → creates daily chunk
+2. Staff opens `/deliver` → sees assigned bills → navigates house-to-house
+3. Staff captures photo + GPS → marks delivered/missed
+
+## Supabase Access Methods
+
+### Project Info
+- Ref: `qrxbsoqepfaryolwcedk`
 - URL: `https://qrxbsoqepfaryolwcedk.supabase.co`
-- Superadmin: `kashifkhalil74@gmail.com` (credentials in `scripts/sql/superadmin-credentials.txt`)
-- Schema: `scripts/sql/reset-and-create.sql` (base) + migration files `005`–`010` (apply in order)
-- RPCs: `scripts/sql/007-data-insight-rpcs.sql` — approved admin-only aggregate functions
-- Triggers: `scripts/sql/009-triggers-and-automation.sql` + `010-reference-tables.sql` — payment_summary refresh on payment_history changes, hierarchy reference table upsert on survey_units changes
+- Superadmin: `kashifkhalil74@gmail.com`
+- DB password: in `.env.local` (`SUPABASE_DB_PASSWORD`) and `scripts/sql/superadmin-credentials.txt`
+- Service role key: in `.env.local` (`SUPABASE_SERVICE_ROLE_KEY`) — used by SSR API routes
+- PAT token: in `.env.local` (`SUPABASE_ACCESS_TOKEN` = `sbp_...`)
+
+### Management API (Direct SQL via PAT)
+```bash
+# Execute SQL directly against Supabase DB (no Dashboard needed)
+curl -X POST https://api.supabase.com/v1/projects/qrxbsoqepfaryolwcedk/database/query \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "SELECT COUNT(*) FROM survey_units;"}'
+```
+Used for: running migrations, VACUUM FULL, ad-hoc queries via CLI/Python.
+
+### Python Upsert (service_role)
+Python scripts (enrich-survey-units.py, load-payments.py, ingest-all.py) use:
+```python
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+supabase.table("survey_units").upsert(rows, on_conflict="survey_id").execute()
+```
+
+### Schema
+- Base: `scripts/sql/reset-and-create.sql`
+- Migrations: `scripts/sql/` files `005`–`028` (apply in order)
+- RPCs: `scripts/sql/007-data-insight-rpcs.sql` — admin-only aggregate functions
+- Triggers: `scripts/sql/009-triggers-and-automation.sql`, `010-reference-tables.sql`, `026-staff-sync-trigger.sql`
+
+## Pipeline Scripts Reference
+
+### Source Scripts (Office PC — `F:\qoder\billing-system\01_Local_Engine\scripts\`)
+| Script | When | Produces |
+|--------|------|----------|
+| `pdf-psid-extractor.py` | Monthly 16th-18th | Lifecycle XLSX (57 cols, master reference) |
+| `bill-extractor-v4.py` | Daily | Combined payment CSV (19 cols) |
+| `survey_filtered.py` | Monthly/on-demand | Survey data CSV |
+| `pdf-bill-printer.py` | Monthly 19th-20th | A5 print PDFs + index cache JSON |
+| `generate_category_fallbacks.py` | Monthly | Fallback mapping CSV |
+
+### Ingest Scripts (in `scripts/`)
+| Script | Purpose | Depends On |
+|--------|---------|------------|
+| `enrich-survey-units.py` | Lifecycle XLSX → survey_units (21 fields) | Phase 2 (rewrite existing) |
+| `load-payments.py` | Payment CSV → payment_history | Phase 3 (create) |
+| `ingest-all.py` | Orchestrator (interactive menu) | Phases 2+3 (create) |

@@ -15,6 +15,30 @@
   Body: {"query": "SQL here"}
   ```
 - Project ref: `qrxbsoqepfaryolwcedk`
+
+**Working DB execution pattern (always use this — it works):**
+  1. Write SQL to a file using the Write tool
+  2. Create JSON payload: `python -c "import json; json.dump({'query': open('path.sql').read()}, open('payload.json', 'w'))"`
+  3. Execute: `curl.exe -s -X POST "https://api.supabase.com/v1/projects/qrxbsoqepfaryolwcedk/database/query" -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d "@payload.json"`
+  (Extract token from `.env.local` via regex in PowerShell if needed.)
+  **Avoid:** inline Python `urllib` (SSL 403), inline PowerShell SQL (quoting conflicts), heredocs (newline issues).
+
+**DB cleanup procedure (run when size approaches 500MB free tier limit):**
+  Credentials: `SUPABASE_ACCESS_TOKEN` from `.env.local` (PAT token `sbp_...`)
+  1. **Check DB size:** `SELECT pg_size_pretty(pg_database_size(current_database()));`
+  2. **Find duplicate/unused indexes:** Query `pg_stat_user_indexes` for `idx_scan = 0` or duplicate column patterns. Common suspects: old `idx_survey_*` naming vs new `idx_survey_units_*` naming.
+  3. **Drop duplicate indexes** (reclaims space immediately — indexes are separate files):
+     ```sql
+     DROP INDEX IF EXISTS idx_old_name;
+     ```
+     Run DROP INDEX statements in a single batch via the Management API (works inside transaction).
+  4. **VACUUM FULL** (reclaims dead tuple space from table bloat — must run OUTSIDE transaction, separate curl call):
+     ```sql
+     VACUUM FULL survey_units;
+     ```
+     Note: VACUUM FULL requires ACCESS EXCLUSIVE lock (brief downtime). Cannot run in same batch as DROP INDEX.
+  5. **Update stats:** `ANALYZE;` (runs inside transaction, can be in same batch as DROP INDEX).
+  6. **Verify:** Re-check DB size. Expect ~50% reduction if duplicates existed.
 ---
 ## Table of Contents
 1. [Project Identity & Architecture](#1-project-identity--architecture)
@@ -215,21 +239,105 @@ Your local Python scripts process these into two outputs: (1) the **lifecycle XL
 ### 5.4 Routes
 Route data is embedded in the lifecycle XLSX (Route Segment, Route Seq columns). Some UCs/MCs have routes from a separate route CSV exported from the Routing Station app. Staff can also assign custom route numbers via the House Intel module (Routing Station Pro). These custom routes are also used in final print sorting. Route enrichment into lifecycle is handled during the pdf-psid-extractor step.
 
-### 5.5 enrich-survey-units.py (replaces import-lifecycle-data.py)
-**Purpose:** Reads the lifecycle XLSX (already produced by pdf-psid-extractor.py) and enriches `survey_units` in the database.
-**Insert targets:**
-- `survey_units` — upserts columns: psid, monthly_fee, billing_category, amount_due, arrears, route_name, route_seq, current_bill_month
-- `hierarchy`, `surveyors`, `bill_months` — upsert reference tables for filter dropdowns
-**Note:** `bill_items` table was dropped — all enrichment happens directly on `survey_units`.
-**CLI:**
+### 5.5 Ingest Pipeline: Source Scripts → CSV/XLSX → Supabase
+
+The following table shows every CSV/XLSX file produced by the local scripts and how it flows into Supabase:
+
+| # | Source Script | File Produced | Supabase Destination | Frequency |
+|---|--------------|---------------|---------------------|-----------|
+| 1 | `survey_filtered.py` (portal) | `outputs/scraped_data/{DISTRICT}_{TEHSIL}_SURVEY_DATA.csv` | Merged into lifecycle XLSX by pdf-psid-extractor, then upserted via enrich-survey-units.py | Monthly / on-demand |
+| 2 | `bill-extractor-v4.py` (portal) | `outputs/scraped_data/Biller_{City}_{Month}_Full.csv` | Merged into lifecycle XLSX by pdf-psid-extractor | Monthly |
+| 3 | `bill-extractor-v4.py --status PAID` (portal) | `outputs/scraped_data/COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv` | **Directly to `payment_history`** via `load-payments.py` | Daily (multiple times) |
+| 4 | `generate_category_fallbacks.py` | `outputs/scraped_data/biller_data_{city}_{month}.csv` | Merged into lifecycle XLSX by pdf-psid-extractor | Monthly |
+| 5 | `pdf-psid-extractor.py --mode 3` | `outputs/processed_pdfs/test_lifecycle_Biller_{City}_{Month}.xlsx` | **Directly to `survey_units`** via `enrich-survey-units.py` | Monthly |
+| 6 | `pdf-bill-printer.py` | `outputs/processed_pdfs/index_cache_{city}_{month}.json` | **Kept locally** (Office PC only, not loaded to Supabase) | Monthly |
+
+**Only 3 inputs to Supabase:**
+1. **Lifecycle XLSX** → `survey_units` (21 fields, monthly after pdf-psid-extractor)
+2. **Combined payment CSV** → `payment_history` (daily/on-demand)
+3. **Index cache JSON** → NOT loaded (local reference only)
+
+### 5.6 `enrich-survey-units.py` (Phase 2)
+**Purpose:** Reads lifecycle XLSX and upserts **21 columns** to `survey_units`.
+
+**Lifecycle XLSX → survey_units field mapping:**
+
+| Lifecycle Column | survey_units Column | Status |
+|-----------------|-------------------|--------|
+| `Survey ID` | `survey_id` (PK) | ✅ existing |
+| `Biller PSID` | `psid` | ✅ existing |
+| `Monthly Fee` | `monthly_fee` | ✅ existing |
+| `Billing Category` | `billing_category` | ✅ existing |
+| `Arrears` | `arrears` | ✅ existing |
+| `Route Segment` | `route_name` | ✅ existing |
+| `Route Seq` | `route_seq` | ✅ existing |
+| `Current Bill` | `current_bill_month` | ✅ existing |
+| `Name` | `consumer_name` | **NEW in Phase 2** |
+| `Address` | `address` | **NEW in Phase 2** |
+| `City Name` | `city_district` | **NEW in Phase 2** |
+| `Tehsil` | `tehsil` | **NEW in Phase 2** |
+| `UC` | `uc_name` | **NEW in Phase 2** |
+| `Surveyor Name` | `surveyor_name` | **NEW in Phase 2** |
+| `Survey Date` | `survey_date` | **NEW in Phase 2** |
+| `Survey Time` | `survey_time` | **NEW in Phase 2** |
+| `Lat` | `lat` | **NEW in Phase 2** |
+| `Lng` | `lng` | **NEW in Phase 2** |
+| `Start Month` | `start_month` | **NEW in Phase 2** |
+| `Deleted in Portal` | `status` | **NEW** → "Yes" sets `status='ARCHIVED'` |
+| `Total Payable` | ~~`amount_due`~~ | **SKIPPED** (dropped in Phase 2b) |
+
+### 5.7 `load-payments.py` (Phase 3)
+**Purpose:** Reads combined payment CSV and upserts to `payment_history`.
+
+**CSV → payment_history field mapping:**
+
+| CSV Column | payment_history Column | Notes |
+|-----------|----------------------|-------|
+| `PSID` | `psid` | |
+| `Month` | `bill_month` | Already `MAY2026` format |
+| `Paid Amount` | `amount_paid` | |
+| `Paid Date` | `paid_date` | Parse `"Jun 01, 2026"` → ISO date |
+| `Channel` | `payment_method` | |
+| `Status` | `payment_status` | |
+| `Fine` | `fine` | |
+| `City` | `city_district` | Uppercase |
+| `Tehsil` | `tehsil` | Uppercase |
+| `UC` | `uc_name` | Raw CSV value |
+
+**Key:** Idempotent upsert on `(psid, bill_month)` — safe to run multiple times daily.
+
+### 5.8 `ingest-all.py` (Phase 5 — Orchestrator)
+**Purpose:** Interactive wrapper that runs Phase 2 + Phase 3 in sequence.
+
 ```bash
-python scripts/enrich-survey-units.py
+# Interactive menu (recommended)
+python scripts/ingest-all.py
+
+# CLI mode
+python scripts/ingest-all.py --month May2026    # Full monthly import
+python scripts/ingest-all.py --daily             # Payments only (daily)
+python scripts/ingest-all.py --month May2026 --dry-run  # Preview only
 ```
 
-**Historical fallback:** `run_historical_migration.py` was used once for the initial bulk migration of CSVs/XLSXs. It writes to `bill_items` (for reference) + `survey_units` + `payment_history`.
+**Menu:**
+```
+=== Ingest to Supabase ===
+[1] Full Monthly Import (lifecycle + payments)
+[2] Daily Update (payments only)
+[3] Quick Survey Sync (new records only)
+[q] Quit
+```
 
-### 5.6 Biller CSVs — SKIPPED
-All 21 `Biller_{City}_{Month}.csv` files (8 months × 3 cities) are **redundant**. The lifecycle XLSX already contains the Survey ID ↔ PSID linkage and all financial columns. The Biller CSVs were only needed as a bridge; the lifecycle XLSX is the authoritative source.
+### 5.9 Bill Metadata in HouseDetailSheet (Phase 6)
+**Purpose:** Reconstruct the printer's `left_meta`/`right_meta` strings from `survey_units` + `payment_history` data and display in HouseDetailSheet.
+
+**Sorting logic (mirrors pdf-bill-printer.py):**
+1. Group by `uc_name`
+2. Sort: `route_seq ASC → survey_id DESC`
+3. Assign sequential `bill_count` within UC
+4. Compute `paid_status`: count paid months from payment_history → `P-{n}` or `U-P`
+
+**No printer cache JSON needed** — all metadata is already in Supabase after Phase 2 + 3.
 
 ---
 ## 6. Data Model
@@ -497,28 +605,46 @@ Run these in order in the Supabase SQL Editor:
 ---
 ## 7. Monthly Data Workflow
 
+### CRITICAL: Billing Cycle Definition
+A billing month runs from the **16th of the current month to the 15th of the next month** (midnight).
+- **MAY2026** billing cycle = May 16, 2026 → June 15, 2026 (midnight)
+- **JUN2026** billing cycle = June 16, 2026 → July 15, 2026 (midnight)
+- The `currentMonth()` helper in `src/lib/constants.ts` implements this: if `d.getDate() < 16`, use previous calendar month.
+- **May 31 does NOT signify end of billing cycle.** The cycle always runs 16th → 15th.
+
+### Output File Paths (Ingest Scripts Read from Office PC)
+Ingest scripts (`load-payments.py`, `enrich-survey-units.py`) read directly from the Office PC output folders:
+- **Lifecycle XLSX**: `F:\qoder\billing-system\01_Local_Engine\outputs\processed_pdfs\` (monthly)
+- **Payment CSV**: `F:\qoder\billing-system\01_Local_Engine\outputs\scraped_data\COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv` (daily)
+With local fallback to `scripts/data/` when Office PC folder is unavailable.
+
 ### Monthly (16th–20th)
 1. **16th:** SWMC portal provides biller list CSV + original A4 PDFs
 2. **16th–18th:** `pdf-psid-extractor.py` reads PDFs, extracts PSIDs, matches with biller list + survey data → generates `test_lifecycle_Biller_{City}_{Month}.xlsx`
-3. **19th–20th:** `pdf-bill-printer.py` runs → generates A5 print PDFs with overlays
-4. **18th–20th:** `enrich-survey-units.py` runs → reads lifecycle XLSX, upserts `survey_units` columns (psid, monthly_fee, arrears, amount_due, billing_category, route_name, route_seq, current_bill_month), upserts reference tables (`hierarchy`, `surveyors`, `bill_months`)
-   - Fallback: `run_historical_migration.py` for initial bulk import (runs once)
+3. **19th–20th:** `pdf-bill-printer.py` runs → generates A5 print PDFs with overlays + `index_cache_{city}_{month}.json`
+4. **18th–20th:** `python scripts/ingest-all.py` → select option `[1]` (Full Monthly Import)
+   - Runs `enrich-survey-units.py` → reads lifecycle XLSX → upserts 21 fields to `survey_units`
+   - Runs `load-payments.py` → reads combined payment CSV → upserts `payment_history`
+   - Writes audit log to `ingest_log`
 
 ### Daily
-1. **Admin:** Runs `bill-extractor-v4.py` → fetches updated payment CSV → upserts `payment_history`
-   - Trigger `trg_payment_history_refresh_summary` auto-refreshes `payment_summary`
-2. **Admin:** Opens `/settings` → Users tab → creates/manages staff accounts (username + password, role assignment, freeze/delete)
-3. **Admin:** Opens `/assignments` → picks UC → sees unassigned bills → picks staff → sets count → creates daily chunk
+1. **Admin:** Runs `bill-extractor-v4.py --status PAID` → fetches updated payment CSV
+2. **Admin:** Runs `python scripts/ingest-all.py` → select option `[2]` (Daily Update)
+   - Runs `load-payments.py` → reads latest payment CSV → upserts new records to `payment_history`
+   - Idempotent: safe to run multiple times per day
+3. **Admin (optional):** After `survey_filtered.py`, can run option `[3]` for quick survey sync
+4. **Admin:** Opens `/settings` → Users tab → creates/manages staff accounts (username + password, role assignment, freeze/delete)
+5. **Admin:** Opens `/assignments` → picks UC → sees unassigned bills → picks staff → sets count → creates daily chunk
    - Creates `daily_assignments` + `assignment_items` rows
-4. **Field Staff:** Opens `/deliver` → sees today's assigned bills only (from `assignment_items` joined to `daily_assignments`)
-5. **Staff:** Navigates house-to-house in route sequence order:
+6. **Field Staff:** Opens `/deliver` → sees today's assigned bills only (from `assignment_items` joined to `daily_assignments`)
+7. **Staff:** Navigates house-to-house in route sequence order:
    - Arrives at house → taps "Deliver" → camera opens → captures 1-3 photos
    - Photos compressed locally → queued in IndexedDB if offline
    - GPS captured at delivery time → saved to `assignment_items.gps_lat/gps_lng`
    - Status set to `delivered` or `missed` (with reason + photo)
-6. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL → saved to `delivery_photos`
-7. **Route derivation:** After 2-3 months, actual delivery timestamps from `assignment_items.delivered_at` form the optimal route order for each UC
-8. **House corrections:** Staff long-presses map to correct GPS → saved to `house_corrections` with original+corrected coords + staff ID + delivery date
+8. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL → saved to `delivery_photos`
+9. **Route derivation:** After 2-3 months, actual delivery timestamps from `assignment_items.delivered_at` form the optimal route order for each UC
+10. **House corrections:** Staff long-presses map to correct GPS → saved to `house_corrections` with original+corrected coords + staff ID + delivery date
 
 ---
 ## 8. Performance Rules (Must Follow)
@@ -639,6 +765,68 @@ Run these in order in the Supabase SQL Editor:
 | RBAC.9 | 5 min | Update all role references across app (role→roleName, 'staff'→'field_staff') |
 | RBAC.10 | 15 min | Apply migration to Supabase + backfill admin + E2E test |
 
+### Phase 1 — Copy Reference Scripts from Office PC (~30 min)
+| Step | Time | Task |
+|------|------|------|
+| 1.1 | 5 min | Copy `bill-extractor-v4.py`, `pdf-psid-extractor.py`, `pdf-bill-printer.py`, `survey_filtered.py`, `generate_category_fallbacks.py` to `scripts/ref/` |
+| 1.2 | 5 min | Copy any shared lib files (e.g. `config.py`, `geography.json`) to `scripts/ref/` |
+| 1.3 | 10 min | Copy the biller list CSVs and lifecycle XLSX sample files (1 city × 1 month) for test fixtures |
+| 1.4 | 10 min | Verify all scripts parse without import errors on office PC Python |
+
+### Phase 2 — Rewrite `enrich-survey-units.py` (~2 hrs)
+| Step | Time | Task |
+|------|------|------|
+| 2.1 | 20 min | Add all 13 new fields to the upsert: `consumer_name`, `address`, `city_district`, `tehsil`, `uc_name`, `surveyor_name`, `survey_date`, `survey_time`, `lat`, `lng`, `start_month`, `status` (ARCHIVED if Deleted=Yes) |
+| 2.2 | 15 min | Add `--dry-run` flag: preview changes without writing to DB |
+| 2.3 | 15 min | Add `--exclude-ghosts` flag: skip PSIDs in `flagged_psids` table |
+| 2.4 | 15 min | Add diff report: show count of new/updated/skipped/error rows |
+| 2.5 | 20 min | Upsert reference tables: `hierarchy`, `surveyors`, `bill_months` from lifecycle data |
+| 2.6 | 15 min | Write audit log to `ingest_log` |
+| 2.7 | 20 min | Refactor: move shared (DB connection, config, logging) to `scripts/lib/` utils |
+
+### Phase 3 — Create `load-payments.py` (~1 hr)
+| Step | Time | Task |
+|------|------|------|
+| 3.1 | 20 min | Write script: read combined payment CSV, parse all 12 columns, upsert to `payment_history` with `(psid, bill_month)` as upsert key |
+| 3.2 | 10 min | Add `--dry-run`, `--file` flags |
+| 3.3 | 10 min | Write audit log to `ingest_log` |
+| 3.4 | 15 min | Report: inserted/skipped/error counts with sample of bad rows |
+| 3.5 | 5 min | Add city/tehsil/uc_name upsert to payment_history (fixes "Unknown" chart cities) |
+
+### Phase 4 — Add `city`/`tehsil`/`uc_name` to `payment_history` (~30 min)
+| Step | Time | Task |
+|------|------|------|
+| 4.1 | 5 min | SQL migration `029-add-payment-history-city.sql`: `ALTER TABLE payment_history ADD COLUMN city_district text, ADD COLUMN tehsil text, ADD COLUMN uc_name text` |
+| 4.2 | 10 min | Update `get_charts_data` RPC to use `ph.city_district`/`ph.tehsil` instead of LATERAL join |
+| 4.3 | 5 min | Update `get_billing_stats` RPC to use `ph.city_district`/`ph.tehsil` |
+| 4.4 | 5 min | Backfill existing rows from lifecycle data via temporary mapping |
+| 4.5 | 5 min | Verify: "Unknown" entries in charts drop to zero |
+
+### Phase 5 — Create `ingest-all.py` Orchestrator (~1 hr)
+| Step | Time | Task |
+|------|------|------|
+| 5.1 | 20 min | Interactive menu: `[1] Full Monthly [2] Daily Update [3] Quick Sync [q] Quit` |
+| 5.2 | 10 min | CLI args: `--month`, `--daily`, `--dry-run`, `--file` |
+| 5.3 | 10 min | Sequential orchestration: run Phase 2 scripts then Phase 3 in order |
+| 5.4 | 10 min | Combined audit log entry with summary |
+| 5.5 | 10 min | Error handling: abort on failure, show partial results |
+
+### Phase 6 — Bill Metadata in HouseDetailSheet (~1.5 hrs)
+| Step | Time | Task |
+|------|------|------|
+| 6.1 | 15 min | `GET /api/survey/[survey_id]/bill-info` — returns bill number, route info, paid status from `survey_units` + `payment_history` |
+| 6.2 | 30 min | HouseDetailSheet: show "Bill #X/Y in UC" with route info, paid status badge |
+| 6.3 | 15 min | Compute `bill_count` per UC: sort by `route_seq ASC → survey_id DESC`, assign sequential number |
+| 6.4 | 15 min | Compute `paid_status`: count paid months from `payment_history` → "P-{n}" or "U-P" |
+| 6.5 | 15 min | Show all PSIDs per survey_id with payment history + ghost marking button |
+
+### Phase 2b — Drop `amount_due` (deferred, ~30 min)
+| Step | Time | Task |
+|------|------|------|
+| 2b.1 | 10 min | Remove `amount_due` from all SELECTs, TypeScript types, RPC queries |
+| 2b.2 | 10 min | `ALTER TABLE survey_units DROP COLUMN amount_due` |
+| 2b.3 | 10 min | Update any remaining frontend references |
+
 ### Total Estimate Breakdown
 | Phase | Time | Cumulative |
 |-------|------|------------|
@@ -650,6 +838,13 @@ Run these in order in the Supabase SQL Editor:
 | C | 3 hrs | 18.5 hrs |
 | D | 4 hrs | 22.5 hrs |
 | RBAC | 2 hrs | 24.5 hrs |
+| 1 (Copy ref scripts) | 0.5 hrs | 25 hrs |
+| 2 (enrich-survey-units) | 2 hrs | 27 hrs |
+| 3 (load-payments) | 1 hr | 28 hrs |
+| 4 (city columns) | 0.5 hrs | 28.5 hrs |
+| 5 (ingest-all) | 1 hr | 29.5 hrs |
+| 6 (bill metadata) | 1.5 hrs | 31 hrs |
+| 2b (drop amount_due) | 0.5 hrs | 31.5 hrs |
 
 ---
 ## 11. Implementation Workflow (Permanent Rule)
@@ -664,107 +859,95 @@ Never skip ahead or batch multiple steps without explicit approval.
 When in a phase/step and the user asks a question: Answer the question, then return to the current phase/step without advancing unless told to proceed.
 
 ---
-## 16. Future Workflow — Data Pipeline Streamlining
+## 16. Pipeline Reference
 
-### 16.1 Current State (Manual, Error-Prone)
-
-| Step | Tool | Frequency | Pain Points |
-|------|------|-----------|-------------|
-| Lifecycle enrichment | `enrich-survey-units.py` | Monthly manual run | Must have lifecycle XLSX on disk, run per-city, no error feedback |
-| Payment sync | `bill-extractor-v4.py` | Daily manual run | Must download CSV from SWMC portal, run locally, no automation |
-| PDF generation | `pdf-bill-printer.py` | Monthly manual run | Local-only, Python deps, fragile PyMuPDF setup |
-| Export bills JSON | `export-bills-json.py` | Monthly manual run | Required for HouseDetailSheet bill display |
-| Payment CSV → DB | Supabase upsert via script | Manual trigger | No scheduled sync, inconsistent data freshness |
-
-**Data flows are entirely local (engineer's PC).** There is no server-side ingestion, no cron scheduling, no webhook — meaning:
-- If the engineer is unavailable, data doesn't get imported
-- Live payment data is always at least 1 day stale
-- New survey units from lifecycle must be manually enriched
-
-### 16.2 Target State — Automated Daily Pipeline
-
-The goal is a **server-side ingestion pipeline** that eliminates local script dependencies:
+### 16.1 Data Flow
 
 ```
-┌─────────────┐    ┌──────────────────┐    ┌──────────────────────┐
-│ SWMC Portal │───→│ Supabase Ingest  │───→│ survey_units         │
-│ (CSV export) │    │ (Edge Function)  │    │  monthly_fee + arrears│
-└─────────────┘    └──────────────────┘    │  current_bill_month  │
-        │                                   │  psid, route info    │
-        │         ┌──────────────────┐      └──────────────────────┘
-        └────────→│ Payment Ingest   │───→ payment_history
-                  │ (Edge Function)  │      upsert per PSID+month
-                  └──────────────────┘
+Office PC (local Python, manual triggers)
+│
+├── pdf-psid-extractor.py (monthly, 16th–18th)
+│     A4 PDFs + Biller CSVs → lifecycle XLSX
+│     Output: test_lifecycle_Biller_{City}_{Month}.xlsx (57 cols)
+│
+├── bill-extractor-v4.py (daily, multiple times)
+│     SWMC portal → combined payment CSV
+│     Output: COMBINED_ALL_CITIES_paid_ALL_HISTORY_Full.csv (19 cols)
+│
+├── survey_filtered.py (monthly/on-demand)
+│     Portal survey data → survey CSV
+│     Output: {DISTRICT}_{TEHSIL}_SURVEY_DATA.csv
+│
+├── pdf-bill-printer.py (monthly, 19th–20th)
+│     Lifecycle XLSX + A4 PDFs → sorted A5 print PDFs
+│     Output: F:\Final_print\{Month}\*.pdf + index_cache_{city}_{month}.json
+│
+└── generate_category_fallbacks.py (monthly)
+      Biller CSV → fallback mapping CSV
+      Output: biller_data_{city}_{month}.csv
 ```
 
-### 16.3 Priority Implementation (Phase P — Pipeline)
+**Supabase ingest (desktop, same machine or nearby):**
 
-#### P.1 Payment CSV Auto-Ingest (~4 hrs)
-**Goal:** Eliminate manual `bill-extractor-v4.py` — payments sync automatically.
+```
+python scripts/ingest-all.py
+  ├── Option [1] Full Monthly
+  │     ├── enrich-survey-units.py → survey_units (21 fields, Phase 2)
+  │     ├── load-payments.py       → payment_history (12 fields, Phase 3)
+  │     └── Write audit log        → ingest_log
+  ├── Option [2] Daily Update
+  │     └── load-payments.py       → payment_history (idempotent upsert)
+  └── Option [3] Quick Sync
+        └── enrich-survey-units.py --quick → new records only
+```
 
-| Step | Time | Task |
-|------|------|------|
-| P.1a | 60 min | Create `POST /api/ingest/payments` endpoint — accepts CSV body or URL, parses with `papaparse`, upserts `payment_history` using Supabase admin client |
-| P.1b | 30 min | Add idempotency: skip rows where `(psid, bill_month)` already has matching `payment_status` and `amount_paid` |
-| P.1c | 60 min | Build mini admin UI at `/ingest` — drag-and-drop CSV upload, preview rows, confirm import, show results (inserted/skipped/errors) |
-| P.1d | 30 min | **Calculation fix:** If `bill_items` start_month ever gets re-imported, use it as the lookup floor for `allMonths` generation (currently using 24-month rolling window as fallback) |
+### 16.2 CLI Reference
 
-#### P.2 Lifecycle Enrichment via Server (~3 hrs)
-**Goal:** Load lifecycle XLSX through the app instead of local Python scripts.
+```bash
+# Phase 2 - Lifecycle enrichment
+python scripts/enrich-survey-units.py                    # auto-detect latest XLSX
+python scripts/enrich-survey-units.py --month May2026    # specific month
+python scripts/enrich-survey-units.py --dry-run          # preview only
+python scripts/enrich-survey-units.py --exclude-ghosts   # skip flagged PSIDs
+python scripts/enrich-survey-units.py --quick            # new records only
 
-| Step | Time | Task |
-|------|------|------|
-| P.2a | 60 min | Create `POST /api/ingest/lifecycle` endpoint — accepts XLSX file upload, reads with `xlsx` npm package (or converts to JSON client-side), upserts `survey_units` columns + reference tables |
-| P.2b | 30 min | Add validation: detect duplicate PSIDs, missing survey_ids, mismatched cities |
-| P.2c | 60 min | Build upload page: file picker, city/month selector, preview+diff before apply |
-| P.2d | 30 min | **Store `start_month`** on `survey_units` if present in the lifecycle XLSX. Requires a one-time migration: `ALTER TABLE survey_units ADD COLUMN start_month text`. This enables precise billing cycle range for PaymentHistoryCard instead of the 24-month rolling window. |
+# Phase 3 - Payment upsert
+python scripts/load-payments.py                          # auto-detect latest CSV
+python scripts/load-payments.py --file path/to/file.csv  # specific file
+python scripts/load-payments.py --dry-run                # preview only
 
-#### P.3 Scheduled Payment Sync (~3 hrs)
-**Goal:** Payments auto-fetch from SWMC portal without manual CSV download.
+# Phase 5 - Orchestrator (wraps Phase 2 + Phase 3)
+python scripts/ingest-all.py                             # interactive menu
+python scripts/ingest-all.py --month May2026             # full monthly
+python scripts/ingest-all.py --daily                     # payments only
+python scripts/ingest-all.py --month May2026 --dry-run   # preview
+```
 
-| Step | Time | Task |
-|------|------|------|
-| P.3a | 60 min | Create a **Vercel Cron Job** (`/api/cron/payments`) that fetches the payment CSV from a configurable URL (SWMC portal or GDrive upload), parses it, and upserts `payment_history` |
-| P.3b | 30 min | Add config UI (`/settings`) to set the payment CSV source URL, sync schedule (daily/6hr/manual), and last-sync timestamp |
-| P.3c | 30 min | Notification on failure: email or in-app alert when payment sync fails (wrong format, empty rows, access denied) |
-| P.3d | 60 min | **Historical backfill:** One-time script to import all previous months' payment CSVs through the ingest endpoint |
+### 16.3 Scripts Map
 
-#### P.4 Data Quality & Verification (~2 hrs)
+| Script | Location | Purpose |
+|--------|----------|---------|
+| `pdf-psid-extractor.py` | Office PC: `F:\qoder\billing-system\01_Local_Engine\scripts\` | Monthly: A4 PDFs → lifecycle XLSX |
+| `bill-extractor-v4.py` | Office PC (same path) | Daily: payment CSV from SWMC portal |
+| `survey_filtered.py` | Office PC (same path) | Monthly/on-demand: survey data from portal |
+| `pdf-bill-printer.py` | Office PC (same path) | Monthly: A4→A5 print PDFs |
+| `generate_category_fallbacks.py` | Office PC (same path) | Monthly: category fallback CSV |
+| `enrich-survey-units.py` | `scripts/enrich-survey-units.py` | Supabase upsert: lifecycle XLSX → survey_units |
+| `load-payments.py` | `scripts/load-payments.py` (Phase 3) | Supabase upsert: payment CSV → payment_history |
+| `ingest-all.py` | `scripts/ingest-all.py` (Phase 5) | Orchestrator with interactive menu |
+| `config.py` | Office PC copy + `scripts/lib/config.py` (Phase 2.7) | Centralized paths, DB connection, logging |
 
-| Step | Time | Task |
-|------|------|------|
-| P.4a | 30 min | **Add `start_month` migration** (`021-add-start-month.sql`): `ALTER TABLE survey_units ADD COLUMN start_month text;` Backfill from archives or lifecycle XLSX files if available. |
-| P.4b | 30 min | Dashboard at `/ingest/history` showing: last sync time, rows imported, errors count, month coverage |
-| P.4c | 30 min | Alert system: email notification when payment sync fails or lifecycle enrichment detects anomalies |
-| P.4d | 30 min | **Calculation finalization:** Update `GET /api/surveys/payments` to use `survey_units.start_month` as the `allMonths` lower bound (replacing the 24-month lookback). Document that this requires the P.4a migration to be applied first. |
+### 16.4 Key Design Decisions
 
-### 16.4 Migration Scripts to Create
-
-| File | Purpose | Depends On |
-|------|---------|------------|
-| `scripts/sql/021-add-start-month.sql` | Adds `start_month text` to `survey_units` for precise billing cycle range | P.2d, P.4a |
-| `scripts/sql/022-payment-ingest-tables.sql` | Creates `ingest_log` table for tracking CSV import history (optional) | P.1a |
-
-### 16.5 Summary of Calculation Changes
-
-| Change | Component | What Changed | Migrations Needed |
-|--------|-----------|-------------|-------------------|
-| `amount_due` display → `monthly_fee + arrears` | All UI surfaces | Display calculation only; DB column unchanged | None |
-| `allMonths` lower bound → min(oldestPayment, 24-month lookback) | `/api/surveys/payments` | Server-side sort + rolling window; no `start_month` available | None (until P.4a) |
-| `allMonths` lower bound → `start_month` (future) | `/api/surveys/payments` | Replace lookback with `survey_units.start_month` | P.4a (`021-add-start-month.sql`) |
-| Month sort: alphabetical → chronological | `/api/surveys/payments` | Added `monthKey()` helper for `year*12+monthIndex` sort | None |
-| KPI cards: double value → compact single-value | `data-insight.tsx` | Removed CardHeader/CardContent, single source of truth | None |
-
-### 16.6 Total Phase P Estimate: ~12 hours
-
-### 16.7 Quick Wins (can be done immediately, no pipeline work)
-
-| Task | Time | File | Description |
-|------|------|------|-------------|
-| Add `start_month` column to survey_units | 15 min | New SQL migration | `ALTER TABLE survey_units ADD COLUMN start_month text;` — column only, no backfill |
-| Update enrich-survey-units.py to write start_month | 15 min | `enrich-survey-units.py` | Read "Start Month" from lifecycle XLSX and include in the upsert |
-| Backfill start_month from lifecycle XLSX archives | 1 hr | ad-hoc Python | If XLSX files in `scripts/data/processed_pdfs/` are accessible, extract start_month per PSID |
-| Switch allMonths to use start_month | 15 min | `/api/surveys/payments` | Replace `24-month lookback` with queried `survey_units.start_month` |
+| Decision | Rationale |
+|----------|-----------|
+| Lifecycle XLSX is single source for `survey_units` | Contains all 21 fields; Biller CSVs are redundant intermediate |
+| Payment CSV is single source for `payment_history` | Contains city/tehsil/uc — fixes "Unknown" chart cities |
+| `amount_due` dropped in Phase 2b | SWMC miscalc, not reliable; app computes `monthly_fee + arrears` |
+| Printer cache JSON stays local | Bill metadata reconstructable from `survey_units` + `payment_history` |
+| `ingest_log` tracks every import run | PSID count, inserted/skipped/error, duration, file hash, exit status |
+| No server-side pipeline | Govt portal blocks external IPs — all scripts run on Office PC |
+| Idempotent upserts on `(psid, bill_month)` | Daily payment imports safe to run multiple times
 
 ### 16.8 Billing Charts Architecture — Established Pattern (2026-05-30)
 
@@ -1195,14 +1378,64 @@ App (Next.js SSR)                     Local Server (office PC)
 - Remaining: Remove `.range(0, 1_000_000)` from remaining routes, fix `.in('tehsil', [])` edge case
 - Backlog: Payment filter refetch trigger, `.eq('payment_status', ...)` for payment filter optimization
 
-### ═══ SESSION CONTINUATION POINT ═══
-### Start here on next session
-### Strategic planning: data accuracy + pipeline architecture discussion
-### Key discovery: payment_history missing city/tehsil → "Unknown" cities in charts
-### Real data problem: govt survey app creates 20K+ orphaned PSIDs from deleted survey IDs
-### Strategy: 2-3 cycle cleanup via staff marking system + bill-printer metadata
-### Pipeline: local scripts + app control (govt portal blocks external IPs)
-### See Section 16.9+ for updated data cleanup strategy
+### 2026-06-01 (Data Pipeline Overhaul — Phases 1-6 Defined + Migrations 026-028) — Location: Home
+**Focus:** Complete pipeline analysis, create staff sync trigger, pipeline tables, start_month migration, define Phases 1-6
+**Done:**
+- **Migration 026** `026-staff-sync-trigger.sql` — `trg_sync_profile_to_staff` on `profiles` INSERT/UPDATE/DELETE: auto-creates/updates/deactivates `staff` rows for `field_staff` profiles
+- **Migration 027** `027-pipeline-tables.sql` — created `flagged_psids`, `bill_print_log`, `ingest_log` with indexes + RLS
+- **Migration 028** `028-start-month.sql` — added `start_month text` + index to `survey_units`
+- Verified `/api/staff` returns both existing + synced field_staff rows
+- **Data pipeline deep research (4 Office PC scripts):**
+  - `bill-extractor-v4.py` (daily) — fetches payment CSV, drops city/tehsil/uc during upsert → "Unknown" chart cities
+  - `pdf-psid-extractor.py` (monthly) — reads A4 PDFs → lifecycle XLSX with 57+ columns (10 "PDF Issued" booleans, paid flags, etc.)
+  - `pdf-bill-printer.py` (monthly) — generates sorted A5 PDFs, bill numbers per UC from route_seq sort
+  - `survey_filtered.py` — survey data from portal
+  - Printer cache JSON has psid_map (~105K entries per city) but is NOT loaded to DB
+  - Critical: `survey_units` needs 13 new columns from lifecycle (consumer_name, address, city_district, tehsil, uc_name, surveyor_name, survey_date, survey_time, lat, lng, start_month, status/ARCHIVED)
+- **Phases 1-6 defined** for pipeline overhaul:
+  - Phase 1: Copy reference scripts from Office PC
+  - Phase 2: Rewrite `enrich-survey-units.py` (21-field upsert)
+  - Phase 3: Create `load-payments.py` (payment CSV → payment_history)
+  - Phase 4: Add city/tehsil/uc_name columns to `payment_history` + update RPCs
+  - Phase 5: Create `ingest-all.py` orchestrator (interactive menu)
+  - Phase 6: Bill metadata display in HouseDetailSheet
+  - Phase 2b (deferred): Drop `amount_due` column
+- **`SUPABASE_ACCESS_TOKEN` saved to `.env.local`** — Management API now accessible (PAT token `sbp_...`)
+- Updated `docs/SCHEMA.md` with all new tables, columns, migration 026-028
+- Updated `docs/MASTER.md` Section 5 (pipeline flow), Section 7 (monthly workflow), Section 10 (Phases 1-6), Section 16 (pipeline reference replacing aspirational future workflow)
+- Updated `AGENTS.md` with new monthly workflow, Supabase access methods, scripts reference
+**Key decisions:**
+- Lifecycle XLSX is single source of truth for survey_units (21 fields)
+- `amount_due` to be dropped — SWMC miscalc, app uses `monthly_fee + arrears`
+- Payment CSV geography (city_district, tehsil, uc_name) already in source — store directly in `payment_history` to eliminate "Unknown" chart cities
+- Printer cache JSON stays local — bill metadata reconstructable from DB data
+- Bill numbering replicable in app: `route_number ASC → route_seq ASC → survey_id DESC` within each UC
+- Daily payment upsert keyed on `(psid, bill_month)` — idempotent
+**Implementation (same session):**
+- **Phase 1 executed** — Copied 5 scripts + config.py from Office PC to `scripts/ref/`, verified Python syntax
+- **Phase 2 executed** — Rewrote `enrich-survey-units.py`:
+  - Added 12 new fields: consumer_name, address, city_district, tehsil, uc_name, surveyor_name, survey_date, survey_time, lat, lng, start_month, status (ARCHIVED if Deleted=Yes)
+  - Added `--exclude-ghosts` flag — skips PSIDs in `flagged_psids` table
+  - Added diff report (new vs updated vs skipped counts via pre-query of existing survey_ids)
+  - Added reference table sync (surveyors, bill_months)
+  - Added audit log write to `ingest_log`
+- **Phase 3 executed** — Created `load-payments.py`:
+  - Reads combined payment CSV, upserts to `payment_history` on `(psid, bill_month)` conflict key
+  - Includes city_district, tehsil, uc_name from CSV columns (already in DB)
+  - Idempotent, batch upsert (500), audit log
+- **Phase 4 verified** — RPC `get_charts_data` already uses `ph.city_district`/`ph.tehsil` directly — no changes needed
+- **Phase 5 executed** — Created `ingest-all.py` orchestrator:
+  - Interactive menu: [1] Full Monthly [2] Daily Update [3] Quick Sync [q] Quit
+  - CLI: `--month`, `--daily`, `--file`, `--dry-run`
+- **Phase 6 executed** — Bill metadata in HouseDetailSheet:
+  - Created `GET /api/surveys/[survey_id]/bill-info` — returns bill number within UC, route info, paid months, start_month
+  - Added `BillInfo` type to `src/types/index.ts`
+  - Added `useSurveyBillInfo` hook to `use-survey-data.ts`
+  - Replaced "Coming soon" placeholder with live Bill Summary section showing Bill #N/M, route name, paid months, current month
+- `npx tsc --noEmit` passes with zero errors
+**Next session:**
+- Phase 2b (deferred): Drop `amount_due` column
+- Deploy ingest scripts to Office PC and test with live data
 
 ### 2026-05-29 (Payment History Fix + amount_due → monthly_fee+arrears + KPI Redesign) — Location: Home
 **Focus:** Fix payment history full timeline, replace amount_due with monthly_fee+arrears, compact KPI cards for dark mode
@@ -1724,3 +1957,58 @@ RBAC creates users in `profiles` (role_id=3). Staff table has 2022-2023 data wit
 | | **Total** | | ~3 hrs |
 
 **Core insight:** The source data is correct, but the database schema suppresses geography at two boundaries: (1) payment CSV → payment_history drops city/tehsil/uc on import, (2) lifecycle XLSX → survey_units never refreshes geography during enrichment. Adding these columns and normalizing the 3-city dimension makes the geography pipeline self-correcting with every monthly import.
+
+### 2026-06-01 (First Session — Data Insight Timeout Fix)
+**Focus:** Fix `get_hierarchy_stats` RPC timeout on 212K-row scan
+**Done:**
+- Created indexes: `idx_survey_units_psid`, `idx_payment_history_month_psid`, `idx_survey_units_curr_month`, `idx_survey_units_lower_uc`, `idx_survey_units_status`
+- Removed `AND ph.psid IN (SELECT psid FROM base)` from `pays` CTE — caused a correlated subquery evaluating 125K payment rows × 212K base rows
+- RPC returned in <3s
+- Standardized DB execution pattern documented
+
+### 2026-06-01 (Second Session — Complete Pipeline Fix)
+**Focus:** Fix data accuracy (status bug) + rebuild RPC with pre-computed cache
+**Data verification:** Traced MC-1 Sargodha counts across all sources:
+- Survey master (`ALL_DISTRICTS_TEHSILS_MASTER.xlsx`): **6,965** active survey IDs (ground truth)
+- Lifecycle XLSX (deleted=NO): 6,566 active
+- `survey_units` DB (before fix): 6,293 active — **582 missing, plus stuck ARCHIVED statuses**
+- `survey_units` DB (after fix): 6,293 active (status fix applied, but lifecycle-only records persist)
+
+**Enrich script bug found:** Line 262 — `if data["status"]:` guard prevented clearing ARCHIVED status when a record was re-activated. Fixed: always set `rec["status"]`, even when None.
+
+**RPC rewrites:**
+- Created `hierarchy_summary` table (~300 rows pre-computed UC-level aggregates per month)
+- Created `refresh_hierarchy_summary()` function (populates cache in ~13s)
+- Rewrote `get_hierarchy_stats` to read from cache → **0.98s response** (14x improvement over 14s full scan)
+- Fixed enrich script diff query batch size (5000→1000 to avoid "JSON could not be generated" error)
+- Updated `scripts/sql/019-aggregation-rpcs.sql` with new cache table + functions
+- Buildup: Fixed enrich script → re-ran enrichment → created cache → rewrote RPC → verified MC-1
+- KPI results: 212,428 total, 164,606 active, 47,822 archived, 40,517 no_coords, 115 surveyors, 2,966 paid, $1,999,908 total collected
+
+**Known issue:** `unique_surveyors` KPI is SUM of per-UC counts (1,253) instead of DISTINCT (115). Per-UC row-level surveyor counts are accurate. Full DISTINCT count would require scanning 212K rows, defeating the cache. Acceptable trade-off for <1s response.
+
+### 2026-06-01 (Third Session — DB Size Crisis + Cleanup)
+**Focus:** DB jumped from 252 MB → 408 MB (approaching 500 MB free tier limit)
+**Root cause:** Years of duplicate indexes from migrations that created new indexes without dropping old ones. Also MVCC bloat from the 207K-row enrichment upsert.
+**diagnosis:**
+- `survey_units`: 315 MB (202 MB table + 113 MB indexes) — 7 duplicate/unused indexes identified
+- `payment_history`: 81 MB (32 MB table + 49 MB indexes) — 1 duplicate index identified
+- TOAST tables negligibly small (8 KB each)
+
+**Dropped 9 indexes:**
+| Index | Size | Why |
+|---|---|---|
+| `idx_survey_psid_unique` | 16 MB | 3rd psid index, 2 scans ever |
+| `idx_survey_psid` | 16 MB | Duplicate of `idx_survey_units_psid` |
+| `idx_survey_tehsil` | 6.3 MB | Duplicate of `idx_survey_units_tehsil` |
+| `idx_survey_district` | 6 MB | Duplicate of `idx_survey_units_city_district` |
+| `idx_survey_status` | 6.2 MB | Duplicate of `idx_survey_units_status` |
+| `idx_survey_uc` | 6.1 MB | Replaced by `idx_survey_units_lower_uc` |
+| `idx_survey_units_curr_month` | 3.8 MB | 0 scans (RPC now uses hierarchy_summary cache) |
+| `idx_survey_units_surveyor_name` | 1.5 MB | 1 scan (created for removed subquery) |
+| `idx_payment_psid_month` | 12 MB | Duplicate of UNIQUE key + `idx_payment_history_month_psid` |
+| **Total** | **~74 MB** | |
+
+**VACUUM FULL** `survey_units` — reclaimed dead tuple space from the upsert (separate curl call, outside transaction).
+
+**Result: 408 MB → 199 MB** (209 MB reclaimed, 301 MB headroom on 500 MB limit)

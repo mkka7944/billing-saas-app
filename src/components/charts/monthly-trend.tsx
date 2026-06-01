@@ -2,9 +2,10 @@
 
 import { useTheme } from 'next-themes'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend,
 } from 'recharts'
 import type { MonthlyTrendRow } from '@/types'
+import { ChartStatsPanel, getChartStats } from '@/components/charts/chart-stats-panel'
 
 function formatRs(n: number) {
   return `Rs. ${n.toLocaleString()}`
@@ -38,8 +39,12 @@ export function MonthlyTrendChart({ data }: { data: MonthlyTrendRow[] }) {
     return <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">No data</div>
   }
 
+  const stats = getChartStats(data, [{ label: 'Months', value: data.length.toString() }])
+
   return (
-    <ResponsiveContainer width="100%" height={250}>
+    <div className="relative">
+      <ChartStatsPanel items={stats} />
+      <ResponsiveContainer width="100%" height={250}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
         <XAxis
@@ -55,6 +60,10 @@ export function MonthlyTrendChart({ data }: { data: MonthlyTrendRow[] }) {
           tickFormatter={(v: number) => v >= 10000000 ? `${(v / 10000000).toFixed(1)}Cr` : v >= 100000 ? `${(v / 100000).toFixed(1)}L` : v.toLocaleString()}
         />
         <Tooltip content={<CustomTooltip />} />
+        <Legend
+          formatter={(value: string) => <span style={{ color: textColor, fontSize: 10 }}>{value}</span>}
+          iconSize={8}
+        />
         <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={48}>
           {data.map((_, i) => (
             <Cell key={i} fill={MONTH_COLORS[i % MONTH_COLORS.length]} fillOpacity={0.85} />
@@ -62,5 +71,6 @@ export function MonthlyTrendChart({ data }: { data: MonthlyTrendRow[] }) {
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+    </div>
   )
 }

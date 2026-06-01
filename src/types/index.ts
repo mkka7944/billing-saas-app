@@ -143,6 +143,19 @@ export interface AssignmentItemWithUnit extends AssignmentItem {
   unit: AssignmentItemUnit | null
 }
 
+// ─── Bill Info (Bill Summary section in HouseDetailSheet) ──
+
+export interface BillInfo {
+  billNumber: number | null
+  billTotal: number | null
+  routeName: string | null
+  routeSeq: number | null
+  ucName: string | null
+  paidMonths: number
+  startMonth: string | null
+  currentBillMonth: string | null
+}
+
 // ─── Chart / Dashboard Types ───────────────────────────────
 
 export interface MonthlyTrendRow {

@@ -914,8 +914,32 @@ def run_layout_test(city_name):
         
     src_doc.close()
 
-def run_custom_verified_print(args, output_root):
-    custom_path = r"C:\Users\DELL\OneDrive\Documents\april-2026-downloads-edge\House_Intelligence_apr2026_2026-05-19.csv"
+def _parse_number_ranges(text):
+    """Parses '1,3,5-7' or '1 3 5-7' into a list of ints [1,3,5,6,7]."""
+    import re as _re
+    numbers = set()
+    # Split by comma or space
+    parts = _re.split(r'[,\s]+', text.strip())
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if '-' in part:
+            try:
+                a, b = part.split('-', 1)
+                start, end = int(a), int(b)
+                numbers.update(range(start, end + 1))
+            except ValueError:
+                pass
+        else:
+            try:
+                numbers.add(int(part))
+            except ValueError:
+                pass
+    return sorted(numbers)
+
+def run_custom_verified_print(args, output_root, mc_filter=None):
+    custom_path = os.path.join(BASE_DIR, "..", "outputs", "custom_sequences", "House_Intelligence_For_Printer.csv")
     if not os.path.exists(custom_path):
         log(f"[!] Custom sequence source not found: {custom_path}")
         return
@@ -949,12 +973,18 @@ def run_custom_verified_print(args, output_root):
     # Load custom sequence
     try:
         df_custom = pd.read_csv(custom_path, dtype=str)
-        df_custom = df_custom[df_custom['Area'].fillna('').str.contains(r'MC-14\b|MC-16\b', case=False, na=False, regex=True)]
+        # If mc_filter provided, filter to that MC only; otherwise use all
+        if mc_filter:
+            df_custom = df_custom[df_custom['Area'].fillna('').str.contains(mc_filter, case=False, na=False, regex=True)]
     except Exception as e:
         log(f"[!] Custom CSV read fail: {e}")
         return
 
-    # Loop over MC groups (MC-14, MC-16) preserving CSV row order
+    if df_custom.empty:
+        log(f"[!] No rows match the selected MC in custom CSV.")
+        return
+
+    # Loop over MC groups preserving CSV row order
     for mc_code, sheet_df in df_custom.groupby('Area', sort=False):
         mc_code = mc_code.strip()
         log(f"\n[*] Processing prioritized custom sequence for {mc_code}")
@@ -965,60 +995,59 @@ def run_custom_verified_print(args, output_root):
         for verifier, verifier_df in sheet_df.groupby('Verified_By', sort=False):
             verifier_name = str(verifier).split('@')[0] if verifier else 'Unknown'
             log(f"    Verifier: {verifier_name}")
-            for idx, row in verifier_df.iterrows():
+
+            # Pre-collect printable rows with resolved PSIDs to count total per verifier
+            verifier_printable = []
+            for _, row in verifier_df.iterrows():
                 psid = str(row.get('Bill_ID', '')).strip()
                 survey_id = str(row.get('SurveyID', '')).strip()
-
                 if not psid or psid == 'nan':
-                    match_master = df_master[df_master['Survey ID'] == survey_id]
-                    if not match_master.empty:
-                        psid = str(match_master.iloc[0]['Biller PSID']).strip()
-
-                if psid in psid_map:
-                    custom_psids.add(psid)
-
-                    email = str(row.get('Verified_By', 'Unknown')).split('@')[0]
-                    verified_at = str(row.get('Verified_At', ''))
-                    v_date = ''
-                    v_time = ''
-                    if verified_at and verified_at != 'nan':
-                        try:
-                            parts = verified_at.split('T')
-                            v_date = parts[0]
-                            v_time = parts[1][:8] if len(parts) > 1 else ''
-                        except:
-                            pass
-                    street = str(row.get('Street', ''))
-                    side = str(row.get('Side', ''))
-                    seq = str(row.get('Sequence', ''))
-                    right_meta = f"{email} | {v_date} {v_time} | St:{street} | Side:{side} | Seq:{seq}"
-
                     match_m = df_master[df_master['Survey ID'] == survey_id]
-                    s_name = 'N/A'
-                    s_date = ''
-                    s_time = ''
-                    paid_status = 'U-P'
                     if not match_m.empty:
-                        m_row = match_m.iloc[0]
-                        s_name = str(m_row.get('Surveyor Name', ''))
-                        s_date = str(m_row.get('Survey Date', ''))
-                        s_time = str(m_row.get('Survey Time', ''))
-                        freq = m_row.get('Total Payment Frequency', 0)
-                        try:
-                            if int(freq) > 0: paid_status = f"P-{int(freq)}"
-                        except: pass
+                        psid = str(match_m.iloc[0]['Biller PSID']).strip()
+                if psid in psid_map:
+                    verifier_printable.append((psid, survey_id, row))
 
-                    left_meta = f"SID: {survey_id} | {s_name} | {s_date} {s_time} | {paid_status}"
+            verifier_total = len(verifier_printable)
+            for v_idx, (psid, survey_id, row) in enumerate(verifier_printable, 1):
+                custom_psids.add(psid)
 
-                    mc_rows.append({
-                        'psid': psid,
-                        'survey_id': survey_id,
-                        'left_meta': left_meta,
-                        'right_meta': right_meta,
-                        'lat': '',
-                        'lng': '',
-                        'source': psid_map[psid]
-                    })
+                email = str(row.get('Verified_By', 'Unknown')).split('@')[0]
+                v_date = str(row.get('Verified_Date', ''))
+                v_time = str(row.get('Verified_Time', ''))
+                if v_date == 'nan': v_date = ''
+                if v_time == 'nan': v_time = ''
+                street = str(row.get('Street', ''))
+                side = str(row.get('Side', ''))
+                seq = str(row.get('Sequence', ''))
+                right_meta = f"{email} ({v_idx}/{verifier_total}) | {v_date} {v_time} | St:{street} | Side:{side} | Seq:{seq}"
+
+                match_m = df_master[df_master['Survey ID'] == survey_id]
+                s_name = 'N/A'
+                s_date = ''
+                s_time = ''
+                paid_status = 'U-P'
+                if not match_m.empty:
+                    m_row = match_m.iloc[0]
+                    s_name = str(m_row.get('Surveyor Name', ''))
+                    s_date = str(m_row.get('Survey Date', ''))
+                    s_time = str(m_row.get('Survey Time', ''))
+                    freq = m_row.get('Total Payment Frequency', 0)
+                    try:
+                        if int(freq) > 0: paid_status = f"P-{int(freq)}"
+                    except: pass
+
+                left_meta = f"SID: {survey_id} | {s_name} | {s_date} {s_time} | {paid_status}"
+
+                mc_rows.append({
+                    'psid': psid,
+                    'survey_id': survey_id,
+                    'left_meta': left_meta,
+                    'right_meta': right_meta,
+                    'lat': '',
+                    'lng': '',
+                    'source': psid_map[psid]
+                })
 
         # Pass 2: Gather unmapped defaults belonging to the target MC/UC
         fallback_df = df_master[df_master[uc_col].fillna('').str.contains(mc_code, case=False, na=False)].copy()
@@ -1117,6 +1146,35 @@ def main():
         elif choice == '6':
             args.mode = 'custom_verified'
             args.city = 'Sargodha'
+            # Read CSV to show MC choices
+            csv_path = os.path.join(BASE_DIR, "..", "outputs", "custom_sequences", "House_Intelligence_For_Printer.csv")
+            mc_choices = []
+            if os.path.exists(csv_path):
+                try:
+                    df_pick = pd.read_csv(csv_path, dtype=str)
+                    mc_choices = sorted(df_pick['Area'].dropna().unique())
+                except: pass
+            if mc_choices:
+                print("\n--- Select MC to Process ---")
+                for ci, mc_name in enumerate(mc_choices, 1):
+                    cnt = len(df_pick[df_pick['Area'] == mc_name])
+                    print(f"  [{ci}] {mc_name} ({cnt})")
+                print(f"  [A] All ({len(mc_choices)} MCs)")
+                print("  Enter numbers (e.g. 2,3 or 1-5 or 2 8)")
+                mc_pick = input("Enter choice: ").strip()
+                if mc_pick.upper() == 'A':
+                    args.mc_filter = None
+                else:
+                    selected = _parse_number_ranges(mc_pick)
+                    selected_names = [mc_choices[i-1] for i in selected if 1 <= i <= len(mc_choices)]
+                    if selected_names:
+                        # Build regex matching any of the selected names
+                        escaped = [re.escape(n) for n in selected_names]
+                        args.mc_filter = '(' + ')|('.join(escaped) + ')'
+                    else:
+                        args.mc_filter = None
+            else:
+                print("[!] Could not read MC list from CSV. Processing all.")
         else:
             print("Invalid choice. Exiting.")
             return
@@ -1176,8 +1234,11 @@ def main():
         return
 
     if args.mode == 'custom_verified':
+        mc_filter = getattr(args, 'mc_filter', None)
         print(f"--- [CLI] Running Custom Verified Sequence Print for {args.city} ---")
-        run_custom_verified_print(args, OUTPUT_BASE_DIR)
+        if mc_filter:
+            print(f"    MC Filter: {mc_filter}")
+        run_custom_verified_print(args, OUTPUT_BASE_DIR, mc_filter=mc_filter)
         return
 
     selected_targets = []

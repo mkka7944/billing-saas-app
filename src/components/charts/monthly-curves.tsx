@@ -6,13 +6,8 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import type { MonthlyCurveRow } from '@/types'
-
-const MONTH_ORDER = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-function sortMonths(a: string, b: string) {
-  const ya = parseInt(a.slice(3)), yb = parseInt(b.slice(3))
-  if (ya !== yb) return ya - yb
-  return MONTH_ORDER.indexOf(a.slice(0,3)) - MONTH_ORDER.indexOf(b.slice(0,3))
-}
+import { sortMonths } from '@/lib/constants'
+import { ChartStatsPanel } from '@/components/charts/chart-stats-panel'
 
 function formatRs(n: number) {
   return `Rs. ${n.toLocaleString()}`
@@ -104,6 +99,16 @@ export function MonthlyCurvesChart({ data }: { data: MonthlyCurveRow[] }) {
     return <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">No cumulative data</div>
   }
 
+  const perMonthTotal = new Map<string, number>()
+  for (const r of data) {
+    perMonthTotal.set(r.bill_month, r.cumulative_amount)
+  }
+  const totalCollected = Array.from(perMonthTotal.values()).reduce((s, v) => s + v, 0)
+  const curveStats = [
+    { label: 'Total Collected', value: `Rs. ${totalCollected.toLocaleString()}` },
+    { label: 'Months', value: months.length.toString() },
+  ]
+
   const handleLegendClick = (entry: any) => {
     setHidden((prev) => {
       const next = new Set(prev)
@@ -114,7 +119,9 @@ export function MonthlyCurvesChart({ data }: { data: MonthlyCurveRow[] }) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={300}>
+    <div className="relative">
+      <ChartStatsPanel items={curveStats} />
+      <ResponsiveContainer width="100%" height={300}>
       <LineChart data={chartData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
         <XAxis
@@ -156,5 +163,6 @@ export function MonthlyCurvesChart({ data }: { data: MonthlyCurveRow[] }) {
         ))}
       </LineChart>
     </ResponsiveContainer>
+    </div>
   )
 }

@@ -5,6 +5,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
 } from 'recharts'
 import type { CategorySummaryRow } from '@/types'
+import { ChartStatsPanel, getChartStats } from '@/components/charts/chart-stats-panel'
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Domestic Urban': '#3b82f6',
@@ -39,10 +40,12 @@ export function CategoryBreakdownChart({ data }: { data: CategorySummaryRow[] })
     return <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">No data</div>
   }
 
-  const total = data.reduce((s, r) => s + r.amount, 0)
+  const stats = getChartStats(data, [{ label: 'Categories', value: data.length.toString() }])
 
   return (
-    <ResponsiveContainer width="100%" height={230}>
+    <div className="relative">
+      <ChartStatsPanel items={stats} />
+      <ResponsiveContainer width="100%" height={230}>
       <PieChart>
         <Pie
           data={data}
@@ -68,5 +71,6 @@ export function CategoryBreakdownChart({ data }: { data: CategorySummaryRow[] })
         />
       </PieChart>
     </ResponsiveContainer>
+    </div>
   )
 }

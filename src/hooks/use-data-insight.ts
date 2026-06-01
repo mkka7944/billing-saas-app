@@ -79,7 +79,7 @@ export function useDataInsight({ filters, page, pageSize, drillUC }: UseDataInsi
         params.set('sortField', filters.sort.field)
         params.set('sortDirection', filters.sort.direction)
       }
-      params.set('status', 'active')
+      // Empty string = no status filter, show all units
       params.set('page', String(page))
       params.set('pageSize', String(pageSize))
 

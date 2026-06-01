@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
-import { useSurveyById, useSurveyPayments } from '@/hooks/use-survey-data'
+import { useSurveyById, useSurveyPayments, useSurveyBillInfo } from '@/hooks/use-survey-data'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { shortenMCName } from '@/lib/mc-utils'
 import { currentMonth } from '@/lib/constants'
@@ -32,6 +32,7 @@ export function HouseDetailSheet() {
 
   const { data: survey } = useSurveyById(selectedHouseId)
   const { data: billData } = useSurveyPayments(selectedHouseId)
+  const { data: billInfo } = useSurveyBillInfo(selectedHouseId)
   const { data: deliveryPhotos = [] } = useDeliveryPhotos(survey?.psid || null)
 
   const [imgIdx, setImgIdx] = useState(0)
@@ -247,12 +248,45 @@ export function HouseDetailSheet() {
           </div>
         )}
 
-        {/* Bill Summary — placeholder */}
+        {/* Bill Summary */}
         <div className="px-4 py-3 border-b border-border">
           <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2">Bill Summary</p>
-          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center">
-            <p className="text-xs text-muted-foreground/60 dark:text-muted-foreground/80 italic">Coming soon</p>
-          </div>
+          {billInfo ? (
+            <div className="space-y-1.5">
+              {billInfo.billNumber != null && billInfo.billTotal != null && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded px-1.5 py-0.5 shrink-0">
+                    Bill #{billInfo.billNumber}/{billInfo.billTotal}
+                  </span>
+                  {billInfo.routeName && (
+                    <span className="text-[10px] font-medium text-muted-foreground">{billInfo.routeName}</span>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Paid months:</span>
+                <span className="font-bold">{billInfo.paidMonths}</span>
+                {billInfo.startMonth && (
+                  <>
+                    <span className="text-muted-foreground">Since:</span>
+                    <span className="font-medium">{billInfo.startMonth}</span>
+                  </>
+                )}
+              </div>
+              {billInfo.currentBillMonth && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5">
+                    Current Month
+                  </span>
+                  <span className="text-xs font-medium">{billInfo.currentBillMonth}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center">
+              <p className="text-xs text-muted-foreground/60 dark:text-muted-foreground/80 italic">Loading...</p>
+            </div>
+          )}
         </div>
 
         {/* Delivery Photos */}

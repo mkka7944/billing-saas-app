@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import type { SurveyUnit, FilterState } from '@/types'
+import type { SurveyUnit, FilterState, BillInfo } from '@/types'
 
 export function useSurveyData(filters: FilterState, page = 1, pageSize = 50) {
   return useQuery({
@@ -52,6 +52,20 @@ export function useSurveyPayments(surveyId: string | null) {
       const res = await fetch(`/api/surveys/payments?surveyId=${surveyId}`)
       if (!res.ok) throw new Error('Failed to fetch payments')
       return res.json()
+    },
+    enabled: !!surveyId,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useSurveyBillInfo(surveyId: string | null) {
+  return useQuery({
+    queryKey: ['survey-bill-info', surveyId],
+    queryFn: async () => {
+      if (!surveyId) return null
+      const res = await fetch(`/api/surveys/${surveyId}/bill-info`)
+      if (!res.ok) throw new Error('Failed to fetch bill info')
+      return res.json() as Promise<BillInfo>
     },
     enabled: !!surveyId,
     staleTime: 5 * 60 * 1000,
