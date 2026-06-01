@@ -765,7 +765,7 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | RBAC.9 | 5 min | Update all role references across app (role→roleName, 'staff'→'field_staff') |
 | RBAC.10 | 15 min | Apply migration to Supabase + backfill admin + E2E test |
 
-### Phase 1 — Copy Reference Scripts from Office PC (~30 min)
+### Phase 1 — Copy Reference Scripts from Office PC (~30 min) ✅ **(Done 2026-06-01)**
 | Step | Time | Task |
 |------|------|------|
 | 1.1 | 5 min | Copy `bill-extractor-v4.py`, `pdf-psid-extractor.py`, `pdf-bill-printer.py`, `survey_filtered.py`, `generate_category_fallbacks.py` to `scripts/ref/` |
@@ -773,7 +773,7 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 1.3 | 10 min | Copy the biller list CSVs and lifecycle XLSX sample files (1 city × 1 month) for test fixtures |
 | 1.4 | 10 min | Verify all scripts parse without import errors on office PC Python |
 
-### Phase 2 — Rewrite `enrich-survey-units.py` (~2 hrs)
+### Phase 2 — Rewrite `enrich-survey-units.py` (~2 hrs) ✅ **(Done 2026-06-01)**
 | Step | Time | Task |
 |------|------|------|
 | 2.1 | 20 min | Add all 13 new fields to the upsert: `consumer_name`, `address`, `city_district`, `tehsil`, `uc_name`, `surveyor_name`, `survey_date`, `survey_time`, `lat`, `lng`, `start_month`, `status` (ARCHIVED if Deleted=Yes) |
@@ -784,7 +784,7 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 2.6 | 15 min | Write audit log to `ingest_log` |
 | 2.7 | 20 min | Refactor: move shared (DB connection, config, logging) to `scripts/lib/` utils |
 
-### Phase 3 — Create `load-payments.py` (~1 hr)
+### Phase 3 — Create `load-payments.py` (~1 hr) ✅ **(Done 2026-06-01)**
 | Step | Time | Task |
 |------|------|------|
 | 3.1 | 20 min | Write script: read combined payment CSV, parse all 12 columns, upsert to `payment_history` with `(psid, bill_month)` as upsert key |
@@ -802,7 +802,7 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 4.4 | 5 min | Backfill existing rows from lifecycle data via temporary mapping |
 | 4.5 | 5 min | Verify: "Unknown" entries in charts drop to zero |
 
-### Phase 5 — Create `ingest-all.py` Orchestrator (~1 hr)
+### Phase 5 — Create `ingest-all.py` Orchestrator (~1 hr) ✅ **(Done 2026-06-01)**
 | Step | Time | Task |
 |------|------|------|
 | 5.1 | 20 min | Interactive menu: `[1] Full Monthly [2] Daily Update [3] Quick Sync [q] Quit` |
@@ -1763,6 +1763,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-30 | 15.0 | **Billing charts dashboard — RPC aggregation for 122K payment rows.** Created `get_charts_data` RPC in `021-charts-aggregation.sql` (EXISTS-based city/tehsil filtering, cumulative curves, cycle-relative day labels from 16th). Rewrote `/api/billing-charts` route to add `day_label` in TypeScript (display logic in TS, not SQL). Connected Dashboard to `useBillingCharts`. Fixed month sort (chronological via `sortMonths` helper). Fixed tooltip: daily amounts in table format. Removed broken `useBillingStats` dependency. All chart display changes now require only TS edits + server restart — no SQL changes needed. |
 | 2026-05-30 | 16.0 | **Strategic planning: data accuracy + pipeline architecture.** Identified root cause of "Unknown" cities in Office Breakdown (payment_history lacks city/tehsil column → orphaned PSIDs → NULL in RPC join). Documented real data problem: govt survey app creates 20K+ orphaned PSIDs from deleted survey IDs. Strategy: 2-3 cycle cleanup via staff marking system + bill-printer metadata. Pipeline constraint: local scripts + app control (govt portal blocks external IPs). Added edge case #17. Updated Section 16 with DQ cleanup plan. AGENTS.md updated. |
 | 2026-05-31 | 17.0 | **Database gaps report — 8 gaps blocking pipeline streamlining.** Payment_history lacks city/tehsil/uc_name (forces LATERAL join → "Unknown" bars). Dead trigger on payment_history (calls non-existent table). No computed city dimension for 3 cities. start_month never written. 0 pipeline tables (flagged_psids, bill_print_log, ingest_log). Dead RPCs referencing dropped bill_items. Staff/profiles disconnect. Enrich script doesn't write geography. docs/SCHEMA.md created. AGENTS.md updated to remove stale references. See Section 16. |
+| 2026-06-01 | 18.0 | **Office: Pipeline overhaul — migrations 022-028 applied, geography fixed, scripts enriched, charts polished. Home: Mobile responsiveness fixes.** Office: Phase 1 reference scripts copied, enrich-survey-units/load-payments/ingest-all rewritten, dead trigger+RPCs dropped, payment_history+city geography added, pipeline tables created, charts polished (5 components), bill-info API created, HouseDetailSheet bill summary. Home: page scroll chain (map/page.tsx `min-h-0 h-full`), tab bar overflow (dashboard.tsx `overflow-x-auto`), city filter wrapping (office-breakdown.tsx). |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -1940,21 +1941,21 @@ RBAC creates users in `profiles` (role_id=3). Staff table has 2022-2023 data wit
 
 `enrich-survey-units.py` writes: psid, monthly_fee, billing_category, amount_due, arrears, route_name, route_seq, current_bill_month. It does NOT write: city_district, tehsil, uc_name, consumer_name, address — even though lifecycle XLSX likely has these. This means geography is set once during initial survey import and never refreshed. The 39,948 UNKNOWN rows are a symptom.
 
-### Summary — Priority-Ordered Fix List
+### Summary — Priority-Ordered Fix List (as of 2026-06-01)
 
-| # | Area | Fix | Est. Time |
-|---|---|---|---|
-| 1 | **Dead trigger** (CRITICAL) | DROP `trg_payment_history_refresh_summary` + `refresh_payment_summary()` | 10min |
-| 2 | **Payment geography** | Migration 022: add city/tehsil/uc_name to payment_history + update RPC + update script | 30min |
-| 3 | **City dimension** | Add `city` column to survey_units (computed or enriched) | 15min |
-| 4 | **Start month** | Add `start_month` to survey_units + update enrich script | 20min |
-| 5 | **Dead RPCs** | Migration 023: DROP dead RPCs referencing bill_items | 10min |
-| 6 | **Staff sync** | Sync staff from profiles OR migrate queries to profiles | 30min |
-| 7 | **Pipeline tables** | Migration 024: CREATE flagged_psids, bill_print_log, ingest_log | 20min |
-| 8 | **Enrich script** | Update enrich-survey-units.py to write geography columns | 30min |
-| 9 | **Payment script** | Update bill-extractor-v4.py to include city/tehsil/uc_name | 20min |
-| 10 | **updated_at** | Add updated_at column to payment_history | 5min |
-| | **Total** | | ~3 hrs |
+| # | Area | Fix | Est. | Status |
+|---|---|---|---|---|
+| 1 | **Dead trigger** (CRITICAL) | DROP `trg_payment_history_refresh_summary` + `refresh_payment_summary()` | 10min | ✅ Done (022) |
+| 2 | **Payment geography** | Migration 023: add city/tehsil/uc_name to payment_history + update RPC + update script | 30min | ✅ Done (023) |
+| 3 | **City dimension** | Add `city` column to survey_units + payment_history (computed 3-value) | 15min | ✅ Done (024) |
+| 4 | **Start month** | Add `start_month` to survey_units + enrich script | 20min | ✅ Done (028) |
+| 5 | **Dead RPCs** | DROP dead RPCs referencing bill_items | 10min | ✅ Done (025) |
+| 6 | **Staff sync** | Sync staff from profiles via trigger | 30min | ✅ Done (026) |
+| 7 | **Pipeline tables** | CREATE flagged_psids, bill_print_log, ingest_log | 20min | ✅ Done (027) |
+| 8 | **Enrich script** | Update enrich-survey-units.py to write full 21 fields including geography | 30min | ✅ Done |
+| 9 | **Payment script** | Update bill-extractor-v4.py to include city/tehsil/uc_name | 20min | ⏳ Pending |
+| 10 | **updated_at** | Add updated_at column to payment_history | 5min | ⏳ Pending |
+| | **Total** | | ~3 hrs | **~2.5 hrs done** |
 
 **Core insight:** The source data is correct, but the database schema suppresses geography at two boundaries: (1) payment CSV → payment_history drops city/tehsil/uc on import, (2) lifecycle XLSX → survey_units never refreshes geography during enrichment. Adding these columns and normalizing the 3-city dimension makes the geography pipeline self-correcting with every monthly import.
 
@@ -2012,3 +2013,77 @@ RBAC creates users in `profiles` (role_id=3). Staff table has 2022-2023 data wit
 **VACUUM FULL** `survey_units` — reclaimed dead tuple space from the upsert (separate curl call, outside transaction).
 
 **Result: 408 MB → 199 MB** (209 MB reclaimed, 301 MB headroom on 500 MB limit)
+
+### 2026-06-01 (Fourth Session — Data Insight Drill-Down Fix + More VACUUM FULL)
+**Focus:** Fix UC name casing in Data Insight drill-down and reclaim remaining MVCC bloat from earlier UPDATEs
+
+**Problems fixed:**
+- **Drill-down returning 0 records** — UC names in DB are UPPERCASE (converted from earlier session) but `data-insight/route.ts:38` lowercased drill param with `.toLowerCase()`. Unit-level query `.eq('uc_name', drillUC)` searched for lowercase against UPPERCASE — 0 matches.
+- **No index on raw `uc_name`** — seq scan of 212K rows took 9.7s. Existing `idx_survey_units_lower_uc` (functional index on `lower(TRIM(BOTH FROM uc_name))`) works but `supabase-js .filter()` can't pass SQL expressions to PostgREST.
+
+**Done:**
+1. **Removed `.toLowerCase()`** from route.ts:38 — drillUC preserves UPPERCASE from RPC, matches DB values
+2. **VACUUM FULL survey_units** — reclaimed 105 MB of MVCC bloat from earlier 212K UPPERCASE conversion UPDATE. Table went 202 MB → 97 MB (96% live data)
+3. **VACUUM FULL payment_history** — reclaimed 44 MB bloat. 85 MB → 41 MB
+4. **DB total: 343 MB → 170 MB** (saved 173 MB)
+
+**Remaining issue:** Seq scan on `.eq('uc_name', drillUC)` takes 3.9s for largest UC (MC-2, 5,851 rows). Could add RPC `get_units_for_drilldown` to use functional index for sub-second performance if needed.
+
+**Key lesson:** Management API wraps queries in transactions — VACUUM FULL must be a SINGLE statement curl call. `VACUUM FULL survey_units; VACUUM FULL payment_history;` (two statements) fails. Two separate calls succeed.
+
+### 2026-06-01 (Office Session — Pipeline Overhaul + Geography Fix + Charts Polish) — Location: Office
+**Focus:** Run migrations 022-028, fix geography pipeline, copy source scripts, polish charts UI, create bill-info API
+**Done:**
+
+**Phase 1 — Copy reference scripts from Office PC (5 scripts):**
+- `scripts/ref/bill-extractor-v4.py` (489 lines) — daily payment CSV fetcher from SWMC portal
+- `scripts/ref/pdf-psid-extractor.py` (850 lines) — monthly A4 PDF → lifecycle XLSX extractor
+- `scripts/ref/survey_filtered.py` (830 lines) — survey data from portal
+- `scripts/ref/pdf-bill-printer.py` — updated A5 print PDF generator
+- `scripts/ref/config.py` (78 lines) + `scripts/ref/generate_category_fallbacks.py` (116 lines)
+- All 5 reference scripts verified with commit `c19c87f`
+
+**SQL Migrations 022-028 — Applied to Supabase:**
+- `022-drop-dead-payment-trigger.sql` — DROP `trg_payment_history_refresh_summary` + `refresh_payment_summary()` function (production blocker fixed)
+- `023-add-payment-geography.sql` — `ALTER TABLE payment_history ADD COLUMN city_district text, tehsil text, uc_name text`. Backfilled 122K rows from `survey_units` via psid join. Created `idx_payment_city`, `idx_payment_tehsil` indexes
+- `024-add-city-dimension.sql` — `ALTER TABLE survey_units ADD COLUMN city text`, `ALTER TABLE payment_history ADD COLUMN city text`. Backfilled computed 3-value dimension (SARGODHA=SARGODHA::SARGODHA, BHALWAL=SARGODHA::BHALWAL, KHUSHAB=KHUSHAB::KHUSHAB, else UNKNOWN). Created `idx_payment_city_v2`, `idx_survey_city` indexes. Geography pipeline now self-correcting with every monthly import
+- `025-drop-dead-rpcs.sql` — DROP `get_billing_summary`, `get_billing_group_stats`, `set_bill_items_tehsil` (all referenced dropped `bill_items`)
+- `026-staff-sync-trigger.sql` — `trg_sync_profile_to_staff` on `profiles` INSERT/UPDATE/DELETE: auto-creates/updates/deactivates `staff` rows for `field_staff` profiles
+- `027-pipeline-tables.sql` — created `flagged_psids` (ghost marking), `bill_print_log` (printer metadata), `ingest_log` (audit trail) with indexes + RLS
+- `028-start-month.sql` — `ALTER TABLE survey_units ADD COLUMN start_month text`. Indexed. Enables precise billing history display
+
+**Pipeline scripts updated (Phases 2/3/5):**
+- `enrich-survey-units.py` — 12 new fields added: consumer_name, address, city_district, tehsil, uc_name, surveyor_name, survey_date, survey_time, lat, lng, start_month, status (ARCHIVED if Deleted=Yes). Includes `--exclude-ghosts` flag, diff report, reference table sync, audit log
+- `load-payments.py` — reads combined payment CSV, upserts to `payment_history` on `(psid, bill_month)` conflict key. Includes city_district, tehsil, uc_name from CSV columns. Idempotent, batch upsert (500), audit log
+- `ingest-all.py` — interactive menu: [1] Full Monthly [2] Daily Update [3] Quick Sync [q] Quit. CLI: `--month`, `--daily`, `--file`, `--dry-run`. Sequential orchestration, error handling, combined audit log
+
+**Charts dashboard polish:**
+- `chart-stats-panel.tsx` — new reusable component for chart stat badges (replaces inlined HTML in all chart files)
+- `category-breakdown.tsx` — refactored with chart-stats-panel, codelen icons, bottom total row, legend formatter
+- `monthly-curves.tsx` — refactored with chart-stats-panel, tooltip as separate CustomTooltip, Brush at bottom, legend with color dots
+- `monthly-trend.tsx` — refactored with chart-stats-panel, month-axis tick rotation, ResponsiveContainer height
+- `office-breakdown.tsx` — major refactor: chart-stats-panel, city filter buttons, sticky first column with left-0 bg-card z-10, overflow-x-auto table scroll, month label bars
+- `dashboard.tsx` — refactored with chart-stats-panel, tab bar responsive, KPI cards with compact grid
+
+**Frontend additions:**
+- `GET /api/surveys/[survey_id]/bill-info` — new endpoint returning bill number within UC, route info, paid months, current month status
+- `src/types/index.ts` — `BillInfo`, `ChartStatsPanelItem` types added
+- `src/hooks/use-survey-data.ts` — `useSurveyBillInfo` hook added
+- `src/components/house-detail-sheet.tsx` — Bill Summary section with live data (bill #N/M, route name, paid months, current month badge)
+- `src/lib/constants.ts` — `CHART_COLORS`, `MONTHS`, `MONTH_COLORS` consolidated
+- All changes pass `npx tsc --noEmit` with zero errors
+
+**Key decisions:**
+- `payment_history` now has independent geography (city_district, tehsil, uc_name, city) — no LATERAL join needed for charts
+- 3-value city dimension is a computed column — normalized on every migration/import
+- Dead trigger + 3 dead RPCs finally removed — no more PAYMENT_HISTORY mutation errors
+- Pipeline pipeline complete: source scripts copied, ingest scripts written, orchestrator built
+- Remaining work: Phase A (Admin Assignment UI), Phase B (Field Staff Delivery UI), Phase C (Admin Dashboard), Phase Z (Audit Cleanup), Phase 2b (drop amount_due)
+
+### 2026-06-01 (Mobile Responsiveness Fixes) — Location: Home
+**Focus:** Fix page scrolling, tab overflow, and city filter wrapping on mobile
+**Done:**
+- Fixed page scroll: Added `min-h-0 h-full` to `div.flex-1.relative` in `map/page.tsx:34` — constrains Dashboard height so `overflow-y-auto` activates
+- Fixed tab overflow: Added `overflow-x-auto` to tab bar in `dashboard.tsx:175` — 4 tabs (~500px) now scrollable on iPhone SE (375px)
+- Fixed filter wrapping: Removed `overflow-hidden` from city filter container in `office-breakdown.tsx:115` — `flex-wrap` now works without clipping wrapped button rows
+- All 3 changes pass `npx tsc --noEmit` with zero errors

@@ -36,14 +36,14 @@ BEGIN
   SELECT
     COALESCE(NULLIF(trim(su.city_district), ''), 'UNKNOWN'),
     COALESCE(NULLIF(trim(su.tehsil), ''), 'UNKNOWN'),
-    COALESCE(LOWER(NULLIF(trim(su.uc_name), '')), 'UNKNOWN'),
+    COALESCE(UPPER(NULLIF(trim(su.uc_name), '')), 'UNKNOWN'),
     p_month,
     COUNT(*)::int,
     COUNT(*) FILTER (WHERE su.status IS NULL OR su.status = 'ACTIVE')::int,
     COUNT(*) FILTER (WHERE su.status IS NOT NULL AND su.status != 'ACTIVE')::int,
     COUNT(*) FILTER (WHERE su.lat IS NULL OR su.lng IS NULL)::int,
     COUNT(DISTINCT su.surveyor_name) FILTER (WHERE su.surveyor_name IS NOT NULL)::int,
-    COUNT(*) FILTER (WHERE su.current_bill_month = p_month AND su.amount_due > 0)::int,
+    COUNT(*) FILTER (WHERE su.psid IS NOT NULL)::int,
     COUNT(ph.psid)::int,
     COALESCE(SUM(ph.total_paid), 0)
   FROM survey_units su
@@ -53,7 +53,11 @@ BEGIN
     WHERE bill_month = p_month AND payment_status = 'paid'
     GROUP BY psid
   ) ph ON ph.psid = su.psid
-  GROUP BY su.city_district, su.tehsil, LOWER(NULLIF(trim(su.uc_name), ''));
+  WHERE su.uc_name IS NOT NULL
+    AND TRIM(su.uc_name) != ''
+    AND UPPER(TRIM(su.uc_name)) NOT IN ('UNKNOWN', 'TCP ZONE 4')
+    AND UPPER(TRIM(su.uc_name)) !~ '^\d+$'
+  GROUP BY su.city_district, su.tehsil, UPPER(NULLIF(trim(su.uc_name), ''));
 END;
 $$;
 
@@ -157,7 +161,7 @@ BEGIN
     WHERE bill_month = p_month
       AND (p_district = '' OR city_district = p_district)
       AND (p_tehsil = '' OR tehsil = p_tehsil)
-      AND (p_uc = '' OR uc_name = LOWER(trim(p_uc)))
+      AND (p_uc = '' OR uc_name = UPPER(TRIM(p_uc)))
   ),
   kpi AS (
     SELECT
@@ -165,10 +169,23 @@ BEGIN
       SUM(base.active_units) AS active_units,
       SUM(base.archived_units) AS archived_units,
       SUM(base.no_coords) AS no_coords,
-      SUM(base.surveyors) AS unique_surveyors,
+      (SELECT COUNT(DISTINCT su.surveyor_name) FROM survey_units su
+       WHERE (p_district = '' OR su.city_district = p_district)
+         AND (p_tehsil = '' OR su.tehsil = p_tehsil)
+         AND (p_uc = '' OR UPPER(TRIM(su.uc_name)) = UPPER(TRIM(p_uc)))
+         AND su.surveyor_name IS NOT NULL
+      ) AS unique_surveyors,
       SUM(base.billed_units) AS billed_units,
-      SUM(base.paid_units) AS paid_units,
-      SUM(base.total_collected) AS total_collected
+      (SELECT COUNT(DISTINCT ph.psid)::int FROM payment_history ph
+       WHERE ph.bill_month = p_month AND ph.payment_status = 'paid'
+         AND (p_district = '' OR ph.city_district = p_district)
+         AND (p_tehsil = '' OR ph.tehsil = p_tehsil)
+      ) AS paid_units,
+      (SELECT COALESCE(SUM(ph.amount_paid), 0) FROM payment_history ph
+       WHERE ph.bill_month = p_month AND ph.payment_status = 'paid'
+         AND (p_district = '' OR ph.city_district = p_district)
+         AND (p_tehsil = '' OR ph.tehsil = p_tehsil)
+      ) AS total_collected
     FROM base
   ),
   grouped AS (

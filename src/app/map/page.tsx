@@ -31,7 +31,7 @@ export default function MapPage() {
   return (
     <AppShell>
       <div className="flex flex-col h-full">
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-0 h-full">
           {activeView === 'map' && <MapView />}
           {activeView === 'list' && <SurveyList />}
           {activeView === 'stats' && <Dashboard />}

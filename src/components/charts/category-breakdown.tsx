@@ -31,7 +31,7 @@ function CustomTooltip({ active, payload }: any) {
   )
 }
 
-export function CategoryBreakdownChart({ data }: { data: CategorySummaryRow[] }) {
+export function CategoryBreakdownChart({ data, title }: { data: CategorySummaryRow[]; title?: string }) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
   const textColor = isDark ? '#9ca3af' : '#6b7280'
@@ -43,8 +43,11 @@ export function CategoryBreakdownChart({ data }: { data: CategorySummaryRow[] })
   const stats = getChartStats(data, [{ label: 'Categories', value: data.length.toString() }])
 
   return (
-    <div className="relative">
-      <ChartStatsPanel items={stats} />
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-1 mb-3">
+        {title && <h3 className="text-sm font-semibold">{title}</h3>}
+        <ChartStatsPanel items={stats} />
+      </div>
       <ResponsiveContainer width="100%" height={230}>
       <PieChart>
         <Pie

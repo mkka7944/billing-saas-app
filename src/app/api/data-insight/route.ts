@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     const sup = await createClient()
     const lvl: AggRow['level'] = !district ? 'district' : !tehsil ? 'tehsil' : 'uc'
     const dbStatus = statusParam === 'active' ? 'ACTIVE' : statusParam === 'archived' ? 'ARCHIVED' : ''
-    const drillUC = (sp.get('drill') || '').toLowerCase()
+    const drillUC = sp.get('drill') || ''
 
     // --- Delivery KPIS (independent queries, no psid dependency) ---
     const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
@@ -101,7 +101,7 @@ export async function GET(request: Request) {
       let unitQuery = sup
         .from('survey_units')
         .select('survey_id, psid, consumer_name, status, amount_due, surveyor_name, survey_date, survey_time, monthly_fee, arrears', { count: 'exact' })
-        .eq('uc_name', drillUC.toLowerCase())
+        .eq('uc_name', drillUC)
 
       if (dbStatus) unitQuery = unitQuery.eq('status', dbStatus)
 

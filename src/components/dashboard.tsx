@@ -10,14 +10,16 @@ import { MonthlyTrendChart } from '@/components/charts/monthly-trend'
 import { CategoryBreakdownChart } from '@/components/charts/category-breakdown'
 import { MonthlyCurvesChart } from '@/components/charts/monthly-curves'
 import { OfficeBreakdownChart } from '@/components/charts/office-breakdown'
+import { OrphanPsidTable } from '@/components/orphan-psid-table'
 import { cn } from '@/lib/utils'
 
-type TabId = 'overview' | 'monthly' | 'offices'
+type TabId = 'overview' | 'monthly' | 'offices' | 'orphans'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'monthly', label: 'Monthly Performance' },
   { id: 'offices', label: 'Office Breakdown' },
+  { id: 'orphans', label: 'Orphans' },
 ]
 
 function formatRs(n: number) {
@@ -150,7 +152,7 @@ export function Dashboard() {
   ]
 
   return (
-    <div className="flex-1 overflow-y-auto min-h-0">
+    <div className="h-full overflow-y-auto">
       <div className="p-4 space-y-4">
         {/* KPI Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -170,7 +172,7 @@ export function Dashboard() {
         </div>
 
         {/* Tab Bar */}
-        <div className="flex gap-1 border-b pb-0">
+        <div className="flex gap-1 border-b pb-0 overflow-x-auto">
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -191,30 +193,30 @@ export function Dashboard() {
         {activeTab === 'overview' && (
           <div className="space-y-4">
             <div className="rounded-lg border bg-card p-4">
-              <h3 className="text-sm font-semibold mb-3">Monthly Collection Trend</h3>
-              <MonthlyTrendChart data={chartsData?.monthly_trend || []} />
+              <MonthlyTrendChart data={chartsData?.monthly_trend || []} title="Monthly Collection Trend" />
             </div>
             <div className="rounded-lg border bg-card p-4">
-              <h3 className="text-sm font-semibold mb-3">Billing Category Split</h3>
-              <CategoryBreakdownChart data={chartsData?.category_summary || []} />
+              <CategoryBreakdownChart data={chartsData?.category_summary || []} title="Billing Category Split" />
             </div>
           </div>
         )}
 
         {activeTab === 'monthly' && (
           <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold">Daily Collection Comparison</h3>
-              <p className="text-[10px] text-muted-foreground">Click legend to toggle months</p>
-            </div>
-            <MonthlyCurvesChart data={chartsData?.monthly_curves || []} />
+            <MonthlyCurvesChart data={chartsData?.monthly_curves || []} title="Daily Collection Comparison" />
+            <p className="mt-2 text-[10px] text-muted-foreground text-right">Click legend to toggle months</p>
           </div>
         )}
 
         {activeTab === 'offices' && (
           <div className="rounded-lg border bg-card p-4">
-            <h3 className="text-sm font-semibold mb-3">Tehsil Office × Month Collection</h3>
-            <OfficeBreakdownChart data={chartsData?.tehsil_breakdown || []} />
+            <OfficeBreakdownChart data={chartsData?.tehsil_breakdown || []} title="Tehsil Office × Month Collection" />
+          </div>
+        )}
+
+        {activeTab === 'orphans' && (
+          <div className="rounded-lg border bg-card p-4">
+            <OrphanPsidTable />
           </div>
         )}
       </div>

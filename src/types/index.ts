@@ -189,7 +189,7 @@ export interface MonthlyCurveRow {
   day: number
   daily_amount: number
   cumulative_amount: number
-  day_label: number
+  day_label: string
 }
 
 export interface ChartKpi {
@@ -204,4 +204,20 @@ export interface BillingChartsData {
   tehsil_breakdown: TehsilBreakdownRow[]
   monthly_curves: MonthlyCurveRow[]
   kpi: ChartKpi
+}
+
+export interface OrphanPsidRow {
+  psid: string
+  bill_month: string
+  amount_paid: number
+  paid_date: string
+  city_district: string | null
+  tehsil: string | null
+  uc_name: string | null
+}
+
+export interface OrphanPsidsData {
+  rows: OrphanPsidRow[]
+  total: number
+  month_totals: { bill_month: string; psids: number; amount: number }[]
 }

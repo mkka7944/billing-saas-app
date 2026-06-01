@@ -16,7 +16,7 @@ interface StatItem {
 export function ChartStatsPanel({ items }: { items: StatItem[] }) {
   if (!items.length) return null
   return (
-    <div className="absolute top-2 right-2 z-10 rounded-lg border bg-card/90 backdrop-blur-sm px-3 py-2 text-xs shadow-sm space-y-0.5">
+    <div className="inline-flex flex-wrap gap-x-4 gap-y-0.5 rounded-lg border bg-card/90 backdrop-blur-sm px-3 py-2 text-xs shadow-sm shrink-0">
       {items.map((item) => (
         <div key={item.label} className="flex items-center gap-3">
           <span className="text-muted-foreground">{item.label}</span>

@@ -29,7 +29,7 @@ const MONTH_COLORS = [
   '#f97316', '#84cc16', '#ec4899',
 ]
 
-export function MonthlyTrendChart({ data }: { data: MonthlyTrendRow[] }) {
+export function MonthlyTrendChart({ data, title }: { data: MonthlyTrendRow[]; title?: string }) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme === 'dark'
   const gridColor = isDark ? '#374151' : '#e5e7eb'
@@ -42,8 +42,11 @@ export function MonthlyTrendChart({ data }: { data: MonthlyTrendRow[] }) {
   const stats = getChartStats(data, [{ label: 'Months', value: data.length.toString() }])
 
   return (
-    <div className="relative">
-      <ChartStatsPanel items={stats} />
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-1 mb-3">
+        {title && <h3 className="text-sm font-semibold">{title}</h3>}
+        <ChartStatsPanel items={stats} />
+      </div>
       <ResponsiveContainer width="100%" height={250}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
