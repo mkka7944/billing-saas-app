@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { currentMonth } from '@/lib/constants'
 import { chunkArray } from '@/lib/utils'
 import type { SortField, SortDirection } from '@/types'
+import { applyActiveFilter } from '@/lib/queries/survey-units'
 
 const COLS = 'survey_id, consumer_name, address, lat, lng, city_district, tehsil, uc_name, surveyor_name, survey_date, survey_time, monthly_fee, billing_category, status, psid, amount_due, arrears, route_name, route_seq, current_bill_month, image_urls'
 
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
   const from = (page - 1) * ps
   const sort = parseSort(sp)
 
-  let q = sup.from('survey_units').select(COLS, { count: 'exact' }).eq('status', 'ACTIVE')
+  let q = applyActiveFilter(sup.from('survey_units').select(COLS, { count: 'exact' }))
   if (districts.length) q = q.in('city_district', districts)
   if (tehsils.length) q = q.in('tehsil', tehsils)
   if (ucs.length) q = q.in('uc_name', ucs)

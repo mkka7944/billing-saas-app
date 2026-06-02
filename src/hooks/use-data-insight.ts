@@ -25,6 +25,13 @@ export interface DeliveryKpis {
   staff_with_deliveries: number
 }
 
+export interface FlaggedSummary {
+  action: 'DO_NOT_DELIVER' | 'DELIVER' | 'PENDING'
+  label: string
+  icon: string
+  plus_count: number
+}
+
 export interface UnitRow {
   survey_id: string
   psid: string
@@ -37,6 +44,11 @@ export interface UnitRow {
   amount_paid: number
   monthly_fee: number
   arrears: number
+  flagged_reason?: string | null
+  flagged_notes?: string | null
+  flagged_at?: string | null
+  flagged_summary?: FlaggedSummary
+  flagged_entries?: { psid: string; reason: string; notes: string | null }[]
 }
 
 export interface DataInsightResponse {
@@ -62,11 +74,12 @@ interface UseDataInsightParams {
   page: number
   pageSize: number
   drillUC?: string | null
+  status?: 'active' | 'archived' | 'duplicates'
 }
 
-export function useDataInsight({ filters, page, pageSize, drillUC }: UseDataInsightParams) {
+export function useDataInsight({ filters, page, pageSize, drillUC, status }: UseDataInsightParams) {
   return useQuery<DataInsightResponse>({
-    queryKey: ['data-insight', filters, page, pageSize, drillUC],
+    queryKey: ['data-insight', filters, page, pageSize, drillUC, status],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (filters.districts.length) params.set('district', filters.districts[0])
@@ -75,6 +88,7 @@ export function useDataInsight({ filters, page, pageSize, drillUC }: UseDataInsi
       if (filters.surveyor) params.set('surveyor', filters.surveyor)
       if (filters.billMonth) params.set('billMonth', filters.billMonth)
       if (drillUC) params.set('drill', drillUC)
+      if (drillUC && status) params.set('status', status)
       if (filters.sort) {
         params.set('sortField', filters.sort.field)
         params.set('sortDirection', filters.sort.direction)

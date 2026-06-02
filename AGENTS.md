@@ -34,6 +34,28 @@ All plans, data model, workflow, edge case decisions, and session history live t
 - Types: `src/types/index.ts`
 - Stores: `src/stores/{store-name}.ts`
 - API routes: `src/app/api/{resource}/route.ts`
+- Shared query modules: `src/lib/queries/{feature}.ts`
+
+## Data Layer Rules (CRITICAL — prevent duplicate query logic)
+1. **All client data goes through SSR API routes** — hooks `fetch('/api/*')`. The only exception is `supabase.auth.*` calls (signInWithPassword, getSession, signOut) which use the Supabase Auth SDK client-side.
+2. **No direct `.from('table')` calls outside `src/app/api/`** — this means NO `createClient()` imports in stores, components, or hooks. The auth-store was refactored to call `GET /api/auth/profile` instead of querying `profiles` directly.
+3. **Use shared query modules in `src/lib/queries/`** — never hardcode `status` filters or column lists in route files. Import from the shared modules instead:
+   - `src/lib/queries/survey-units.ts` — `applyActiveFilter(query)` replaces all `.eq('status', 'ACTIVE')` calls. The correct filter is `or('status.is.null,status.eq.ACTIVE')` because enriched units (those with PSIDs) have `status = NULL`.
+   - `src/lib/queries/pagination.ts` — `parsePagination(request)` and `applyPagination(query, p)` for consistent pagination.
+   - `src/lib/queries/constants.ts` — `SURVEY_UNIT_COLS`, `STALE_TIMES` constants.
+4. **One source of truth for `survey_units.status` filtering:**
+   - `ACTIVE` = `or('status.is.null,status.eq.ACTIVE')` (includes enriched null-status units)
+   - `ARCHIVED` = `not('status', 'is', null).neq('status', 'ACTIVE')`
+   - `DUPLICATES` = filtered via `flagged_psids` join
+   Never use bare `.eq('status', 'ACTIVE')` — it misses the 159,924 null-status enriched units.
+5. **Never `select('*')`** — always use explicit column lists. For count-only queries (`head: true`), `select('*')` is acceptable since no rows are returned.
+6. **Every hook must have explicit `staleTime`** — never leave it at default 0. Use `STALE_TIMES` constants from `src/lib/queries/constants.ts`:
+   - `STALE_TIMES.REFERENCE` (30min) for hierarchy, bill_months, staff list
+   - `STALE_TIMES.BILLING` (5min) for surveys, data-insight, charts, stats
+   - `STALE_TIMES.DELIVERY` (30s) for assignments, delivery photos
+   - `STALE_TIMES.PERFORMANCE` (2min) for staff stats/performance
+7. **Mutate → invalidate pattern**: Every mutation must invalidate the query keys it affects. Invalidating the prefix (e.g., `['assignment-totals']`) invalidates all sub-keys (e.g., `['assignment-totals', month, district]`).
+8. **Column constants in API routes** — define once at the top of the route file (e.g., `const COLS = 'col1, col2, col3'`). These are per-route because each endpoint needs different columns. Only shared column lists (like `SURVEY_UNIT_COLS`) go in `src/lib/queries/constants.ts`.
 
 ## Two User Modes
 - **Field Staff:** Mobile-first. Route: `/deliver`. Sees only assigned bills. Full-screen map, bottom sheet detail, photo capture flow, progress bar.

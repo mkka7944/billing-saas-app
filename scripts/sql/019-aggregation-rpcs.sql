@@ -163,10 +163,20 @@ BEGIN
       AND (p_tehsil = '' OR tehsil = p_tehsil)
       AND (p_uc = '' OR uc_name = UPPER(TRIM(p_uc)))
   ),
+  status_filter AS (
+    SELECT psid FROM survey_units
+    WHERE p_status = ''
+       OR (p_status = 'ACTIVE' AND (status IS NULL OR status = 'ACTIVE'))
+       OR (p_status = 'ARCHIVED' AND status IS NOT NULL AND status != 'ACTIVE')
+  ),
   kpi AS (
     SELECT
-      CASE WHEN p_status = 'ACTIVE' THEN SUM(base.active_units) ELSE SUM(base.total_units) END AS total_units,
-      SUM(base.active_units) AS active_units,
+      CASE
+        WHEN p_status = 'ACTIVE' THEN SUM(base.active_units)
+        WHEN p_status = 'ARCHIVED' THEN SUM(base.archived_units)
+        ELSE SUM(base.total_units)
+      END AS total_units,
+      CASE WHEN p_status = 'ARCHIVED' THEN 0 ELSE SUM(base.active_units) END AS active_units,
       SUM(base.archived_units) AS archived_units,
       SUM(base.no_coords) AS no_coords,
       (SELECT COUNT(DISTINCT su.surveyor_name) FROM survey_units su
@@ -174,17 +184,20 @@ BEGIN
          AND (p_tehsil = '' OR su.tehsil = p_tehsil)
          AND (p_uc = '' OR UPPER(TRIM(su.uc_name)) = UPPER(TRIM(p_uc)))
          AND su.surveyor_name IS NOT NULL
+         AND su.psid IN (SELECT psid FROM status_filter)
       ) AS unique_surveyors,
       SUM(base.billed_units) AS billed_units,
       (SELECT COUNT(DISTINCT ph.psid)::int FROM payment_history ph
        WHERE ph.bill_month = p_month AND ph.payment_status = 'paid'
          AND (p_district = '' OR ph.city_district = p_district)
          AND (p_tehsil = '' OR ph.tehsil = p_tehsil)
+         AND ph.psid IN (SELECT psid FROM status_filter)
       ) AS paid_units,
       (SELECT COALESCE(SUM(ph.amount_paid), 0) FROM payment_history ph
        WHERE ph.bill_month = p_month AND ph.payment_status = 'paid'
          AND (p_district = '' OR ph.city_district = p_district)
          AND (p_tehsil = '' OR ph.tehsil = p_tehsil)
+         AND ph.psid IN (SELECT psid FROM status_filter)
       ) AS total_collected
     FROM base
   ),
@@ -194,8 +207,12 @@ BEGIN
            WHEN p_tehsil = '' THEN base.tehsil
            WHEN p_uc = '' THEN base.uc_name
            ELSE base.uc_name END AS gk,
-      CASE WHEN p_status = 'ACTIVE' THEN SUM(base.active_units) ELSE SUM(base.total_units) END AS total_units,
-      SUM(base.active_units) AS active,
+      CASE
+        WHEN p_status = 'ACTIVE' THEN SUM(base.active_units)
+        WHEN p_status = 'ARCHIVED' THEN SUM(base.archived_units)
+        ELSE SUM(base.total_units)
+      END AS total_units,
+      CASE WHEN p_status = 'ARCHIVED' THEN 0 ELSE SUM(base.active_units) END AS active,
       SUM(base.billed_units) AS billed,
       SUM(base.paid_units) AS paid,
       SUM(base.total_collected) AS collected,

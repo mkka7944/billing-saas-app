@@ -84,13 +84,18 @@ def main():
 
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # Load flagged PSIDs to exclude
+    # Load flagged PSIDs and flagged SIDs to exclude
     excluded_psids = set()
+    excluded_sids = set()
     if args.exclude_ghosts:
         try:
-            r = sb.table("flagged_psids").select("psid").execute()
-            excluded_psids = {row["psid"] for row in r.data}
-            print(f"Excluding {len(excluded_psids)} flagged PSIDs")
+            r = sb.table("flagged_psids").select("psid,survey_id").execute()
+            for row in r.data:
+                if row.get("psid"):
+                    excluded_psids.add(row["psid"])
+                if row.get("survey_id"):
+                    excluded_sids.add(row["survey_id"].upper())
+            print(f"Excluding {len(excluded_psids)} flagged PSIDs, {len(excluded_sids)} flagged SIDs")
         except Exception as e:
             print(f"Warning: could not load flagged_psids: {e}")
 
@@ -148,6 +153,7 @@ def main():
     # Build enrichment map: survey_id -> {psid, monthly_fee, amount_due, arrears, ...}
     enrichment = {}
     seen_surveys = set()
+    all_psids_for_sid = defaultdict(set)  # SID -> {all PSIDs seen across all rows}
 
     for lf in files:
         match = re.search(r"(Apr|Aug|Dec|Feb|Jan|Jul|Jun|Mar|May|Nov|Oct|Sep)(20[0-9]{2})", lf)
@@ -164,16 +170,22 @@ def main():
             if not psid:
                 continue
 
-            if excluded_psids and psid in excluded_psids:
-                continue
-
             sid = str(row.get(sid_col, "")).strip().upper()
             if not sid or sid == "NAN" or not sid.lstrip("0"):
+                continue
+
+            # Track ALL PSIDs for duplicate detection (before exclude check)
+            all_psids_for_sid[sid].add(psid)
+
+            if excluded_psids and psid in excluded_psids:
                 continue
 
             if sid not in seen_surveys:
                 seen_surveys.add(sid)
                 deleted = safe_str(row.get(deleted_col, "")).upper()
+                # Force archive if SID is in flagged_psids (from SID-zubair or admin)
+                if args.exclude_ghosts and sid in excluded_sids:
+                    deleted = "YES"
                 enrichment[sid] = {
                     "psid": psid,
                     "monthly_fee": safe_int(row.get(fee_col, "0")),
@@ -187,7 +199,7 @@ def main():
                     "city_district": first_found(city_col_candidates, row).upper(),
                     "tehsil": safe_str(row.get(tehsil_col, "")).upper(),
                     "uc_name": safe_str(row.get(uc_col, "")),
-                    "surveyor_name": safe_str(row.get(surveyor_col, "")),
+                    "surveyor_name": safe_str(row.get(surveyor_name_col, "")),
                     "survey_date": safe_str(row.get(survey_date_col, "")) or None,
                     "survey_time": safe_str(row.get(survey_time_col, "")) or None,
                     "lat": safe_float(row.get(lat_col, 0)),
@@ -205,6 +217,84 @@ def main():
         print(f"  {lf}: {count} rows -> {len(seen_surveys)} unique survey_ids so far")
 
     print(f"Total survey_ids to enrich: {len(enrichment)}")
+
+    # Write lifecycle deletions to flagged_psids
+    dup_flagged = 0
+    if args.exclude_ghosts:
+        flagged_batch = []
+        for sid, data in enrichment.items():
+            if data["status"] == "ARCHIVED" and sid not in excluded_sids:
+                flagged_batch.append({
+                    "psid": data["psid"],
+                    "reason": "portal_deleted",
+                    "survey_id": sid,
+                    "notes": "Deleted in Portal from lifecycle file",
+                })
+                if len(flagged_batch) >= 500:
+                    try:
+                        sb.table("flagged_psids").upsert(
+                            flagged_batch, on_conflict="psid,reason"
+                        ).execute()
+                    except Exception as e:
+                        print(f"  Error flagging portal_deleted: {e}")
+                    flagged_batch = []
+        if flagged_batch:
+            try:
+                sb.table("flagged_psids").upsert(
+                    flagged_batch, on_conflict="psid,reason"
+                ).execute()
+            except Exception as e:
+                print(f"  Error flagging portal_deleted (final): {e}")
+        flagged_count = sum(1 for sid, d in enrichment.items() if d["status"] == "ARCHIVED" and sid not in excluded_sids)
+        print(f"  Flagged portal_deleted: {flagged_count}")
+
+        # --- PSID Duplicate Detection ---
+        dup_sids = {sid: psids for sid, psids in all_psids_for_sid.items() if len(psids) >= 2}
+        print(f"  SIDs with 2+ PSIDs: {len(dup_sids)}")
+
+        if dup_sids:
+            # Bulk-fetch payment history for all PSIDs involved
+            all_dup_psids = set()
+            for psids in dup_sids.values():
+                all_dup_psids.update(psids)
+            paid_psids = set()
+            try:
+                r = sb.table("payment_history").select("psid").eq("payment_status", "paid").execute()
+                paid_psids = {row["psid"] for row in r.data}
+            except Exception as e:
+                print(f"  Warning: could not load payment_history: {e}")
+
+            dup_flag_batch = []
+            for sid, psids in dup_sids.items():
+                keeper = enrichment[sid]["psid"]
+                surplus = [p for p in psids if p != keeper and p not in excluded_psids]
+                for sp in surplus:
+                    has_payment = sp in paid_psids
+                    reason = "psid_duplicate_superseded" if has_payment else "psid_duplicate_orphan"
+                    dup_flag_batch.append({
+                        "psid": sp,
+                        "reason": reason,
+                        "survey_id": sid,
+                        "notes": f"Keeper: {keeper}. This PSID {'had payments' if has_payment else 'never paid'}.",
+                    })
+                    if len(dup_flag_batch) >= 500:
+                        try:
+                            sb.table("flagged_psids").upsert(
+                                dup_flag_batch, on_conflict="psid,reason"
+                            ).execute()
+                            dup_flagged += len(dup_flag_batch)
+                        except Exception as e:
+                            print(f"  Error flagging duplicates: {e}")
+                        dup_flag_batch = []
+            if dup_flag_batch:
+                try:
+                    sb.table("flagged_psids").upsert(
+                        dup_flag_batch, on_conflict="psid,reason"
+                    ).execute()
+                    dup_flagged += len(dup_flag_batch)
+                except Exception as e:
+                    print(f"  Error flagging duplicates (final): {e}")
+            print(f"  Surplus PSIDs flagged: {dup_flagged}")
 
     if not enrichment:
         print("Nothing to do.")
@@ -227,7 +317,7 @@ def main():
             print(f"  Warning: diff query at offset {i}: {e}")
     new_count = len(all_sids) - len(existing_ids)
     update_count = len(existing_ids)
-    print(f"  New: {new_count}  Existing (will update): {update_count}  Skipped (ghosts): {len(excluded_psids)}")
+    print(f"  New: {new_count}  Existing (will update): {update_count}  Skipped (ghosts): {len(excluded_psids)}  Flagged SIDs: {len(excluded_sids)}")
 
     # Update survey_units in batches
     print(f"\nUpdating survey_units ({len(enrichment)} rows)...")
@@ -315,6 +405,8 @@ def main():
             "metadata": {
                 "files": files,
                 "excluded_psids": len(excluded_psids),
+                "excluded_sids": len(excluded_sids),
+                "duplicates_flagged": dup_flagged,
                 "duration_ms": duration_ms,
             }
         }

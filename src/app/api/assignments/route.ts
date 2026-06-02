@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { currentMonth, today } from '@/lib/constants'
+import { applyActiveFilter } from '@/lib/queries/survey-units'
 
 const ASSIGNMENT_COLS = 'id, staff_id, assigned_date, uc_name, total_items, created_by, created_at'
 const ITEM_COLS = 'id, assignment_id, psid, route_seq, status, delivered_at, gps_lat, gps_lng, notes'
@@ -20,22 +21,22 @@ export async function GET(request: Request) {
 
   // Mode 1: Get unassigned counts per UC (for overview)
   if (totals) {
-    let totalsQ = sup
-      .from('survey_units')
-      .select('uc_name')
-      .eq('status', 'ACTIVE')
-      .eq('current_bill_month', month)
-      .not('psid', 'is', null)
-    if (district) totalsQ = totalsQ.eq('city_district', district)
-    if (tehsil) totalsQ = totalsQ.eq('tehsil', tehsil)
+    let hsQ = sup
+      .from('hierarchy_summary')
+      .select('uc_name, active_units')
+      .eq('bill_month', month)
+    if (district) hsQ = hsQ.eq('city_district', district)
+    if (tehsil) hsQ = hsQ.eq('tehsil', tehsil)
 
-    const { data: units } = await totalsQ.limit(20000)
+    const { data: hsRows, error: hsErr } = await hsQ.order('uc_name')
+
+    if (hsErr) {
+      return NextResponse.json({ error: hsErr.message }, { status: 500 })
+    }
 
     const counts = new Map<string, { total: number; assigned: number }>()
-    for (const u of units || []) {
-      const c = counts.get(u.uc_name) || { total: 0, assigned: 0 }
-      c.total++
-      counts.set(u.uc_name, c)
+    for (const row of hsRows || []) {
+      counts.set(row.uc_name, { total: row.active_units, assigned: 0 })
     }
 
     // Get assigned counts per UC from today's assignment items
@@ -134,10 +135,9 @@ export async function GET(request: Request) {
       for (const e of existingItems || []) excludePsids.add(e.psid)
     }
 
-    let q = sup
-      .from('survey_units')
-      .select(PSID_COLS)
-      .eq('status', 'ACTIVE')
+    let q = applyActiveFilter(
+      sup.from('survey_units').select(PSID_COLS)
+    )
       .eq('current_bill_month', month)
       .eq('uc_name', uc)
       .not('psid', 'is', null)

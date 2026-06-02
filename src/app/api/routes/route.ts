@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { applyActiveFilter } from '@/lib/queries/survey-units'
 
 const ROUTE_UNIT_COLS = 'survey_id, consumer_name, address, psid, amount_due, monthly_fee, arrears, route_seq, lat, lng'
 
@@ -12,12 +13,9 @@ export async function GET(request: Request) {
 
   // Mode 1: Get units for a specific route within a city
   if (city && routeName) {
-    let q = sup
-      .from('survey_units')
-      .select(ROUTE_UNIT_COLS)
-      .eq('city_district', city)
-      .eq('route_name', routeName)
-      .eq('status', 'ACTIVE')
+    let q = applyActiveFilter(
+      sup.from('survey_units').select(ROUTE_UNIT_COLS).eq('city_district', city).eq('route_name', routeName)
+    )
     if (tehsil) q = q.eq('tehsil', tehsil)
     const { data, error } = await q.order('route_seq', { ascending: true, nullsFirst: false })
 
@@ -26,10 +24,9 @@ export async function GET(request: Request) {
   }
 
   // Mode 2: Get route tree grouped by city → uc → route_name
-  let mode2q = sup
-    .from('survey_units')
-    .select('city_district, uc_name, route_name')
-    .eq('status', 'ACTIVE')
+  let mode2q = applyActiveFilter(
+    sup.from('survey_units').select('city_district, uc_name, route_name')
+  )
     .not('route_name', 'is', null)
   if (city) mode2q = mode2q.eq('city_district', city)
   if (tehsil) mode2q = mode2q.eq('tehsil', tehsil)

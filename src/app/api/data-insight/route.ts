@@ -34,7 +34,8 @@ export async function GET(request: Request) {
 
     const sup = await createClient()
     const lvl: AggRow['level'] = !district ? 'district' : !tehsil ? 'tehsil' : 'uc'
-    const dbStatus = statusParam === 'active' ? 'ACTIVE' : statusParam === 'archived' ? 'ARCHIVED' : ''
+    const statusFilter = sp.get('status') || ''
+    const dbStatus = statusFilter === 'archived' ? 'ARCHIVED' : statusFilter === 'active' ? 'ACTIVE' : ''
     const drillUC = sp.get('drill') || ''
 
     // --- Delivery KPIS (independent queries, no psid dependency) ---
@@ -103,7 +104,26 @@ export async function GET(request: Request) {
         .select('survey_id, psid, consumer_name, status, amount_due, surveyor_name, survey_date, survey_time, monthly_fee, arrears', { count: 'exact' })
         .eq('uc_name', drillUC)
 
-      if (dbStatus) unitQuery = unitQuery.eq('status', dbStatus)
+      if (dbStatus === 'ACTIVE') {
+        unitQuery = unitQuery.or('status.is.null,status.eq.ACTIVE')
+      } else if (dbStatus === 'ARCHIVED') {
+        unitQuery = unitQuery.not('status', 'is', null).neq('status', 'ACTIVE')
+      }
+
+      // Filter to units with duplicate PSIDs
+      if (statusFilter === 'duplicates') {
+        const { data: dupEntries } = await sup
+          .from('flagged_psids')
+          .select('survey_id')
+          .in('reason', ['psid_duplicate_orphan', 'psid_duplicate_superseded', 'psid_duplicate_monthly'])
+          .is('resolved_at', null)
+          .not('survey_id', 'is', null)
+
+        const dupSurveyIds = [...new Set((dupEntries || []).map(d => d.survey_id))]
+        unitQuery = dupSurveyIds.length
+          ? unitQuery.in('survey_id', dupSurveyIds)
+          : unitQuery.in('survey_id', ['__NONE__'])
+      }
 
       if (district) unitQuery = unitQuery.eq('city_district', district)
       if (tehsil) unitQuery = unitQuery.eq('tehsil', tehsil)
@@ -121,8 +141,8 @@ export async function GET(request: Request) {
         survey_id: string; psid: string; consumer_name: string | null; status: string
         amount_due: number; surveyor_name: string | null
         survey_date: string | null; survey_time: string | null
-        amount_paid: number
-        monthly_fee: number; arrears: number
+        amount_paid: number; monthly_fee: number; arrears: number
+        flagged_reason?: string | null; flagged_notes?: string | null; flagged_at?: string | null
       }[] = (units || []).map(u => ({
         survey_id: u.survey_id,
         psid: u.psid,
@@ -138,6 +158,8 @@ export async function GET(request: Request) {
       }))
 
       const psids = (units || []).map(u => u.psid)
+
+      // Fetch payment data
       if (psids.length) {
         const { data: payments } = await sup
           .from('payment_history')
@@ -148,6 +170,55 @@ export async function GET(request: Request) {
 
         const paymentMap = new Map((payments || []).map(p => [p.psid, p.amount_paid ?? 0]))
         unitRows = unitRows.map(u => ({ ...u, amount_paid: paymentMap.get(u.psid) || 0 }))
+      }
+
+      // Fetch flagged data for archived/duplicates view
+      if ((statusFilter === 'archived' || statusFilter === 'duplicates') && psids.length) {
+        const { data: flagged } = await sup
+          .from('flagged_psids')
+          .select('psid, reason, notes, flagged_at, survey_id')
+          .in('psid', psids)
+          .is('resolved_at', null)
+
+        if (flagged) {
+          const priority: Record<string, number> = {
+            field_deleted: 0, portal_deleted: 1, psid_duplicate_orphan: 2,
+            psid_duplicate_superseded: 3, psid_duplicate_monthly: 4,
+          }
+          const labels: Record<string, { action: string; label: string; icon: string }> = {
+            field_deleted: { action: 'DO_NOT_DELIVER', label: 'Do not deliver — removed by field team', icon: 'stop' },
+            portal_deleted: { action: 'DO_NOT_DELIVER', label: 'Do not deliver — removed from portal', icon: 'stop' },
+            psid_duplicate_orphan: { action: 'DELIVER', label: 'Deliver this bill — other PSID had no payments', icon: 'check' },
+            psid_duplicate_superseded: { action: 'DELIVER', label: 'Deliver this bill — this PSID had payments', icon: 'check' },
+            psid_duplicate_monthly: { action: 'PENDING', label: 'Pending review — duplicate PSID found', icon: 'clock' },
+          }
+
+          unitRows = unitRows.map(u => {
+            const entriesForUnit = flagged.filter(f =>
+              (u.survey_id && f.survey_id === u.survey_id) || f.psid === u.psid
+            )
+            if (!entriesForUnit.length) return { ...u, flagged_reason: null }
+            const best = entriesForUnit.reduce((a, b) =>
+              (priority[a.reason] ?? 99) < (priority[b.reason] ?? 99) ? a : b
+            )
+            const info = labels[best.reason] || { action: 'PENDING', label: 'Flagged', icon: 'flag' }
+            return {
+              ...u,
+              flagged_reason: best.reason,
+              flagged_notes: best.notes,
+              flagged_at: best.flagged_at,
+              flagged_summary: {
+                action: info.action,
+                label: info.label,
+                icon: info.icon,
+                plus_count: entriesForUnit.length,
+              },
+              flagged_entries: entriesForUnit.map(e => ({
+                psid: e.psid, reason: e.reason, notes: e.notes,
+              })),
+            }
+          })
+        }
       }
 
       return NextResponse.json({

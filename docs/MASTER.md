@@ -57,6 +57,7 @@
 14. [Changelog](#14-changelog)
 15. [Full App Audit Report](#15-full-app-audit-report-2026-05-27)
 16. [Database Gaps Report](#16-database-gaps-report-2026-05-31)
+17. [Architecture Improvement Plan](#17-architecture-improvement-plan)
 ---
 ## 1. Project Identity & Architecture
 ### 1.1 Company Context
@@ -98,7 +99,29 @@ A digital system forcing accountability: lifecycle data → PDF generation → s
 | **Manual monthly processing** | pdf-bill-printer.py runs manually on 19-20th each month (handles PDF gen) |
 | **Offline photo queue** | Photos stored in IndexedDB when offline, upload when online |
 
-### 1.6 Authentication System (RBAC)
+### 1.6 Data Layer Architecture
+The data layer follows a strict 3-tier pattern with **shared query modules** as the single source of truth:
+
+```
+Browser (TanStack Query hook)
+        ↓ fetch('/api/...')
+Next.js API Route (server-side Supabase client)
+        ↓ imports shared query builders
+src/lib/queries/  ← single source of truth for filters, columns, pagination
+        ↓ creates Supabase query
+Supabase DB
+```
+
+**Shared query modules** (`src/lib/queries/`):
+- `constants.ts` — `SURVEY_UNIT_COLS` (shared column list), `STALE_TIMES` constants
+- `survey-units.ts` — `applyActiveFilter()`, `applyArchivedFilter()`, `selectUnitCols()`
+- `pagination.ts` — `parsePagination()`, `applyPagination()`
+
+**Critical rule:** `survey_units.status` must never be filtered with bare `.eq('status', 'ACTIVE')`. Enriched units (those with PSIDs and lifecycle data) have `status = NULL`, not `status = 'ACTIVE'`. The correct filter is `or('status.is.null,status.eq.ACTIVE')` via `applyActiveFilter()`.
+
+All API routes import from these shared modules. Hooks never import `createClient()` — they only call `fetch('/api/...')`. The only exception is `supabase.auth.*` SDK calls (signInWithPassword, getSession, signOut).
+
+### 1.7 Authentication System (RBAC)
 - 3 roles: `super_admin` (full access), `admin` (operations), `field_staff` (deliver only)
 - Staff log in with **username** (transformed to `username@billing.local` behind the scenes)
 - Admin logs in with email or username
@@ -741,6 +764,24 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | C.2 | 60 min | Staff performance tracking: filter by staff, date range. Add notes + rating (1-5) |
 | C.3 | 60 min | Data Insight enhancement: add delivery KPIs (delivery rate, photos per staff, avg time per delivery) |
 
+### Phase E — Flag Management UI (~4 hrs) **← NEW**
+| Step | Time | Task |
+|------|------|------|
+| E.1 | 45 min | `GET /api/admin/flagged-psids` — paginated, filterable by reason type, UC, tehsil, date range |
+| E.2 | 30 min | `PATCH /api/admin/flagged-psids/[id]` — resolve (`resolved_at=now()`), update notes, change reason |
+| E.3 | 60 min | `/flagged-units` page layout + filter bar + table with action badges |
+| E.4 | 45 min | Row actions: Resolve button, Add/Edit Note modal, Confirm Keeper (for duplicate PSIDs — radio list of PSIDs + resolve surplus) |
+| E.5 | 20 min | `GET /api/admin/flagged-psids/stats` — count by reason type for summary KPIs |
+| E.6 | 20 min | "Flag for Review" button on HouseDetailSheet → creates `staff_flagged` entry in `flagged_psids` |
+| E.7 | 20 min | Add `staff_flagged` support to enrichment pipeline (noted in Phase 2, handled in ingest menu) |
+
+**What this enables:**
+- Admin reviews all flagged entries before each monthly cycle
+- Confirms keeper PSIDs for duplicates (resolves the surplus)
+- Acknowledges portal/field deletions
+- Staff can flag issues during delivery → admin resolves via this page
+- Keeps `flagged_psids` table lean (~50K today, growing ~1K/month)
+
 ### Phase D — Visual Rehaul (~4 hrs)
 | Step | Time | Task |
 |------|------|------|
@@ -836,15 +877,27 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | A | 3 hrs | 9.5 hrs |
 | B | 6 hrs | 15.5 hrs |
 | C | 3 hrs | 18.5 hrs |
-| D | 4 hrs | 22.5 hrs |
-| RBAC | 2 hrs | 24.5 hrs |
-| 1 (Copy ref scripts) | 0.5 hrs | 25 hrs |
-| 2 (enrich-survey-units) | 2 hrs | 27 hrs |
-| 3 (load-payments) | 1 hr | 28 hrs |
-| 4 (city columns) | 0.5 hrs | 28.5 hrs |
-| 5 (ingest-all) | 1 hr | 29.5 hrs |
-| 6 (bill metadata) | 1.5 hrs | 31 hrs |
-| 2b (drop amount_due) | 0.5 hrs | 31.5 hrs |
+| E | 4 hrs | 22.5 hrs |
+| D | 4 hrs | 26.5 hrs |
+| RBAC | 2 hrs | 28.5 hrs |
+| 1 (Copy ref scripts) | 0.5 hrs | 29 hrs |
+| 2 (enrich-survey-units) | 2 hrs | 31 hrs |
+| 3 (load-payments) | 1 hr | 32 hrs |
+| 4 (city columns) | 0.5 hrs | 32.5 hrs |
+| 5 (ingest-all) | 1 hr | 33.5 hrs |
+| 6 (bill metadata) | 1.5 hrs | 35 hrs |
+| 2b (drop amount_due) | 0.5 hrs | 35.5 hrs |
+
+### Execution Order (Remaining)
+| Order | Phase | Time | What |
+|-------|-------|------|------|
+| 1 | **2b** Drop `amount_due` | 30 min | Remove column — deferred cleanup |
+| 2 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks |
+| 3 | **B** Field Staff Delivery UI | 6 hrs | Mobile map, photo capture, offline queue |
+| 4 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs |
+| 5 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions |
+| 6 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 |
+| 7 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test |
 
 ---
 ## 11. Implementation Workflow (Permanent Rule)
@@ -2078,7 +2131,7 @@ RBAC creates users in `profiles` (role_id=3). Staff table has 2022-2023 data wit
 - 3-value city dimension is a computed column — normalized on every migration/import
 - Dead trigger + 3 dead RPCs finally removed — no more PAYMENT_HISTORY mutation errors
 - Pipeline pipeline complete: source scripts copied, ingest scripts written, orchestrator built
-- Remaining work: Phase A (Admin Assignment UI), Phase B (Field Staff Delivery UI), Phase C (Admin Dashboard), Phase Z (Audit Cleanup), Phase 2b (drop amount_due)
+- Remaining work: Phase 2b (drop amount_due), Phase A (Admin Assignment UI), Phase B (Field Staff Delivery UI), Phase C (Admin Dashboard), **Phase E (Flag Management UI)**, Phase Z (Audit Cleanup)
 
 ### 2026-06-01 (Mobile Responsiveness Fixes) — Location: Home
 **Focus:** Fix page scrolling, tab overflow, and city filter wrapping on mobile
@@ -2087,3 +2140,207 @@ RBAC creates users in `profiles` (role_id=3). Staff table has 2022-2023 data wit
 - Fixed tab overflow: Added `overflow-x-auto` to tab bar in `dashboard.tsx:175` — 4 tabs (~500px) now scrollable on iPhone SE (375px)
 - Fixed filter wrapping: Removed `overflow-hidden` from city filter container in `office-breakdown.tsx:115` — `flex-wrap` now works without clipping wrapped button rows
 - All 3 changes pass `npx tsc --noEmit` with zero errors
+
+### 2026-06-02 (Flagged Data Pipeline + Active/Archived/Duplicates Toggle + Phase E Planning) — Location: Remote
+**Focus:** Fix Active toggle (was showing all units instead of active-only), add Duplicates toggle, add flagged_entries to API, plan Phase E
+
+**Done:**
+
+**Active/Archived toggle fix:**
+- Replaced `archived` boolean with `status` string param (`'active' | 'archived' | 'duplicates'`) in Data Insight hook, route, and component
+- Default is `'active'` — unit table now correctly filters to only active units (was showing all)
+- `get_hierarchy_stats` RPC: added `status_filter` CTE and `p_status = 'ARCHIVED'` handling for KPI calculations
+- Unit query filter changed from `.eq('status', 'ARCHIVED')` to `.not('status', 'is', null).neq('status', 'ACTIVE')` to match cache's archive definition
+- RPC applied to Supabase via Management API
+
+**Duplicates toggle (third button in Data Insight):**
+- `src/app/api/data-insight/route.ts` — when `status = 'duplicates'`, filters unit query to only `survey_id` values present in `flagged_psids` with `psid_duplicate_*` reasons
+- `src/components/data-insight.tsx` — third toggle button `[Active | Archived | Duplicates]`, Flag column shown in both Archived and Duplicates views via `showFlag` prop
+- Flagged data now fetched for both archived AND duplicates views
+
+**Flagged data API response:**
+- Added `flagged_entries` array to each unit row in Data Insight API response (all entries, not just the summary)
+- `src/components/data-insight.tsx` — Flag badge is now a clickable button that expands/collapses to show the other PSIDs list (same design as HouseDetailSheet)
+
+**Phase E added to MASTER.md:**
+- Added Phase E (Flag Management UI, ~4 hrs) to Section 10 — `/flagged-units` page, resolve/confirm/note actions
+- Added to Total Estimate Breakdown and Execution Order
+- E.6: "Flag for Review" button on HouseDetailSheet
+- E.7: `staff_flagged` support in enrichment pipeline
+
+**Key decisions:**
+- Flag Management UI is Phase E, ordered after Phase C (Dashboard) and before Phase Z (Cleanup)
+- Phase 2b (drop amount_due) is still deferred — quick, independent step that can be done anytime
+- All changes pass `npx tsc --noEmit` and `npm run build` with zero errors
+
+**Next session:**
+- Phase 2b (drop amount_due, ~30 min) or Phase R.1 (Security Guard, 15 min)
+
+---
+
+### 2026-06-02 (Phase E Complete + Data Layer Audit + Architecture Plan) — Location: Remote
+**Focus:** Complete flag management UI, audit data layer, fix status filter bugs, propose architecture improvements
+**Done:**
+
+**Phase E complete (E.1–E.6):**
+- `GET /api/admin/flagged-psids` — paginated, filterable by reason/city/date/search, `?stats=true` for KPIs
+- `POST /api/admin/flagged-psids` — create new flagged entry
+- `PATCH /api/admin/flagged-psids/[id]` — resolve, update notes, change reason, set resolution
+- `/flagged-units` page — KPI bar by reason type, filter bar, table with action badges, Resolve/Note/Keeper modals, PaginationBar
+- "Flag for Review" button on HouseDetailSheet — creates `staff_flagged` entry
+- `src/hooks/use-admin-flagged-psids.ts` — `useFlaggedPsids`, `useFlaggedPsidsStats`, `useResolveFlagged`
+- E.7 cancelled — `staff_flagged` entries created in-app, not via pipeline
+
+**Data layer audit and fixes:**
+- Created `src/lib/queries/` shared modules: `constants.ts` (SURVEY_UNIT_COLS, STALE_TIMES), `survey-units.ts` (applyActiveFilter, applyArchivedFilter, selectUnitCols), `pagination.ts` (parsePagination, applyPagination)
+- Fixed status filter in 3 route files: changed `.eq('status', 'ACTIVE')` to `applyActiveFilter()` — now includes 159K null-status enriched units
+- Fixed `select('*')` violations in 3 route files (flagged-psids routes, staff performance) — explicit column constants
+- Fixed auth-store: removed direct `supabase.from('profiles')`, created `GET /api/auth/profile` endpoint
+- Fixed `roles` data shape bug in auth/profile route (was typed as array but returned as object — caused all users to get `'staff'` role)
+- Fixed `useSurveyById` — added `staleTime: 5 * 60 * 1000`
+- Fixed assignments Mode 1: replaced broken `.select('uc_name').limit(20000)` with `hierarchy_summary` — returns all 226 UCs correctly
+- Updated AGENTS.md with 8 Data Layer Rules
+- Updated MASTER.md section 1.6 (Data Layer Architecture)
+
+**Architecture research:** Analyzed industry standard backend-only data access pattern. Documented current assessment and 5-phase improvement plan (R.1–R.5).
+
+**Key decisions:**
+- Repository layer will prevent duplicate query bugs (3 real bugs found in Phase E)
+- `server-only` guard is the highest priority (15 min, zero risk)
+- Phase E.7 cancelled — no pipeline changes needed for staff_flagged
+- All changes pass `npx tsc --noEmit` with zero errors
+
+---
+
+## 17. Architecture Improvement Plan
+
+**Goal:** Adopt industry-standard backend-only data access, repository layer, and Zod validation. Prevent the bug class that caused 3+ data layer bugs in Phase E (wrong status filter, `select('*')`, assignments Mode 1 broken).
+
+**Current architecture assessment:**
+
+| Dimension | Status | Notes |
+|-----------|--------|-------|
+| **Backend-only data access** | ✅ Already in place | All 22 API routes use server-side Supabase client. Zero direct `supabase.from()` in client code. |
+| **Service_role isolation** | ✅ `admin.ts` exists | `createAdminClient()` with service_role key, auto-refresh/persistence disabled. |
+| **Shared query modules** | ✅ `src/lib/queries/` | `constants.ts`, `survey-units.ts`, `pagination.ts` — started but not used by all routes. |
+| **Explicit staleTime** | ✅ All 15 hooks | Using `STALE_TIMES` constants from `constants.ts`. |
+| **Column constants** | ✅ In all routes | No `select('*')` anywhere (after Phase E fixes). |
+| **Build-time guard** | ❌ Missing | No `server-only` import guard on `admin.ts` / `server.ts`. |
+| **Validation layer** | ❌ Missing | All validation is manual `if (!x) return error`. No Zod. |
+| **Repository layer** | ❌ Missing | Query logic duplicated across routes. 3 real bugs caused by this. |
+| **Server Components** | ❌ Not used | All 9 pages are `'use client'`. Read-only pages fetch via hooks unnecessarily. |
+| **Middleware** | ❌ Missing | Route protection done inline in every page, no session refresh middleware. |
+
+### Phase R.1 — Security Guard (15 min)
+
+Add `server-only` package to prevent accidental service_role key imports in client bundles.
+
+**Changes:**
+- `npm install server-only`
+- Add `import 'server-only'` to `src/lib/supabase/admin.ts` and `src/lib/supabase/server.ts`
+- Produces **build-time error** if any client component imports these files
+
+**Files:** `package.json`, 2 supabase files  
+**Risk:** None — zero behavior change, build-time only
+
+### Phase R.2 — Zod Validation Layer (1 hr)
+
+Install Zod, create shared validation schemas, add `validateQuery()` helper to every API route.
+
+**Changes:**
+- `npm install zod`
+- Create `src/lib/validation/schemas.ts` — `paginationSchema`, `statusFilterSchema`, `dateRangeSchema`, `hierarchyFilterSchema`
+- Create `validateQuery(request, schema)` — returns typed params or `NextResponse.json({ error }, 400)`
+- Update 5 high-traffic routes: `surveys`, `assignments`, `data-insight`, `admin/flagged-psids`, `billing-stats`
+
+**Pattern:**
+```typescript
+const params = validateQuery(request, z.object({
+  district: z.string().optional(),
+  status: statusFilterSchema.optional(),
+  page: paginationSchema.shape.page,
+}))
+if (params instanceof NextResponse) return params
+// params is now typed, validated — use in query
+```
+
+### Phase R.3 — Repository Layer (2 hr)
+
+Extract inline query logic into domain-specific repository files. Each exports pure functions accepting `SupabaseClient<Database>`.
+
+**Why:** Every bug we fixed in Phase E (status filter wrong in 3 routes, `select('*')` in 2 routes, assignments Mode 1 broken) was caused by **duplicate inline query logic**. A repository layer means **one function** per query pattern used by every API route.
+
+**New files in `src/lib/repositories/`:**
+
+| File | Functions | Migrates inline logic from |
+|------|-----------|---------------------------|
+| `survey-repository.ts` | `getSurveys()`, `getSurveyById()`, `getSurveyPayments()`, `getSurveyBillInfo()` | `surveys/route.ts`, `surveys/payments/route.ts`, `surveys/[id]/bill-info/route.ts` |
+| `assignment-repository.ts` | `getUcTotals()`, `getStaffList()`, `getUnassignedBills()`, `getStaffAssignment()`, `createAssignment()`, `markItem()` | `assignments/route.ts`, `assignments/items/route.ts` |
+| `data-insight-repository.ts` | `getHierarchyStats()`, `getDeliveryKpis()`, `getFlaggedBreakdown()` | `data-insight/route.ts` |
+| `flagged-psids-repository.ts` | `getFlaggedPsids()`, `getFlaggedPsidsStats()`, `createFlagged()`, `updateFlagged()` | `admin/flagged-psids/route.ts`, `admin/flagged-psids/[id]/route.ts`, `flagged-psids/route.ts` |
+
+**Route files become thin HTTP wrappers:**
+```typescript
+// Before: 60+ lines of inline query + chunking + filtering
+// After:
+export async function GET(request: NextRequest) {
+  const sup = await createClient()
+  const params = validateQuery(request, surveyFilterSchema)
+  if (params instanceof NextResponse) return params
+  const result = await getSurveys(sup, params)
+  if (result.error) return NextResponse.json({ error: result.error }, { status: 500 })
+  return NextResponse.json(result.data)
+}
+```
+
+**Risk:** Medium — each route must be converted one at a time and verified. Route tests recommended before/after.
+
+### Phase R.4 — Server Component Conversion (2 hr)
+
+Convert read-heavy pages to Server Components. Interactive parts (maps, forms, charts) stay client-side.
+
+**Conversion candidates:**
+
+| Page | Strategy | Effort |
+|------|----------|--------|
+| `/stats` | Page shell → Server Component. Fetch data server-side, pass to chart components via props. Filters/charts remain client. | 45 min |
+| `/route` | If read-only tree view, convert entirely. | 15 min |
+| `/settings` | Stays client (form-heavy). | Skip |
+| `/map`, `/deliver`, `/assignments`, `/flagged-units` | Add `<Suspense>` boundaries. Move initial fetch to server data props. | Low priority |
+
+**Pattern:**
+```typescript
+// src/app/stats/page.tsx (Server Component)
+import { createClient } from '@/lib/supabase/server'
+import { getHierarchyStats } from '@/lib/repositories/data-insight-repository'
+import { StatsClient } from './stats-client'
+
+export default async function StatsPage() {
+  const sup = await createClient()
+  const initialData = await getHierarchyStats(sup, { billMonth: currentMonth() })
+  return <StatsClient initialData={initialData} />
+}
+```
+
+### Phase R.5 — Middleware & Route Protection (1 hr)
+
+Add `src/middleware.ts` for:
+1. **Session refresh** — Supabase SSR middleware pattern (refreshes auth cookies on every request)
+2. **Route protection** — redirect unauthenticated users from protected routes to `/login`
+3. **Role-based redirect** — redirect `field_staff` away from admin-only pages (`/assignments`, `/flagged-units`)
+
+**Files:** 1 new file + remove inline auth checks from page components  
+**Risk:** Low — middleware is additive, inline auth checks removed gradually
+
+### Summary
+
+| Phase | Time | Value | Risk |
+|-------|------|-------|------|
+| R.1 Security Guard | 15 min | 🔒 Build-time safety | None |
+| R.2 Zod Validation | 1 hr | 🛡️ Type safety, consistent 400 errors | Low |
+| R.3 Repository Layer | 2 hr | 🎯 **Prevents entire bug class** | Medium |
+| R.4 Server Components | 2 hr | ⚡ Smaller client bundles, less JS | Low-Medium |
+| R.5 Middleware | 1 hr | 🔐 Auth consistency, cleaner pages | Low |
+| **Total** | **~6 hrs** | | |
+
+**Recommendation:** Do R.1 first (15 min, zero risk). Then R.2+R.3 together (one domain at a time, starting with flagged-psids). Then R.5. Then R.4 last.

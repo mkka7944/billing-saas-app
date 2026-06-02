@@ -41,6 +41,7 @@ export function useSurveyById(id: string | null) {
       return json.data as SurveyUnit | null
     },
     enabled: !!id,
+    staleTime: 5 * 60 * 1000,
   })
 }
 

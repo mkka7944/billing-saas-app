@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ChevronDown, Truck, Camera, PersonStanding, Percent } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Truck, Camera, PersonStanding, Percent, Flag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PaginationBar } from '@/components/pagination-bar'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
@@ -137,12 +137,15 @@ function ExpandedPaymentContent({ surveyId }: { surveyId: string }) {
   )
 }
 
-function UnitTable({ unitRows, onOpen }: { unitRows: UnitRow[]; onOpen: (row: UnitRow) => void }) {
+function UnitTable({ unitRows, onOpen, showFlag }: { unitRows: UnitRow[]; onOpen: (row: UnitRow) => void; showFlag?: boolean }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [psidExpand, setPsidExpand] = useState<string | null>(null)
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id))
   }, [])
+
+  const colCount = showFlag ? 11 : 10
 
   return (
     <Card>
@@ -154,6 +157,9 @@ function UnitTable({ unitRows, onOpen }: { unitRows: UnitRow[]; onOpen: (row: Un
                 <TableHead className="text-xs font-semibold">Survey ID</TableHead>
                 <TableHead className="text-xs font-semibold max-md:hidden">PSID</TableHead>
                 <TableHead className="text-xs font-semibold">Consumer</TableHead>
+                {showFlag && (
+                  <TableHead className="text-xs font-semibold">Flag</TableHead>
+                )}
                 <TableHead className="text-xs font-semibold max-md:hidden">Surveyor</TableHead>
                 <TableHead className="text-xs font-semibold max-md:hidden">Date</TableHead>
                 <TableHead className="text-xs font-semibold max-md:hidden">Time</TableHead>
@@ -169,16 +175,60 @@ function UnitTable({ unitRows, onOpen }: { unitRows: UnitRow[]; onOpen: (row: Un
             <TableBody>
               {!unitRows.length ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
+                  <TableCell colSpan={colCount} className="text-center text-sm text-muted-foreground py-8">
                     No units found in this MC/UC
                   </TableCell>
                 </TableRow>
               ) : unitRows.flatMap((row) => {
                 const cells = (
-                  <TableRow key={row.survey_id} className={expandedId === row.survey_id ? 'border-b-0' : ''}>
+                  <TableRow key={row.survey_id} className={cn(expandedId === row.survey_id && 'border-b-0', row.flagged_reason && 'bg-red-50 dark:bg-red-950/20')}>
                     <TableCell className="text-sm font-mono font-medium">{row.survey_id}</TableCell>
                     <TableCell className="text-sm font-mono max-md:hidden">{row.psid}</TableCell>
                     <TableCell className="text-sm truncate max-w-[120px] md:max-w-none">{row.consumer_name || '-'}</TableCell>
+                    {showFlag && (
+                      <TableCell>
+                        {row.flagged_summary ? (() => {
+                          const s = row.flagged_summary!
+                          const isRed = s.action === 'DO_NOT_DELIVER'
+                          const isGreen = s.action === 'DELIVER'
+                          const isExpanded = psidExpand === row.survey_id
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <button
+                                onClick={() => setPsidExpand(isExpanded ? null : row.survey_id)}
+                                className={cn(
+                                  'inline-flex items-center gap-1 text-[10px] font-bold rounded px-1.5 py-0.5 whitespace-nowrap text-left cursor-pointer',
+                                  isRed && 'text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/30',
+                                  isGreen && 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30',
+                                  !isRed && !isGreen && 'text-amber-600 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30',
+                                )}
+                                title={row.flagged_notes || ''}
+                              >
+                                <Flag className="h-2.5 w-2.5 shrink-0" />
+                                {s.label}
+                                {s.plus_count > 1 && <span className="ml-0.5 opacity-70">+{s.plus_count - 1}</span>}
+                              </button>
+                              {isExpanded && s.plus_count > 1 && row.flagged_entries && (
+                                <div className="mt-1 space-y-0.5 pl-1">
+                                  {row.flagged_entries.filter(e => e.psid !== row.psid).map((entry, i) => (
+                                    <div key={i} className="flex items-center gap-1 text-[9px] text-muted-foreground font-mono">
+                                      <span className="truncate max-w-[80px]">{entry.psid}</span>
+                                      <span className="shrink-0 italic">
+                                        {entry.reason === 'psid_duplicate_orphan' ? '— never paid' :
+                                         entry.reason === 'psid_duplicate_superseded' ? '— superseded' :
+                                         entry.notes ? entry.notes : ''}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })() : (
+                          <span className="text-[10px] text-muted-foreground italic">Archived</span>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell className="text-sm max-md:hidden">{row.surveyor_name || '-'}</TableCell>
                     <TableCell className="text-sm max-md:hidden">{row.survey_date ? new Date(row.survey_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</TableCell>
                     <TableCell className="text-sm max-md:hidden">{row.survey_time || '-'}</TableCell>
@@ -198,7 +248,7 @@ function UnitTable({ unitRows, onOpen }: { unitRows: UnitRow[]; onOpen: (row: Un
                 )
                 const expanded = expandedId === row.survey_id ? (
                   <TableRow key={`${row.survey_id}-exp`}>
-                    <TableCell colSpan={10} className="bg-muted/30 p-3">
+                    <TableCell colSpan={colCount} className="bg-muted/30 p-3">
                       <div className="ml-auto w-fit max-w-[220px]">
                         <ExpandedPaymentContent surveyId={row.survey_id} />
                       </div>
@@ -247,6 +297,7 @@ export function DataInsight() {
   const selectHouse = useBillingStore((s) => s.selectHouse)
   const [page, setPage] = useState(1)
   const [drillUC, setDrillUC] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'duplicates'>('active')
 
   const insightFilters = useMemo(() => {
     const cityCfg = selectedCity ? CITY_CONFIG[selectedCity] : null
@@ -263,7 +314,7 @@ export function DataInsight() {
     }
   }, [selectedCity, sharedFilters.billMonth, sharedFilters.districts, sharedFilters.sort])
 
-  const { data, isLoading, isError, error } = useDataInsight({ filters: insightFilters, page, pageSize: 50, drillUC })
+  const { data, isLoading, isError, error } = useDataInsight({ filters: insightFilters, page, pageSize: 50, drillUC, status: statusFilter })
   const totalPages = Math.ceil((data?.total || 0) / 50)
   const totalRecords = data?.total || 0
   const level = data?.level || 'district'
@@ -325,12 +376,32 @@ export function DataInsight() {
 
           {level === 'unit' ? (
             <>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button variant="outline" size="sm" onClick={handleBack} className="h-9 gap-1.5">
                   <ArrowLeft className="h-3.5 w-3.5" />
                   Back to MC/UC View
                 </Button>
                 <span className="text-xs text-muted-foreground font-mono">{drillUC}</span>
+                <div className="ml-auto flex items-center gap-1 bg-muted rounded-lg p-0.5">
+                  <button
+                    onClick={() => { setStatusFilter('active'); setPage(1) }}
+                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'active' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Active
+                  </button>
+                  <button
+                    onClick={() => { setStatusFilter('archived'); setPage(1) }}
+                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'archived' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Archived
+                  </button>
+                  <button
+                    onClick={() => { setStatusFilter('duplicates'); setPage(1) }}
+                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'duplicates' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Duplicates
+                  </button>
+                </div>
               </div>
               <UnitTable
                 unitRows={unitRows}
@@ -338,6 +409,7 @@ export function DataInsight() {
                   const items = unitRows.map(u => ({ survey_id: u.survey_id })) as SurveyUnit[]
                   selectHouse(row.survey_id, items, totalRecords)
                 }}
+                showFlag={statusFilter !== 'active'}
               />
             </>
           ) : (

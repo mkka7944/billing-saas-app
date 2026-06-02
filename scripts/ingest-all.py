@@ -18,6 +18,7 @@ import os, sys, subprocess, argparse, datetime
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ENRICH_SCRIPT = os.path.join(SCRIPT_DIR, "enrich-survey-units.py")
 PAYMENTS_SCRIPT = os.path.join(SCRIPT_DIR, "load-payments.py")
+MIGRATE_SCRIPT = os.path.join(SCRIPT_DIR, "migrate-flagged.py")
 
 
 def run_script(script_path, args_list, label):
@@ -39,6 +40,8 @@ def interactive_menu():
         print("  [1] Full Monthly Import (lifecycle + payments)")
         print("  [2] Daily Update (payments only)")
         print("  [3] Quick Survey Sync (new records only)")
+        print("  [4] Import Deletion List (field_deleted → flagged_psids)")
+        print("  [5] Full Migration (flagged SIDs + dedup + refresh)")
         print("  [q] Quit")
         choice = input("\n  Select: ").strip().lower()
 
@@ -73,6 +76,27 @@ def interactive_menu():
                     print(f"\n  Quick sync failed (rc: {rc})")
             else:
                 print(f"  Skipped.")
+
+        elif choice == "4":
+            print(f"\n  Importing deletion list (SID-zubair)...")
+            rc = run_script(MIGRATE_SCRIPT, ["--step", "1"], "Deletion List Import")
+            if rc == 0:
+                print(f"  Deletion list imported.")
+            else:
+                print(f"  Import failed (rc: {rc})")
+
+        elif choice == "5":
+            print(f"\n  Running full migration (all steps)...")
+            print(f"  Step 1: SID-zubair import")
+            rc1 = run_script(MIGRATE_SCRIPT, ["--step", "1"], "Deletion List Import")
+            print(f"  Step 2: PSID dedup")
+            rc2 = run_script(MIGRATE_SCRIPT, ["--step", "2"], "PSID Dedup")
+            print(f"  Step 3: Refresh hierarchy_summary")
+            rc3 = run_script(MIGRATE_SCRIPT, ["--step", "3"], "Refresh Cache")
+            if rc1 == 0 and rc2 == 0 and rc3 == 0:
+                print(f"\n  Migration complete.")
+            else:
+                print(f"\n  Migration finished with errors (rc: {rc1}, {rc2}, {rc3})")
 
         elif choice == "q":
             print("  Goodbye.")

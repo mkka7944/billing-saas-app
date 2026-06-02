@@ -12,20 +12,14 @@ interface ProfileInfo {
   username: string | null
 }
 
-async function fetchProfile(userId: string): Promise<ProfileInfo> {
+async function fetchProfile(): Promise<ProfileInfo> {
   try {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('profiles')
-      .select('username, full_name, suspended_at, deleted_at, roles!inner(name)')
-      .eq('id', userId)
-      .single()
-    const roles = data?.roles as { name: string } | undefined
-    return {
-      roleName: roles?.name || 'staff',
-      displayName: data?.full_name || data?.username || null,
-      username: data?.username || null,
+    const res = await fetch('/api/auth/profile')
+    if (res.status === 401 || res.status === 404 || res.status === 403) {
+      return { roleName: 'staff', displayName: null, username: null }
     }
+    const json = await res.json()
+    return json.data || { roleName: 'staff', displayName: null, username: null }
   } catch {
     return { roleName: 'staff', displayName: null, username: null }
   }
@@ -63,12 +57,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { data: { session } } = await supabase.auth.getSession()
     const user = session?.user ?? null
     if (user) {
-      const profile = await fetchProfile(user.id)
-      if (profile.displayName) {
-        set({ session, user, ...profile, isLoading: false, initialized: true })
-      } else {
-        set({ session, user, ...profile, isLoading: false, initialized: true })
-      }
+      const profile = await fetchProfile()
+      set({ session, user, ...profile, isLoading: false, initialized: true })
     } else {
       set({ session: null, user: null, roleName: 'staff', displayName: null, isLoading: false, initialized: true })
     }
@@ -90,24 +80,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     const user = session?.user ?? null
     if (!user) return { error: 'Session not found' }
 
-    const profile = await fetchProfile(user.id)
+    const profile = await fetchProfile()
 
-    // Check if account is suspended or deleted
-    try {
-      const { data: check } = await supabase
-        .from('profiles')
-        .select('suspended_at, deleted_at')
-        .eq('id', user.id)
-        .single()
-      if (check?.deleted_at) {
-        await supabase.auth.signOut()
-        return { error: 'Account not found' }
-      }
-      if (check?.suspended_at) {
-        await supabase.auth.signOut()
-        return { error: 'Account is frozen. Contact your admin.' }
-      }
-    } catch { console.warn('fetchSession: failed to check account frozen status') }
+    // fetchProfile handles frozen/deleted check via the API route
+    if (!profile.displayName) {
+      await supabase.auth.signOut()
+      return { error: 'Account not found or frozen' }
+    }
 
     set({ session, user, ...profile, isLoading: false })
     return { error: null }

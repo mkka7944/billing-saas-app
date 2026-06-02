@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+const PERF_COLS = 'id, staff_id, assigned_date, rating, notes, created_by, created_at, updated_at'
+
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams
   const staffId = sp.get('staff_id') || ''
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
   const { data, error } = await sup
     .from('staff_performance')
     .upsert(upsertData, { onConflict: 'staff_id, assigned_date' })
-    .select()
+    .select(PERF_COLS)
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { useSurveyById, useSurveyPayments, useSurveyBillInfo } from '@/hooks/use-survey-data'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { shortenMCName } from '@/lib/mc-utils'
 import { currentMonth } from '@/lib/constants'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
 import { cn } from '@/lib/utils'
-import { X, MapPin, Copy, Camera, ChevronLeft, ChevronRight, Image, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { X, MapPin, Copy, Camera, ChevronLeft, ChevronRight, Image, ChevronsLeft, ChevronsRight, Flag, ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
@@ -37,8 +38,31 @@ export function HouseDetailSheet() {
 
   const [imgIdx, setImgIdx] = useState(0)
   const [galleryOpen, setGalleryOpen] = useState(false)
+  const [flagging, setFlagging] = useState(false)
+  const [flagDone, setFlagDone] = useState(false)
+  const roleName = useAuthStore((s) => s.roleName)
 
   useEffect(() => { setImgIdx(0); setGalleryOpen(false) }, [selectedHouseId])
+
+  // Fetch flagged status for this survey/psid
+  const [flaggedSummary, setFlaggedSummary] = useState<{ action: string; label: string; icon: string; plus_count: number } | null>(null)
+  const [flaggedEntries, setFlaggedEntries] = useState<{ psid: string; reason: string; notes: string | null }[]>([])
+  const [showOtherPsids, setShowOtherPsids] = useState(false)
+  useEffect(() => {
+    if (!survey?.survey_id && !survey?.psid) return
+    const surveyId = survey.survey_id
+    const psid = survey.psid
+    const params = new URLSearchParams()
+    if (surveyId) params.set('survey_id', surveyId)
+    if (psid) params.set('psid', psid)
+    fetch(`/api/flagged-psids?${params}`)
+      .then(r => r.json())
+      .then(d => {
+        setFlaggedSummary(d.summary || null)
+        setFlaggedEntries(d.entries || [])
+      })
+      .catch(() => { setFlaggedSummary(null); setFlaggedEntries([]) })
+  }, [survey?.survey_id, survey?.psid])
 
   // Compute before effects so allImages is accessible
   const surveyImages = (survey?.image_urls)?.filter(Boolean) || []
@@ -120,8 +144,11 @@ export function HouseDetailSheet() {
         <button onClick={() => selectHouse(null)} className="h-11 w-11 flex items-center justify-center rounded-lg border border-border bg-background hover:bg-muted cursor-pointer shrink-0" aria-label="Close">
           <X className="h-5 w-5" />
         </button>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 flex items-center gap-2">
           <p className="text-sm font-mono font-bold truncate">{survey.survey_id}</p>
+          {survey.status === 'ARCHIVED' && (
+            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-900 rounded px-1.5 py-0.5 shrink-0">ARCHIVED</span>
+          )}
         </div>
         {survey.lat && survey.lng && (
           <button onClick={openOnMap} className="h-11 w-11 flex items-center justify-center rounded-lg border border-border bg-background hover:bg-muted cursor-pointer shrink-0" aria-label="Show on map">
@@ -221,6 +248,78 @@ export function HouseDetailSheet() {
                   </button>
                 </div>
               )}
+
+              {/* Status indication for flagged/archived */}
+              {flaggedSummary && (() => {
+                const isStop = flaggedSummary.action === 'DO_NOT_DELIVER'
+                const isCheck = flaggedSummary.action === 'DELIVER'
+                return (
+                  <div className={cn(
+                    'mt-2 px-2 py-1.5 rounded border-l-3 text-xs',
+                    isStop && 'border-l-red-500 bg-red-50 dark:bg-red-950/20',
+                    isCheck && 'border-l-green-500 bg-green-50 dark:bg-green-950/20',
+                    !isStop && !isCheck && 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/20',
+                  )}>
+                    <div className="flex items-center gap-1.5">
+                      <Flag className={cn(
+                        'h-3 w-3 shrink-0',
+                        isStop && 'text-red-600 dark:text-red-400',
+                        isCheck && 'text-green-600 dark:text-green-400',
+                        !isStop && !isCheck && 'text-amber-600 dark:text-amber-400',
+                      )} />
+                      <span className={cn(
+                        'font-bold text-[11px]',
+                        isStop && 'text-red-700 dark:text-red-300',
+                        isCheck && 'text-green-700 dark:text-green-300',
+                        !isStop && !isCheck && 'text-amber-700 dark:text-amber-300',
+                      )}>{flaggedSummary.label}</span>
+                      {flaggedSummary.plus_count > 1 && (
+                        <span className={cn(
+                          'text-[10px]',
+                          isStop && 'text-red-600/70',
+                          isCheck && 'text-green-600/70',
+                        )}>+{flaggedSummary.plus_count - 1}</span>
+                      )}
+                    </div>
+                    {/* Surplus PSIDs collapsible */}
+                    {flaggedSummary.plus_count > 1 && (
+                      <>
+                        <button
+                          onClick={() => setShowOtherPsids(!showOtherPsids)}
+                          className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                        >
+                          <ChevronDown className={cn('h-3 w-3 transition-transform', showOtherPsids && 'rotate-180')} />
+                          {flaggedSummary.plus_count - 1} other PSID{(flaggedSummary.plus_count - 1) > 1 ? 's' : ''}
+                        </button>
+                        {showOtherPsids && (
+                          <div className="mt-1 space-y-0.5">
+                            {flaggedEntries.filter(e => e.psid !== survey.psid).map((entry, i) => (
+                              <div key={i} className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
+                                <span className="truncate max-w-[100px]">{entry.psid}</span>
+                                <span className="shrink-0 text-[9px] italic">
+                                  {entry.reason === 'psid_duplicate_orphan' ? '— never paid' :
+                                   entry.reason === 'psid_duplicate_superseded' ? '— superseded' :
+                                   entry.notes ? entry.notes : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {survey.status === 'ARCHIVED' && !flaggedSummary && (
+                <div className="mt-2 px-2 py-1.5 rounded border-l-3 border-l-gray-400 bg-gray-50 dark:bg-gray-900/20 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Flag className="h-3 w-3 text-gray-500 shrink-0" />
+                    <span className="font-bold text-[11px] text-gray-600 dark:text-gray-400">Archived — removed from portal</span>
+                  </div>
+                </div>
+              )}
+
               {survey.monthly_fee > 0 && (
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5 shrink-0">
@@ -312,9 +411,58 @@ export function HouseDetailSheet() {
         <div className="h-3" />
       </div>
 
-      {/* Record Navigation Bar */}
+      {/* Flag for Review + Record Navigation Bar */}
       {canNav && (
         <div className="border-t bg-card shrink-0">
+          {/* Flag for Review row */}
+          {(roleName === 'admin' || roleName === 'super_admin') && (
+            <div className="px-3 py-1.5 border-b">
+              {flagDone ? (
+                <span className="text-[10px] text-green-600 dark:text-green-300 font-medium flex items-center gap-1">
+                  <Flag className="h-3 w-3" /> Flagged for review
+                </span>
+              ) : (
+                <button
+                  onClick={async () => {
+                    if (flagging) return
+                    setFlagging(true)
+                    try {
+                      const res = await fetch('/api/admin/flagged-psids', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          psid: survey.psid,
+                          survey_id: survey.survey_id,
+                          reason: 'staff_flagged',
+                          notes: 'Flagged for review from House Detail',
+                        }),
+                      })
+                      if (res.ok) {
+                        setFlagDone(true)
+                        setFlaggedSummary({
+                          action: 'PENDING',
+                          label: 'Flagged for review',
+                          icon: 'flag',
+                          plus_count: 1,
+                        })
+                      }
+                    } finally {
+                      setFlagging(false)
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 text-[10px] font-semibold hover:bg-pink-200 dark:hover:bg-pink-900/50 cursor-pointer disabled:opacity-50"
+                  disabled={flagging}
+                >
+                  {flagging ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Flag className="h-3 w-3" />
+                  )}
+                  Flag for Review
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex items-center justify-between px-3 py-2">
             <div className="flex items-center gap-1.5">
               <Button
