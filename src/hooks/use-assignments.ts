@@ -23,6 +23,9 @@ export interface UnassignedBill {
   arrears: number | null
   route_seq: number | null
   route_name: string | null
+  surveyor_name: string | null
+  survey_date: string | null
+  survey_time: string | null
 }
 
 export interface StaffMember {
@@ -49,15 +52,17 @@ export function useAssignmentTotals(month: string = currentMonth(), district?: s
   })
 }
 
-export function useUnassignedBills(uc: string | null, month: string = currentMonth()) {
-  return useQuery<UnassignedBill[]>({
-    queryKey: ['unassigned-bills', uc, month],
+export function useUnassignedBills(uc: string | null, month: string = currentMonth(), routeName?: string) {
+  return useQuery<{ data: UnassignedBill[]; total: number }>({
+    queryKey: ['unassigned-bills', uc, month, routeName],
     queryFn: async () => {
-      if (!uc) return []
-      const res = await fetch(`/api/assignments?uc=${encodeURIComponent(uc)}&month=${month}`)
+      if (!uc) return { data: [], total: 0 }
+      const params = new URLSearchParams({ uc, month })
+      if (routeName) params.set('route_name', routeName)
+      const res = await fetch(`/api/assignments?${params}`)
       if (!res.ok) throw new Error('Failed to fetch unassigned bills')
       const json = await res.json()
-      return json.data || []
+      return { data: json.data || [], total: json.total ?? 0 }
     },
     enabled: !!uc,
     staleTime: 1000 * 30,
@@ -94,6 +99,7 @@ export function useCreateAssignment() {
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['assignment-totals'] })
+      qc.invalidateQueries({ queryKey: ['uc-stats'] })
       qc.invalidateQueries({ queryKey: ['unassigned-bills', vars.uc_name] })
       qc.invalidateQueries({ queryKey: ['staff-assignment'] })
     },
@@ -141,6 +147,60 @@ export function useAssignmentList(date: string = today()) {
   })
 }
 
+export interface RouteUc {
+  uc: string
+  routes: { route_name: string; unit_count: number }[]
+  unrouted: number
+}
+
+export interface RouteCity {
+  city: string
+  ucs: RouteUc[]
+}
+
+export function useRouteTree(city: string | null) {
+  return useQuery<RouteCity[]>({
+    queryKey: ['route-tree', city],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      if (city) params.set('city', city)
+      const res = await fetch(`/api/routes?${params}`)
+      if (!res.ok) throw new Error('Failed to fetch route tree')
+      const json = await res.json()
+      return json.data || []
+    },
+    staleTime: 60 * 1000,
+  })
+}
+
+export interface RouteUnit {
+  survey_id: string
+  consumer_name: string | null
+  psid: string | null
+  amount_due: number | null
+  monthly_fee: number | null
+  arrears: number | null
+  route_seq: number | null
+  surveyor_name: string | null
+  survey_date: string | null
+  survey_time: string | null
+}
+
+export function useRouteUnits(city: string | null, route: string | null) {
+  return useQuery<{ data: RouteUnit[]; total: number }>({
+    queryKey: ['route-units', city, route],
+    queryFn: async () => {
+      if (!city || !route) return { data: [], total: 0 }
+      const params = new URLSearchParams({ city, route })
+      const res = await fetch(`/api/routes?${params}`)
+      if (!res.ok) throw new Error('Failed to fetch route units')
+      return res.json()
+    },
+    enabled: !!city && !!route,
+    staleTime: 1000 * 30,
+  })
+}
+
 export function useRevokeAssignment() {
   const qc = useQueryClient()
   return useMutation({
@@ -155,6 +215,7 @@ export function useRevokeAssignment() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assignment-list'] })
       qc.invalidateQueries({ queryKey: ['assignment-totals'] })
+      qc.invalidateQueries({ queryKey: ['uc-stats'] })
       qc.invalidateQueries({ queryKey: ['unassigned-bills'] })
     },
   })

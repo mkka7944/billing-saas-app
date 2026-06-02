@@ -13,6 +13,14 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      'no-restricted-globals': ['error', {
+        name: 'confirm',
+        message: 'Use useConfirm() from @/components/ui/confirm-dialog instead of native confirm().',
+      }],
+    },
+  },
 ]);
 
 export default eslintConfig;

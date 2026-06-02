@@ -3,9 +3,31 @@ import { createClient } from '@/lib/supabase/server'
 import { currentMonth, today } from '@/lib/constants'
 import { applyActiveFilter } from '@/lib/queries/survey-units'
 
+async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const all: any[] = []
+  let offset = 0
+  while (true) {
+    const res = await fetch(url, {
+      headers: {
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Range: `${offset}-${offset + batchSize - 1}`,
+      },
+    })
+    if (!res.ok) throw new Error(`PostgREST ${res.status}`)
+    const chunk = await res.json()
+    if (!chunk?.length) break
+    all.push(...chunk)
+    offset += chunk.length
+    if (chunk.length < batchSize) break
+  }
+  return all
+}
+
 const ASSIGNMENT_COLS = 'id, staff_id, assigned_date, uc_name, total_items, created_by, created_at'
 const ITEM_COLS = 'id, assignment_id, psid, route_seq, status, delivered_at, gps_lat, gps_lng, notes'
-const PSID_COLS = 'survey_id, consumer_name, address, lat, lng, psid, amount_due, monthly_fee, arrears, route_seq, route_name'
+const PSID_COLS = 'survey_id, consumer_name, address, lat, lng, psid, amount_due, monthly_fee, arrears, route_seq, route_name, surveyor_name, survey_date, survey_time'
 
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams
@@ -16,6 +38,7 @@ export async function GET(request: Request) {
   const district = sp.get('district') || ''
   const tehsil = sp.get('tehsil') || ''
   const date = sp.get('date') || today()
+  const routeName = sp.get('route_name') || ''
   const month = sp.get('month') || currentMonth()
   const sup = await createClient()
 
@@ -46,13 +69,16 @@ export async function GET(request: Request) {
       .eq('assigned_date', date)
 
     if (todayAssignments?.length) {
-      const ucFromId = new Map(todayAssignments.map((a: any) => [a.id, a.uc_name]))
+      type TA = { id: string; uc_name: string }
+      const taRows = todayAssignments as TA[]
+      const ucFromId = new Map(taRows.map((a) => [a.id, a.uc_name]))
+      type AI = { assignment_id: string }
       const { data: items } = await sup
         .from('assignment_items')
         .select('assignment_id')
-        .in('assignment_id', todayAssignments.map((a: any) => a.id))
+        .in('assignment_id', taRows.map((a) => a.id))
 
-      for (const item of items || []) {
+      for (const item of (items as AI[]) || []) {
         const uc = ucFromId.get(item.assignment_id)
         if (uc && counts.has(uc)) counts.get(uc)!.assigned++
       }
@@ -76,16 +102,19 @@ export async function GET(request: Request) {
     if (!assignments?.length) return NextResponse.json({ data: [] })
 
     // Get staff names
-    const staffIds = [...new Set(assignments.map((a: any) => a.staff_id))]
+    type DA = { id: string; staff_id: string; assigned_date: string; uc_name: string; total_items: number; created_by: string; created_at: string }
+    const daRows = assignments as DA[]
+    const staffIds = [...new Set(daRows.map((a) => a.staff_id))]
+    type SR = { id: string; full_name: string | null }
     const { data: staffRows } = await sup
       .from('staff')
       .select('id, full_name')
       .in('id', staffIds)
 
-    const staffNameMap = new Map((staffRows || []).map((s: any) => [s.id, s.full_name || 'Unknown']))
+    const staffNameMap = new Map((staffRows as SR[] || []).map((s) => [s.id, s.full_name || 'Unknown']))
 
     // Get item status counts per assignment
-    const assignmentIds = assignments.map((a: any) => a.id)
+    const assignmentIds = daRows.map((a) => a.id)
     const { data: allItems } = await sup
       .from('assignment_items')
       .select('assignment_id, status')
@@ -98,7 +127,7 @@ export async function GET(request: Request) {
       itemCounts.set(item.assignment_id, c)
     }
 
-    const data = assignments.map((a: any) => {
+    const data = daRows.map((a) => {
       const counts = itemCounts.get(a.id) || { pending: 0, delivered: 0, missed: 0 }
       const completed = counts.delivered + counts.missed
       return {
@@ -117,7 +146,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ data })
   }
 
-  // Mode 3: Get unassigned PSIDs in a UC
+  // Mode 3: Get unassigned PSIDs in a UC (optionally filtered by route_name)
   if (uc) {
     const { data: existingAssignments } = await sup
       .from('daily_assignments')
@@ -125,7 +154,8 @@ export async function GET(request: Request) {
       .eq('assigned_date', date)
       .eq('uc_name', uc)
 
-    const existingIds = existingAssignments?.map((a: any) => a.id) || []
+    type ExDA = { id: string }
+    const existingIds = ((existingAssignments || []) as ExDA[]).map((a) => a.id)
     const excludePsids = new Set<string>()
     if (existingIds.length) {
       const { data: existingItems } = await sup
@@ -135,18 +165,38 @@ export async function GET(request: Request) {
       for (const e of existingItems || []) excludePsids.add(e.psid)
     }
 
-    let q = applyActiveFilter(
-      sup.from('survey_units').select(PSID_COLS)
+    // Count total unassigned
+    const countQ = applyActiveFilter(
+      sup.from('survey_units').select('psid', { count: 'exact', head: true })
     )
       .eq('current_bill_month', month)
       .eq('uc_name', uc)
       .not('psid', 'is', null)
+    if (routeName) countQ.eq('route_name', routeName)
 
-    const { data, error } = await q.order('route_seq', { ascending: true, nullsFirst: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const { count } = await countQ
 
-    const unassigned = (data || []).filter((s: any) => !excludePsids.has(s.psid))
-    return NextResponse.json({ data: unassigned, total: unassigned.length })
+    // Fetch all unassigned PSIDs via batched PostgREST (bypasses 1000 max-rows limit)
+    const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const filterParts = [
+      `current_bill_month=eq.${encodeURIComponent(month)}`,
+      `uc_name=eq.${encodeURIComponent(uc)}`,
+      'psid=not.is.null',
+      'or=(status.is.null,status.eq.ACTIVE)',
+    ]
+    if (routeName) filterParts.push(`route_name=eq.${encodeURIComponent(routeName)}`)
+    const sortOrder = routeName ? 'route_seq.asc.nullslast' : 'survey_id.desc'
+    const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent(PSID_COLS)}&${filterParts.join('&')}&order=${sortOrder}`
+    let data: any[]
+    try {
+      data = await fetchAllRows(url)
+    } catch (e) {
+      return NextResponse.json({ error: `Failed to fetch units: ${(e as Error).message}` }, { status: 500 })
+    }
+
+    type SU = { psid: string | null }
+    const unassigned = ((data || []) as SU[]).filter((s) => s.psid && !excludePsids.has(s.psid))
+    return NextResponse.json({ data: unassigned, total: (count || 0) - excludePsids.size })
   }
 
   // Mode 4: Get staff's daily assignment + items (with survey unit data)
@@ -223,7 +273,8 @@ export async function POST(request: Request) {
     .select('psid, route_seq')
     .in('psid', psids)
 
-  const seqMap = new Map((units || []).map((u: any) => [u.psid, u.route_seq || 0]))
+  type SU2 = { psid: string; route_seq: number | null }
+  const seqMap = new Map(((units || []) as SU2[]).map((u) => [u.psid, u.route_seq || 0]))
 
   const { data: assignment, error: ae } = await sup
     .from('daily_assignments')

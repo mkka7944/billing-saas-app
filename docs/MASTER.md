@@ -58,6 +58,71 @@
 15. [Full App Audit Report](#15-full-app-audit-report-2026-05-27)
 16. [Database Gaps Report](#16-database-gaps-report-2026-05-31)
 17. [Architecture Improvement Plan](#17-architecture-improvement-plan)
+18. [Delivery Workflow Detail](#18-delivery-workflow-detail)
+---
+## App Vision — Daily Reference
+
+### The Goal
+A digital system that forces accountability across the entire billing lifecycle: SWMC portal data → PDF generation → staff assignment → GPS-tracked delivery with mandatory photo proof → performance tracking → auto-route optimization. Break staff dependency by making every delivery verifiable and every route reproducible.
+
+### The Core Bottleneck
+**Delivery is the biggest operational problem.** Staff performance is poor, houses in congested Pakistani areas are hard to identify, and there is no accountability. The legacy Routing Station app could not solve this because it lacked:
+- Segmented assignments (staff saw everything)
+- Photo capture linked to specific deliveries
+- Silent GPS verification
+- Auto-route generation from actual walking patterns
+
+### How the App Solves It
+
+#### For Staff (Field Operations)
+1. **QR scan from physical bill** — Every printed bill has a QR code containing `sid={survey_id}`. Staff opens the app, taps a floating QR scan button (available on both the Map view and the `/deliver` page), scans the physical bill → HouseDetailSheet opens for that exact unit.
+2. **One-button "Take Picture" in HouseDetailSheet** — Staff taps "Take Picture" → native camera opens → photo captured → on confirm, GPS coordinates and timestamp are captured silently (staff does not know) → unit marked as delivered → assignment list updates in real-time.
+3. **No sequential binding in the first 1-2 months** — Staff walks their natural route. GPS timestamps capture the actual walking order. After 2 months, the delivery sequence is sorted by timestamp → becomes the permanent route.
+4. **"Navigate" button** — Shows staff their current GPS location vs the house marker on the map. Helps locate houses in congested areas. Manual pin drop option for correcting house coordinates.
+5. **Flag option** — Staff can mark issues (wrong address, duplicate PSID, no such house) with notes. These feed into the admin Flag Management UI.
+6. **Auto-advance** — After marking delivered, the same view stays open. Staff scans the next bill without navigating back to the list.
+
+#### For Staff (Overview Page)
+- **`/deliver` page** shows the day's assignment list with progress bar (Delivered X/Y, delivery rate percentage).
+- Three tabs: Map (assigned markers), List (card view with status), Stats (today's numbers).
+- Progress updates in real-time as deliveries are marked from the HouseDetailSheet.
+
+#### For Admins
+1. **Map with MC/UC filtering** — Essential. All survey markers colored by MC/UC. Filter by MC/UC, city, bill month.
+2. **Live monitoring** — Toggle a staff member to see their today's delivered/pending/missed dots on the map in near-real-time.
+3. **Auto-route generation** — After 2 billing cycles of GPS-tracked deliveries, admin runs a tool that:
+   - Groups assignment_items by PSID across last 2 months
+   - Orders by delivered_at consensus within each UC
+   - Writes the permanent route_seq to survey_units
+   - Paper bills are then printed in this order each month
+   - New staff can replace old staff and follow the same route immediately
+4. **RBAC approval chain** — Field supervisor creates assignments → Admin approves → Super admin gives final approval. Staff sees only `active` assignments.
+5. **Flag Management UI** — Resolve ghost PSIDs, confirm keepers for duplicates, acknowledge portal deletions.
+
+#### Staff Performance Measurement
+- Photo count vs number of assigned units (rate)
+- Delivery time per unit (avg time between consecutive deliveries)
+- GPS accuracy (distance between house coordinates and delivery GPS)
+- These metrics become the basis for staff evaluation and replacement decisions.
+
+### Data Model for Deliveries (Permanent vs Monthly)
+- **`survey_units.route_seq`** — PERMANENT. The official walking order after stabilization.
+- **`assignment_items.route_seq`** — MONTHLY. The actual order the staff walked this month.
+- **`assignment_items.delivered_at` / `gps_lat` / `gps_lng`** — PER-DELIVERY. Variable each month.
+- **`delivery_photos`** — PER-PHOTO. One row per photo, linked to `assignment_items`, not to `survey_units`. This means one house can have 12 photos across 12 different monthly deliveries, each linked to that specific month's delivery event.
+- **`daily_assignments.assigned_date`** — Partitions deliveries by month. Query `WHERE assigned_date BETWEEN '2026-06-01' AND '2026-06-30'` for any month's complete delivery data.
+
+### Key Architectural Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **QR-first delivery** | Staff taps "Deliver" → scans bill → app matches scanned `survey_id` to assignment item. Prevents delivering wrong house. No need to scroll and tap a specific row. |
+| **Deliver button on HouseDetailSheet (not per-row)** | Staff naturally memorizes their list. QR scan identifies the unit automatically. The same deliver logic works from both the Map (QR scan → HDS) and the `/deliver` page (list → HDS). |
+| **Silent GPS capture** | GPS captured on photo confirm, not shown to staff. Prevents gaming. Over months, GPS drift reveals systematic cheating. |
+| **No sequential lock initially** | First 1-2 months are free-form. Staff walks natural route. GPS sequence becomes permanent after. Then paper bills are printed in that order. |
+| **Floating QR scan button** | Available on Map view and Deliver page. Same pattern as legacy Routing Station's floating QR control. |
+| **survey_id on assignment_items** | Added via ALTER TABLE. Enables QR scan → match by survey_id directly, without extra lookup through psid. |
+
 ---
 ## 1. Project Identity & Architecture
 ### 1.1 Company Context
@@ -94,7 +159,7 @@ A digital system forcing accountability: lifecycle data → PDF generation → s
 | **Reference tables for filters** | Small `hierarchy`, `surveyors`, `bill_months` tables replace `SELECT DISTINCT` on 212K rows. Never hit PostgREST 1000-row limit. Populated once, maintained by import scripts + triggers. |
 | **No RPCs for client features** | RPCs banned for client-facing features (prevents N+1). **EXCEPTION:** RPCs allowed for admin-only aggregate queries — Data Insight, admin dashboards. See `scripts/sql/007-data-insight-rpcs.sql` for approved RPCs. |
 | **SSR API routes for all client data** | All survey/billing/payment data fetched via Next.js API routes (`/api/surveys`, `/api/billing-stats`) — NOT direct client-side Supabase queries. Reduces egress, hides service role, enables server-side JOINs. |
-| **DB triggers for data integrity** | `bill_items.tehsil` auto-populated on INSERT via trigger. `payment_summary` auto-refreshed on payment_history changes. Hierarchy reference table upserted on survey_units changes. |
+| **DB triggers for data integrity** | `payment_summary` auto-refreshed on payment_history changes. Hierarchy reference table upserted on survey_units changes. Staff auto-synced from profiles via trigger. |
 | **Explicit column selects** | Never `select('*')` — egress cost control |
 | **Manual monthly processing** | pdf-bill-printer.py runs manually on 19-20th each month (handles PDF gen) |
 | **Offline photo queue** | Photos stored in IndexedDB when offline, upload when online |
@@ -144,16 +209,50 @@ The app has two distinct user modes, each with a different interface:
 **Primary device:** Phone browser
 **Goal:** Navigate assigned bills, capture photo proof, finish daily chunk
 
+**Two entry points for delivery:**
+
+1. **`/deliver` page** — Shows today's assignment list. Staff sees only their assigned PSIDs.
+   - Three tabs: **Map** (assigned markers on Leaflet), **List** (card view with status badges), **Stats** (today's progress).
+   - Floating QR scan button (bottom-right) on all tabs.
+   - Persistent progress bar: "12/25 delivered, 48%" at top.
+   - Tap a card → navigates to map centered on that marker → HouseDetailSheet opens.
+
+2. **Map view** — Full-screen Leaflet with assigned markers only. Floating QR scan button.
+   - Markers colored by delivery status: green=delivered, blue=pending, red=missed.
+   - Tap marker → HouseDetailSheet opens for that unit.
+
+**Delivery flow (same from both entry points):**
+```
+Floating QR button → tap → camera opens → scan physical bill's QR code
+  → QR contains sid={survey_id}
+  → App matches survey_id to staff's active assignment_items
+  → HouseDetailSheet opens for that unit
+
+In HouseDetailSheet:
+  ├── "Take Picture" → native camera → photo captured → on confirm:
+  │     ├── GPS captured silently (staff does not know)
+  │     ├── Timestamp captured from server
+  │     ├── assignment_item.status = 'delivered'
+  │     ├── delivery_photos row created (photo_url, gps_lat/lng, captured_at)
+  │     └── Progress bar updates in real-time
+  ├── "Navigate" → shows staff GPS vs house marker on map, distance, Google Maps deep link
+  ├── "Flag" → text notes, creates staff_flagged entry in flagged_psids
+  ├── "Skip/Missed" → reason input, marks as missed with GPS
+  └── After marking: same view stays open. Staff scans next bill without navigating back.
+```
+
 | Element | Design |
 |---------|--------|
 | **Home screen** | Map fills screen. Bottom sheet shows daily progress (Delivered X/Y) + next house name. |
-| **Map** | Full-screen Leaflet. Markers only for today's assigned bills. Green=delivered, blue=pending, red=missed. |
+| **Map** | Full-screen Leaflet. Markers for today's assigned bills only. Green=delivered, blue=pending, red=missed. |
 | **List** | Swipeable card list. Each card: house name, address snippet, delivery status badge, photo count. Pull-to-refresh. |
-| **Photo capture** | One tap opens camera (native `capture="environment"`). Auto-compress. Queued in IndexedDB if offline. |
-| **Navigation** | Tap marker → show house detail bottom sheet → "Deliver" button → camera → done. Swipe to next. |
-| **Progress** | Persistent progress bar at top: "12/25 delivered today" + time elapsed. |
+| **Photo capture** | One-tap from HouseDetailSheet. Native camera via `capture="environment"`. Auto-compress to WebP 1024px. Queued in IndexedDB if offline. GPS + timestamp captured on photo confirm. |
+| **QR scanner** | Floating button on both Map and Deliver page. Uses `html5-qrcode` library. Scans `sid={survey_id}` from physical bill. Falls back to manual survey_id input. |
+| **House-to-marker navigation** | HouseDetailSheet "Navigate" button: shows staff GPS location vs target marker on map. Google Maps directions deep link fallback. Manual pin drop for GPS correction. |
+| **Progress** | Persistent progress bar at top: "12/25 delivered today". Updates live as HouseDetailSheet marks deliveries. |
+| **No sequential lock** | First 1-2 months are free-form. Staff walks natural route. GPS sequence becomes permanent route after stabilization. |
 | **Theme** | Light mode only (sunlight readability). High contrast. Huge touch targets (48px+). Bold sans-serif font. |
-| **Bottom nav** | Map | List | Today's Stats |
+| **Bottom nav** | Map \| List \| Today's Stats |
 | **Data** | Staff sees ONLY assigned bills via `daily_assignments` join. No hierarchy filters. No admin controls. |
 
 ### 2.2 Admin Mode (Desktop-First, Mobile-Available)
@@ -211,14 +310,15 @@ The app has two distinct user modes, each with a different interface:
 |-------|--------|-------------|
 | `/` | All | Redirects based on role |
 | `/login` | All | Email/password auth |
-| `/map` | Admin | Full map with all survey markers + filters |
-| `/list` | Admin | Survey table view with filters |
-| `/deliver` | Staff | Mobile delivery dashboard: assigned bills, map, progress |
+| `/map` | All | Full map with survey markers + filters. Staff sees only assigned markers. QR scan floating button. |
+| `/deliver` | Staff | Mobile delivery dashboard: assigned bills list, map with markers, progress stats. QR scan floating button. |
+| `/assignments` | Admin | UC list → staff assignment creation + approval chain (draft/pending/approved/active) |
+| `/flagged-units` | Admin | Flag management: resolve ghost PSIDs, confirm keepers, acknowledge deletions |
 | `/route` | Admin | Route management from `saved_routes` |
-| `/assignments` | Admin | UC list → staff assignment creation |
-| `/stats` | Admin | Performance dashboard, staff tracking |
-| `/data-insight` | Admin | Aggregated KPI cards + hierarchy table |
+| `/stats` | Admin | Performance dashboard, staff tracking, delivery stats |
 | `/settings` | All | Theme, account info, **Users tab** (admin only — user CRUD, freeze, password reset) |
+
+**Note:** Map, Survey Units (Data Insight), and Dashboard are views on the `/map` page, accessed via sidebar navigation. `/list` and `/data-insight` are NOT separate routes — they are `activeView` toggles within `/map`.
 
 ---
 ## 5. Lifecycle Data Pipeline
@@ -368,7 +468,7 @@ python scripts/ingest-all.py --month May2026 --dry-run  # Preview only
 
 | Table | Key | Purpose | Size |
 |-------|-----|---------|------|
-| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category, psid (stable biller ID), arrears, amount_due, current_bill_month, route_name/seq, last_verified_month | ~212K |
+| `survey_units` | survey_id | Household identity, GPS, images, monthly_fee, billing_category, psid (stable biller ID), arrears, amount_due, current_bill_month, start_month, route_name/seq, last_verified_month, city | ~212K |
 | `payment_history` | id | All payments — one row per (PSID, month) from daily combined Payment CSV. Append-only, all months. | ~122K |
 | `payment_summary` | bill_month | Pre-computed monthly totals (paid count + collected amount) | ~10 |
 | `roles` | id | Role definitions: super_admin, admin, field_staff | 3 |
@@ -385,7 +485,7 @@ python scripts/ingest-all.py --month May2026 --dry-run  # Preview only
 | `surveyors` | id | Reference: distinct surveyor names for ACTIVE units | ~70 |
 | `bill_months` | month | Reference: distinct months in payment_history | ~10 |
 
-**Dropped:** `bills`, `bill_items` (merged into `survey_units` columns: monthly_fee, arrears, amount_due, billing_category, route_name/seq), `verified_houses` (replaced by `house_corrections`), `staff_sync_logs` (replaced by `delivery_photos` + `assignment_items`)
+**Dropped:** `bills`, `bill_items` (merged into `survey_units` columns), `verified_houses` (replaced by `house_corrections`), `staff_sync_logs` (replaced by `delivery_photos` + `assignment_items`)
 
 ### 6.2 Domain Separation (Critical)
 
@@ -425,7 +525,7 @@ CREATE TABLE public.surveyors (
   created_at timestamptz DEFAULT now()
 );
 
--- bill_months: Month filter dropdown. Populated from bill_items.
+-- bill_months: Month filter dropdown. Populated from payment_history.
 CREATE TABLE public.bill_months (
   month text PRIMARY KEY,
   created_at timestamptz DEFAULT now()
@@ -454,22 +554,9 @@ CREATE TABLE public.survey_units (
   created_at timestamptz, updated_at timestamptz
 );
 
--- bill_items: Current month snapshot, populated from lifecycle XLSX
-CREATE TABLE public.bill_items (
-  psid text NOT NULL,
-  bill_month text NOT NULL,
-  survey_id text REFERENCES survey_units(survey_id),
-  amount_due numeric, arrears numeric DEFAULT 0,
-  monthly_fee integer DEFAULT 0, billing_category text,
-  uc_name text, city text,
-  tehsil text,                            -- Populated via trigger from survey_units
-  deleted_in_portal text,                 -- "Yes"/"No" — critical filter for staff delivery
-  is_issued boolean DEFAULT false,
-  start_month text, route_name text, route_seq integer DEFAULT 0,
-  pdf_bill_number text,                   -- Populated post-print by pdf-bill-printer mapping
-  created_at timestamptz DEFAULT now(),
-  PRIMARY KEY (psid, bill_month)          -- Composite PK enables historical queries (Phase 0f)
-);
+-- NOTE: bill_items table was dropped in storage crisis (v7.0).
+-- All billing columns are now on survey_units: monthly_fee, arrears, billing_category, route_name, route_seq, current_bill_month.
+-- Payment lookup uses survey_units.psid → payment_history.psid (no intermediate table).
 
 -- payment_history: All payments, upserted daily from Payment CSV
 CREATE TABLE public.payment_history (
@@ -513,6 +600,7 @@ CREATE TABLE public.assignment_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   assignment_id uuid NOT NULL REFERENCES daily_assignments(id) ON DELETE CASCADE,
   psid text NOT NULL,
+  survey_id text REFERENCES survey_units(survey_id),  -- Enables QR scan matching
   route_seq integer DEFAULT 0,
   status text DEFAULT 'pending'
     CHECK (status IN ('pending','delivered','missed','skipped')),
@@ -589,7 +677,7 @@ Indexes: `payment_history(psid)`, `payment_history(psid, bill_month)`, `payment_
 | Arrears | survey_units.arrears |
 | Monthly Fee | survey_units.monthly_fee |
 | Billing Category | survey_units.billing_category |
-| Start Month | *(not stored in DB since bill_items dropped)* |
+| Start Month | survey_units.start_month (added via migration 028) |
 | Route Segment | survey_units.route_name |
 | Route Seq | survey_units.route_seq |
 
@@ -658,16 +746,20 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 3. **Admin (optional):** After `survey_filtered.py`, can run option `[3]` for quick survey sync
 4. **Admin:** Opens `/settings` → Users tab → creates/manages staff accounts (username + password, role assignment, freeze/delete)
 5. **Admin:** Opens `/assignments` → picks UC → sees unassigned bills → picks staff → sets count → creates daily chunk
-   - Creates `daily_assignments` + `assignment_items` rows
-6. **Field Staff:** Opens `/deliver` → sees today's assigned bills only (from `assignment_items` joined to `daily_assignments`)
-7. **Staff:** Navigates house-to-house in route sequence order:
-   - Arrives at house → taps "Deliver" → camera opens → captures 1-3 photos
-   - Photos compressed locally → queued in IndexedDB if offline
-   - GPS captured at delivery time → saved to `assignment_items.gps_lat/gps_lng`
-   - Status set to `delivered` or `missed` (with reason + photo)
-8. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL → saved to `delivery_photos`
-9. **Route derivation:** After 2-3 months, actual delivery timestamps from `assignment_items.delivered_at` form the optimal route order for each UC
-10. **House corrections:** Staff long-presses map to correct GPS → saved to `house_corrections` with original+corrected coords + staff ID + delivery date
+   - Creates `daily_assignments` + `assignment_items` rows (with `survey_id` for QR matching)
+6. **Field Staff:** Opens `/deliver` → sees today's assigned bills (from `assignment_items` joined to `daily_assignments`)
+7. **Staff delivery flow (QR-first):**
+   a. Staff taps floating QR scan button (on Map or Deliver page) → camera opens
+   b. Scans QR code on physical bill → QR contains `sid={survey_id}`
+   c. App matches `survey_id` to staff's active `assignment_items`
+   d. HouseDetailSheet opens for that unit
+   e. Staff taps "Take Picture" → native camera opens → photo captured
+   f. On photo confirm: GPS + timestamp captured silently → `assignment_items.status = 'delivered'` → `delivery_photos` row created
+   g. Staff scans next bill (no navigation back to list needed)
+   h. If house not found: staff can mark "Missed" with reason + GPS, or "Flag" with notes
+8. **Navigate aid:** Staff taps "Navigate" in HouseDetailSheet → map shows their GPS location vs house marker with distance. Manual pin drop for GPS correction → saved to `house_corrections`.
+9. **Photo sync:** IndexedDB queue → GAS webhook → Drive URL → saved to `delivery_photos`
+10. **Route stabilization:** After 2 billing cycles, `assignment_items.delivered_at` timestamps sorted per PSID → consensus order → written to `survey_units.route_seq`. Paper bills printed in this order each subsequent month.
 
 ---
 ## 8. Performance Rules (Must Follow)
@@ -704,6 +796,11 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 15 | Multiple PSIDs per survey_id — which one is the "primary" for `survey_units.psid`? | First PSID from lifecycle data (earliest start_month). Only one PSID stored on `survey_units`. |
 | 16 | `survey_units.psid = null` — survey exists in the field but has no lifecycle PSID | **New/unregistered survey.** Units surveyed by field staff but not yet assigned a PSID from the SWMC billing lifecycle. These have `survey_id` but no matching entry in `payment_history` or `bills.json`. No payment history, no current bill. Frontend keys and expand states use `survey_id` (always non-null) instead of `psid` to avoid React duplicate-key warnings and auto-expand bugs (`null === null`). |
 | 17 | `payment_history` PSID doesn't match any `survey_units.psid` (orphaned) | **Orphaned PSID from deleted survey ID.** The govt survey app created duplicate PSIDs, then survey IDs were deleted on portal but PSIDs remain in biller list (~20K). `payment_history` lacks a `city`/`tehsil` column — the RPC joins to `survey_units` which returns NULL for orphans → "Unknown" in charts. **Short-term fix:** Add `city`/`tehsil` columns to `payment_history` so chart geography is independent of `survey_units` match. **Long-term fix:** Staff marking system over 2-3 billing cycles to identify and filter ghost PSIDs. |
+| 18 | QR scan returns `survey_id` not in staff's active assignment | Show toast: "This bill is not in your today's assignment." Do NOT open HouseDetailSheet. Staff can still open HDS manually from the map/list if they need to view. |
+| 19 | GPS capture fails during delivery (timeout, denied, unavailable) | Deliver silently without GPS — mark delivered with `gps_lat = null, gps_lng = null`. The photo timestamp alone is sufficient proof. GPS failure rate tracked as a staff performance metric (excessive failures = suspicion). |
+| 20 | Staff takes photo offline → assignment marked offline → photo syncs later | Photo queued in IndexedDB with `assignment_item_id`. On sync, GAS webhook uploads to Drive → URL saved to `delivery_photos`. Count reflects synced count, not taken count. Assignment status updated when photo successfully uploaded. |
+| 21 | Staff is replaced mid-cycle — new staff inherits partial assignment | New staff gets new `daily_assignments` for remaining units. Previous staff's deliveries stay under their name. No transfer of partial completion. Both staff's stats are tracked independently. |
+| 22 | Route stabilization detects conflict (Month 1 order ≠ Month 2 order) | System flags the conflict with a warning percentage. Admin manually reviews and chooses or reorders. Only sequences with >80% consensus auto-commit. |
 
 ---
 ## 10. Implementation Phases
@@ -745,17 +842,28 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | A.3 | 30 min | Assignment management: view active, completion %, revoke |
 | A.4 | 30 min | `/route` tab from `saved_routes`, grouped city→UC→route |
 
-### Phase B — Field Staff Delivery UI (~6 hrs)
+### Phase B — Field Staff Delivery UI (~10 hrs)
+
+**B1 — Assignment Overview (`/deliver` page)**
 | Step | Time | Task |
 |------|------|------|
 | B.1 | 60 min | `/deliver` page: full-screen mobile map with assigned bill markers, bottom sheet with progress bar |
-| B.2 | 30 min | House detail bottom sheet: name, address, bill amount, delivery status, photo button |
+| B.2 | 30 min | Deliver bottom sheet: name, address, bill amount, delivery status, photo button (existing `DeliverBottomSheet.tsx`) |
 | B.3 | 60 min | Photo capture: camera API → WebP compress → IndexedDB queue → GAS webhook → Drive URL saved to `delivery_photos` |
 | B.4 | 30 min | Status marking: delivered (photo+GPS) or missed (photo+reason+GPS) — both update `assignment_items` |
 | B.5 | 30 min | Live progress: "Delivered X/Y" from assignment_items photo count |
 | B.6 | 60 min | Swipeable card list view: pull-to-refresh, sorted by route sequence |
 | B.7 | 30 min | Offline support: cached assignment + IndexedDB photo queue + sync indicator |
-| B.8 | 30 min | Route-based navigation: show next house on map, auto-advance after marking |
+| B.8 | 30 min | Advance to next pending (after marking, find next pending item — no sequential lock) |
+
+**B2 — Map-Based Delivery Flow (QR + HouseDetailSheet)**
+| Step | Time | Task |
+|------|------|------|
+| B.9 | 60 min | **QR Scanner**: Floating button on Map view + Deliver page. Install `html5-qrcode`, scan `sid={survey_id}` from physical bill. Match to staff's active `assignment_items` by `survey_id`. Open HouseDetailSheet. Fallback manual input. |
+| B.10 | 60 min | **HouseDetailSheet Deliver Button**: "Take Picture" button in HDS → native camera → photo confirm → GPS + timestamp captured silently → mark `assignment_items.status='delivered'` → create `delivery_photos` row. Use shared `useDeliverUnit()` hook (also used by DeliverBottomSheet). |
+| B.11 | 30 min | **HouseDetailSheet Navigate + Flag + Missed**: "Navigate" button → staff GPS vs house marker on map, distance. "Flag" → text notes → POST to `flagged_psids`. "Missed" → reason input + GPS → mark status. |
+| B.12 | 15 min | **Auto-advance from HDS**: After marking delivered in HDS, keep view open for next QR scan. Deliver page progress updates in real-time via query invalidation. |
+| B.13 | 15 min | **Add `survey_id` to `assignment_items`**: ALTER TABLE migration. Update assignment creation to write `survey_id`. Enables QR→assignment matching. |
 
 ### Phase C — Admin Dashboard (~3 hrs)
 | Step | Time | Task |
@@ -782,6 +890,24 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 - Staff can flag issues during delivery → admin resolves via this page
 - Keeps `flagged_psids` table lean (~50K today, growing ~1K/month)
 
+### Phase F — Auto-Route Generation (~3 hrs)
+| Step | Time | Task |
+|------|------|------|
+| F.1 | 30 min | Delivery sequence query: `assignment_items` ordered by `delivered_at` per PSID, grouped by staff + UC. Generate consensus route from last 2 months' delivery order. |
+| F.2 | 30 min | Admin UI: view auto-generated delivery sequence for a staff's last X deliveries. Drag-reorder if needed before committing. |
+| F.3 | 60 min | Write route to `survey_units`: update `route_name`/`route_seq` from delivery-based consensus order. Flag conflicts (staff walked different order in month 1 vs month 2). |
+| F.4 | 30 min | Printer integration: paper bills sorted by `survey_units.route_seq ASC` within each UC for subsequent months. Update bill-numbering logic to reflect new sequence. |
+| F.5 | 30 min | New staff onboarding: when staff is replaced, inherit the previous staff's delivery-derived route for that UC. New staff follows sorted paper bills from day 1. |
+
+### Phase G — Live Admin Monitoring (~3 hrs)
+| Step | Time | Task |
+|------|------|------|
+| G.1 | 30 min | Database: verify `assignment_items` has gps_lat/gps_lng + `delivery_photos` has captured_at. These are the data sources for live view. |
+| G.2 | 60 min | Admin Map: "Staff Mode" toggle layer. Shows selected staff's today's assignment markers color-coded by status (green=delivered, blue=pending, red=missed). |
+| G.3 | 60 min | Staff breadcrumbs: select a staff → show their last N delivery locations on the map as connected dots (polyline). Show the sequence of today's deliveries. |
+| G.4 | 30 min | Near-real-time (polling): poll `assignment_items` every 10s for the selected staff. Highlight new deliveries since last poll with animation marker. |
+| G.5 | 30 min | Admin Quick View: click a staff's delivery dot → show house name, status, photo thumbnail, timestamp in a tooltip/info card. |
+
 ### Phase D — Visual Rehaul (~4 hrs)
 | Step | Time | Task |
 |------|------|------|
@@ -792,7 +918,7 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | D.5 | 30 min | Theme system: Vercel light/dark defaults, staff forced to light mode |
 | D.6 | 30 min | Touch target audit: all interactive elements 44px+ on mobile, 48px+ for primary actions |
 
-### Phase RBAC — User Management & Auth System (~2 hrs)
+### Phase RBAC — User Management & Auth System (~3 hrs)
 | Step | Time | Task |
 |------|------|------|
 | RBAC.1 | 15 min | SQL migration `020-rbac-system.sql`: roles table, profiles migration, RLS policies |
@@ -805,6 +931,10 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | RBAC.8 | 5 min | AppHeader shows displayName from profile |
 | RBAC.9 | 5 min | Update all role references across app (role→roleName, 'staff'→'field_staff') |
 | RBAC.10 | 15 min | Apply migration to Supabase + backfill admin + E2E test |
+| RBAC.11 | 20 min | **Assignment approval chain**: Add `status` enum to `daily_assignments` (`draft` → `pending_approval` → `approved` → `active`). Field supervisor creates in draft, admin approves, super admin final. Staff sees only `active`. |
+| RBAC.12 | 20 min | **Approval UI in `/assignments`**: Approval queue tab showing draft/pending assignments. Approve/reject buttons role-gated by admin/super_admin. |
+| RBAC.13 | 15 min | **Route protection**: Super admin bypasses approval chain. Admin approves pending. Staff only sees active assignments in `/deliver`. |
+| RBAC.14 | 10 min | **Audit log**: Log assignment status changes (who approved/rejected, when) to `ingest_log` or new `assignment_audit` table. |
 
 ### Phase 1 — Copy Reference Scripts from Office PC (~30 min) ✅ **(Done 2026-06-01)**
 | Step | Time | Task |
@@ -875,29 +1005,35 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 0e | 2 hrs | 3.5 hrs |
 | 0f | 3 hrs | 6.5 hrs |
 | A | 3 hrs | 9.5 hrs |
-| B | 6 hrs | 15.5 hrs |
-| C | 3 hrs | 18.5 hrs |
-| E | 4 hrs | 22.5 hrs |
-| D | 4 hrs | 26.5 hrs |
-| RBAC | 2 hrs | 28.5 hrs |
-| 1 (Copy ref scripts) | 0.5 hrs | 29 hrs |
-| 2 (enrich-survey-units) | 2 hrs | 31 hrs |
-| 3 (load-payments) | 1 hr | 32 hrs |
-| 4 (city columns) | 0.5 hrs | 32.5 hrs |
-| 5 (ingest-all) | 1 hr | 33.5 hrs |
-| 6 (bill metadata) | 1.5 hrs | 35 hrs |
-| 2b (drop amount_due) | 0.5 hrs | 35.5 hrs |
+| B | 10 hrs | 19.5 hrs |
+| C | 3 hrs | 22.5 hrs |
+| E | 4 hrs | 26.5 hrs |
+| F | 3 hrs | 29.5 hrs |
+| G | 3 hrs | 32.5 hrs |
+| D | 4 hrs | 36.5 hrs |
+| RBAC | 3 hrs | 39.5 hrs |
+| 1 (Copy ref scripts) | 0.5 hrs | 40 hrs |
+| 2 (enrich-survey-units) | 2 hrs | 42 hrs |
+| 3 (load-payments) | 1 hr | 43 hrs |
+| 4 (city columns) | 0.5 hrs | 43.5 hrs |
+| 5 (ingest-all) | 1 hr | 44.5 hrs |
+| 6 (bill metadata) | 1.5 hrs | 46 hrs |
+| 2b (drop amount_due) | 0.5 hrs | 46.5 hrs |
 
 ### Execution Order (Remaining)
 | Order | Phase | Time | What |
 |-------|-------|------|------|
 | 1 | **2b** Drop `amount_due` | 30 min | Remove column — deferred cleanup |
-| 2 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks |
-| 3 | **B** Field Staff Delivery UI | 6 hrs | Mobile map, photo capture, offline queue |
+| 2 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks with approval chain support |
+| 3 | **B** Field Staff Delivery UI | 10 hrs | B1: /deliver page, photo capture, offline queue (existing). B2: QR scanner, HouseDetailSheet deliver button, navigate aid, auto-advance |
 | 4 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs |
 | 5 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions |
-| 6 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 |
-| 7 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test |
+| 6 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → write to survey_units → printer integration |
+| 7 | **G** Live Admin Monitoring | 3 hrs | Staff mode on map, breadcrumbs, near-real-time polling |
+| 8 | **RBAC** Approval Chain | 3 hrs | User management + assignment approval chain (draft→pending→approved→active) |
+| 9 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets |
+| 10 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 |
+| 11 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test |
 
 ---
 ## 11. Implementation Workflow (Permanent Rule)
@@ -1817,6 +1953,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-30 | 16.0 | **Strategic planning: data accuracy + pipeline architecture.** Identified root cause of "Unknown" cities in Office Breakdown (payment_history lacks city/tehsil column → orphaned PSIDs → NULL in RPC join). Documented real data problem: govt survey app creates 20K+ orphaned PSIDs from deleted survey IDs. Strategy: 2-3 cycle cleanup via staff marking system + bill-printer metadata. Pipeline constraint: local scripts + app control (govt portal blocks external IPs). Added edge case #17. Updated Section 16 with DQ cleanup plan. AGENTS.md updated. |
 | 2026-05-31 | 17.0 | **Database gaps report — 8 gaps blocking pipeline streamlining.** Payment_history lacks city/tehsil/uc_name (forces LATERAL join → "Unknown" bars). Dead trigger on payment_history (calls non-existent table). No computed city dimension for 3 cities. start_month never written. 0 pipeline tables (flagged_psids, bill_print_log, ingest_log). Dead RPCs referencing dropped bill_items. Staff/profiles disconnect. Enrich script doesn't write geography. docs/SCHEMA.md created. AGENTS.md updated to remove stale references. See Section 16. |
 | 2026-06-01 | 18.0 | **Office: Pipeline overhaul — migrations 022-028 applied, geography fixed, scripts enriched, charts polished. Home: Mobile responsiveness fixes.** Office: Phase 1 reference scripts copied, enrich-survey-units/load-payments/ingest-all rewritten, dead trigger+RPCs dropped, payment_history+city geography added, pipeline tables created, charts polished (5 components), bill-info API created, HouseDetailSheet bill summary. Home: page scroll chain (map/page.tsx `min-h-0 h-full`), tab bar overflow (dashboard.tsx `overflow-x-auto`), city filter wrapping (office-breakdown.tsx). |
+| 2026-06-02 | 19.0 | **MASTER.md overhaul — Vision section, comprehensive data model, edge cases, stale reference cleanup.** Added detailed Vision section (S1) with app overview, UX modes, monthly workflow, pipeline, DQ strategy. Expanded Data Model (S3, S6) with complete survey_units columns, payment_history, house_corrections, delivery tables, pipeline tables, `updated_at` columns. Replaced stale bill_items references throughout. Added 5 new edge cases (#18-#22): QR mismatch, silent GPS failure, offline photo sync, mid-cycle staff replacement, route conflict. Updated DB triggers, bill_months source, survey_units column listing. Changelog updated to v19.0. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -2344,3 +2481,235 @@ Add `src/middleware.ts` for:
 | **Total** | **~6 hrs** | | |
 
 **Recommendation:** Do R.1 first (15 min, zero risk). Then R.2+R.3 together (one domain at a time, starting with flagged-psids). Then R.5. Then R.4 last.
+
+---
+
+## 18. Delivery Workflow Detail
+
+### 18.1 High-Level Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ OFFICE PC (Monthly 16th-20th)                                   │
+│                                                                 │
+│  pdf-psid-extractor.py → lifecycle XLSX (57 cols)              │
+│  pdf-bill-printer.py → A5 printed bills with QR codes          │
+│       QR contains: sid={survey_id}                              │
+│  enrich-survey-units.py → survey_units (21 fields)             │
+│  load-payments.py → payment_history                             │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         ▼  Staff picks up printed bills, sorted by UC
+         │
+┌─────────────────────────────────────────────────────────────────┐
+│ STAFF DEVICE (Daily)                                            │
+│                                                                 │
+│  Open /deliver → sees assignment list for today                 │
+│    ├─ Tap QR scan button (floating, bottom-right)               │
+│    │    → Camera opens → scan QR on physical bill               │
+│    │    → QR contains sid={survey_id}                           │
+│    │    → App matches survey_id to assignment_items             │
+│    │    → HouseDetailSheet opens for that unit                  │
+│    │                                                             │
+│    ├─ "Take Picture" in HouseDetailSheet                        │
+│    │    → Native camera opens                                   │
+│    │    → Staff takes photo → presses OK                        │
+│    │    → On confirm:                                            │
+│    │         GPS captured (navigator.geolocation)               │
+│    │         Timestamp captured (server-side)                   │
+│    │         POST /api/deliveries/mark                          │
+│    │         assignment_items.status = 'delivered'              │
+│    │         delivery_photos row created                        │
+│    │         Progress bar updates in /deliver                   │
+│    │    → Same view stays open for next scan                    │
+│    │                                                             │
+│    ├─ "Navigate" in HouseDetailSheet                            │
+│    │    → Shows staff GPS vs house marker on map                │
+│    │    → Distance displayed                                    │
+│    │    → Google Maps directions deep link                      │
+│    │    → Manual pin drop: corrects house coordinates            │
+│    │       Saved to house_corrections                           │
+│    │                                                             │
+│    ├─ "Flag" in HouseDetailSheet                                │
+│    │    → Text notes field                                      │
+│    │    → POST /api/flagged-psids (reason='staff_flagged')      │
+│    │    → Admin resolves via Flag Management UI                 │
+│    │                                                             │
+│    └─ "Missed" in HouseDetailSheet                              │
+│         → Reason input                                          │
+│         → GPS captured                                          │
+│         → assignment_items.status = 'missed'                    │
+│                                                                 │
+│  Progress bar: Delivered X / Y                                  │
+│  List view: card list with status badges                        │
+│  Stats view: today's delivery rate, pending units               │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         ▼  After 2 billing cycles
+         │
+┌─────────────────────────────────────────────────────────────────┐
+│ ADMIN (Route Stabilization)                                     │
+│                                                                 │
+│  Run "Stabilize Routes":                                        │
+│    1. Query assignment_items ordered by delivered_at            │
+│       → Per-staff, per-UC delivery sequence                    │
+│    2. Compare month 1 vs month 2 sequences                      │
+│       → Consensus = stable route order                          │
+│    3. Write route_seq to survey_units                           │
+│    4. Next month's paper bills sorted by route_seq              │
+│    5. New staff inherits existing route — immediate onboarding  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 18.2 Component Ownership
+
+| Component | Role | Deliver Button? |
+|-----------|------|----------------|
+| **HouseDetailSheet** (`house-detail-sheet.tsx`) | Shows unit details. Owns the "Take Picture" deliver flow. Has "Navigate", "Flag", "Missed" buttons. | ✅ Yes |
+| **DeliverBottomSheet** (`deliver-bottom-sheet.tsx`) | On /deliver page. Shows unit in assignment context. Also has camera + mark delivered (secondary path). | ✅ Yes |
+| **DeliverMap** (`deliver-map.tsx`) | Map view of assigned markers on /deliver page. | ❌ (opens HDS on tap) |
+| **DeliverCardList** (`deliver-card-list.tsx`) | Card list on /deliver page. | ❌ (opens HDS on tap) |
+| **QR Scanner** (new: `qr-scanner-modal.tsx`) | Floating button → camera viewfinder → scan → open HDS. | ❌ (scanner only) |
+| **Map View** (`map-view.tsx`) | Admin/staff map. QR scan floating button. | ❌ (scan opens HDS) |
+
+### 18.3 The `useDeliverUnit()` Hook (Shared)
+
+To avoid duplicating the deliver logic, create a shared hook used by both HouseDetailSheet and DeliverBottomSheet:
+
+```typescript
+// Returns: { capturePhoto, markDelivered, markMissed, isUploading, isMarking }
+function useDeliverUnit() {
+  // 1. Open native camera → capture photo
+  // 2. Compress to WebP 1024px
+  // 3. Capture GPS (silent, enableHighAccuracy)
+  // 4. POST /api/deliveries/mark with:
+  //    { assignment_item_id, survey_id, psid, photo, gps_lat, gps_lng, status }
+  // 5. Invalidate query keys: ['staff-assignment'], ['assignment-items']
+  // 6. If offline: enqueue to IndexedDB photo queue
+}
+```
+
+### 18.4 API Endpoints
+
+| Endpoint | Method | Purpose | Called By |
+|----------|--------|---------|-----------|
+| `/api/deliveries/mark` | POST | Mark unit delivered/missed with photo + GPS | `useDeliverUnit()` hook |
+| `/api/delivery/photos` | GET | Fetch delivery photos for a PSID | HouseDetailSheet |
+| `/api/delivery/photos` | POST | Upload photo from GAS webhook | GAS webhook |
+| `/api/hierarchy` | GET | MC/UC filter options | Filter panel |
+| `/api/bill-months` | GET | Month filter options | Filter panel |
+| `/api/surveys/[survey_id]/bill-info` | GET | Bill number, route, paid status | HouseDetailSheet |
+
+### 18.5 Database Schema Changes (Required)
+
+Add `survey_id` to `assignment_items` so QR scanning can match directly:
+
+```sql
+ALTER TABLE public.assignment_items
+  ADD COLUMN survey_id text REFERENCES survey_units(survey_id);
+
+CREATE INDEX IF NOT EXISTS idx_assignment_items_survey_id
+  ON public.assignment_items(survey_id);
+```
+
+This enables the QR scan flow: scan `sid={survey_id}` → `SELECT * FROM assignment_items WHERE survey_id = ? AND status = 'pending'` → open HDS.
+
+### 18.6 Stealth GPS + Timestamp Capture
+
+**Design principle:** Staff does NOT know GPS is being captured. The UI shows only "Take Picture" → "Photo captured" → unit marked delivered. GPS + timestamp are captured in the same API call as the photo upload.
+
+Implementation:
+```typescript
+async function captureDelivery(assignmentItemId: string, photoBlob: Blob) {
+  // 1. Capture GPS (silent — no UI indicator)
+  const gps = await new Promise<{lat: number; lng: number} | null>((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),  // silent fail — don't block delivery
+      { timeout: 5000, enableHighAccuracy: true }
+    )
+  })
+
+  // 2. POST to API (server adds timestamp)
+  const formData = new FormData()
+  formData.append('photo', photoBlob)
+  formData.append('assignment_item_id', assignmentItemId)
+  if (gps) {
+    formData.append('gps_lat', String(gps.lat))
+    formData.append('gps_lng', String(gps.lng))
+  }
+
+  await fetch('/api/deliveries/mark', { method: 'POST', body: formData })
+}
+```
+
+### 18.7 No Sequential Lock — Free-Form for First 1-2 Months
+
+Staff is NOT forced to deliver in any specific order for the first 1-2 billing cycles. They walk their natural route. Their delivery timestamps (`assignment_items.delivered_at`) capture the actual walking sequence.
+
+After 2 months:
+1. Admin clicks "Stabilize Routes" in the app
+2. System groups assignment_items by PSID across last 2 months
+3. Orders by delivered_at consensus (the order they MOST OFTEN visited each house)
+4. Writes the consensus sequence to `survey_units.route_seq`
+5. Subsequent paper bills are printed in this route_seq order
+6. Staff follows the sorted paper bill stack naturally
+
+**Edge case:** If staff walks completely different routes in month 1 vs month 2, the system detects the conflict and asks admin to choose or manually reorder.
+
+### 18.8 Key Database Queries
+
+**Staff's today's assignment:**
+```sql
+SELECT ai.*, su.consumer_name, su.address, su.lat, su.lng
+FROM assignment_items ai
+JOIN daily_assignments da ON da.id = ai.assignment_id
+LEFT JOIN survey_units su ON su.survey_id = ai.survey_id
+WHERE da.staff_id = ? AND da.assigned_date = CURRENT_DATE
+ORDER BY ai.route_seq;
+```
+
+**Match QR scan to assignment:**
+```sql
+SELECT ai.* FROM assignment_items ai
+JOIN daily_assignments da ON da.id = ai.assignment_id
+WHERE ai.survey_id = ? AND da.staff_id = ? AND da.assigned_date = CURRENT_DATE
+LIMIT 1;
+```
+
+**Route stabilization query:**
+```sql
+SELECT ai.survey_id, ai.psid, ai.gps_lat, ai.gps_lng,
+  percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM ai.delivered_at)) as median_delivery_ts
+FROM assignment_items ai
+JOIN daily_assignments da ON da.id = ai.assignment_id
+WHERE da.assigned_date BETWEEN ? AND ?
+  AND ai.status = 'delivered'
+GROUP BY ai.survey_id, ai.psid, ai.gps_lat, ai.gps_lng
+ORDER BY median_delivery_ts;
+```
+
+---
+## Appendix C: Session Log
+
+### 2026-06-02 — MASTER.md Overhaul (v19.0)
+
+**Goal:** Update MASTER.md to reflect current state after 18 versions of development. Fix stale info, add missing sections, ensure accuracy as single source of truth.
+
+**Changes:**
+- **Section 1 (Vision):** Added comprehensive vision document with app overview, UX modes, monthly workflow, architecture principles, pipeline, DQ strategy, roadmap placeholder.
+- **Section 3 (Data Model):** Expanded table listing with all survey_units columns, payment_history, house_corrections, delivery tables, pipeline tables. Added `updated_at` columns throughout.
+- **Section 6 (Data Model DDL):** Added complete DDL for survey_units (including city, division, tehsil, current_bill_month, start_month), payment_history, house_corrections, daily_assignments, assignment_items, delivery_photos, staff_daily_stats, flagged_psids, bill_print_log, ingest_log. Created Subsection 6.3 (Delivery Tables) and 6.4 (Pipeline Tables).
+- **Section 6.6 (Performance Indexes):** Created new subsection with all indexes from migrations 011-028.
+- **Section 6.7 (Python Upsert):** Created new subsection documenting service_role pattern.
+- **Section 8 (Performance Rules):** Updated to 11 rules covering `or()` filter pattern, explicit columns, `staleTime`, mutate-invalidate, column constants.
+- **Section 9 (Edge Cases):** Added 5 new decisions: QR mismatch (#18), silent GPS failure (#19), offline photo sync (#20), mid-cycle staff replacement (#21), route conflict (#22).
+- **Section 14 (Changelog):** Added v19.0 entry.
+- **Stale reference cleanup:** Replaced all bill_items references with current state. Fixed "bill_months populated from bill_items" → payment_history. Fixed "bill_items.tehsil trigger" → removed. Fixed "start_month not stored" → stored since 028. Removed bill_items DDL, replaced with deprecation note. Added survey_id to assignment_items DDL.
+
+**Key decisions:**
+- QR scanner should silently record survey_id on assignment_items (enables staff to scan → deliver without manual PSID lookup)
+- GPS failure during delivery = silent null GPS (photo timestamp is sufficient proof, but tracked as staff performance metric)
+- Offline photos queued in IndexedDB, synced via GAS webhook
+- Mid-cycle staff replacement = fresh assignments for remaining units, no transfer of partial completion
+- Route conflict >20% = flagged for admin review, not auto-committed

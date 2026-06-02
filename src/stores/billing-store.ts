@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { FilterState, SurveyUnit, SortConfig } from '@/types'
 import { currentMonth } from '@/lib/constants'
+import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 
 interface BillingState {
   selectedCity: string | null
@@ -47,9 +48,9 @@ const defaultFilters: FilterState = {
 }
 
 export const CITY_CONFIG: Record<string, { district: string; tehsil: string; lat: number; lng: number }> = {
-  Sargodha: { district: 'SARGODHA', tehsil: 'SARGODHA', lat: 32.0836, lng: 72.6712 },
-  Bhalwal: { district: 'SARGODHA', tehsil: 'BHALWAL', lat: 32.265, lng: 72.905 },
-  Khushab: { district: 'KHUSHAB', tehsil: 'KHUSHAB', lat: 32.295, lng: 72.352 },
+  Sargodha: { ...CITY_TEHSIL_MAP.Sargodha, lat: 32.0836, lng: 72.6712 },
+  Bhalwal: { ...CITY_TEHSIL_MAP.Bhalwal, lat: 32.265, lng: 72.905 },
+  Khushab: { ...CITY_TEHSIL_MAP.Khushab, lat: 32.295, lng: 72.352 },
 }
 
 export const useBillingStore = create<BillingState>()(

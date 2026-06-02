@@ -14,6 +14,7 @@ import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, Dialog
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup } from '@/components/ui/select'
 import { Building2, ChevronDown, ChevronRight, Sun, Moon, Monitor, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 const THEMES = [
   { id: 'light', label: 'Light', icon: Sun, desc: 'Default light' },
@@ -107,6 +108,8 @@ export default function SettingsPage() {
   const [resetPwOpen, setResetPwOpen] = useState(false)
   const [resetPwValue, setResetPwValue] = useState('')
 
+  const confirm = useConfirm()
+
   useEffect(() => {
     setPageIdentity('Settings', 'Appearance and account')
   }, [setPageIdentity])
@@ -186,7 +189,15 @@ export default function SettingsPage() {
   }
 
   async function handleToggleDelete(user: UserRow) {
-    if (!user.deletedAt && !confirm(`Soft-delete user "${user.username}"?`)) return
+    if (!user.deletedAt) {
+      const ok = await confirm({
+        title: 'Delete User',
+        message: `Soft-delete user "${user.username}"? They will be unable to log in.`,
+        confirmLabel: 'Delete',
+        variant: 'destructive',
+      })
+      if (!ok) return
+    }
     const url = user.deletedAt
       ? `/api/admin/users/${user.id}?restore=true`
       : `/api/admin/users/${user.id}`

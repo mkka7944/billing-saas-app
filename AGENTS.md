@@ -73,6 +73,14 @@ All legacy files copied from office PC (`F:\qoder\billing-system\` + `F:\Routing
 - **scripts/sql/_old/**: 17 SQL files from old routing station (for reference)
 - **scripts/data/** (gitignored, ~1.1 GB): `excel_dumps/`, `scraped_data/`, `processed_pdfs/`, `routing-station-pro-data/`
 
+## No Native `confirm()` — Must Use `useConfirm()`
+Native browser `confirm()` is banned by ESLint (`no-restricted-globals`). Always use:
+```ts
+import { useConfirm } from '@/components/ui/confirm-dialog'
+const confirm = useConfirm()
+const ok = await confirm({ title, message, confirmLabel, variant })
+```
+
 ## Implementation Workflow (Permanent Rule)
 Every task is broken into short atomic steps (max 1-2 file changes per step).
 1. Present the next step with clear description + time estimate
