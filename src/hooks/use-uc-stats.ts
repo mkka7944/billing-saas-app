@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { STALE_TIMES } from '@/lib/queries/constants'
 import type { UCStatRow } from '@/lib/queries/hierarchy'
 
-export function useUCStats(city: string | null, month?: string) {
+export function useUCStats(city: string | null, month?: string | null) {
   return useQuery({
     queryKey: ['uc-stats', city, month],
     queryFn: async (): Promise<UCStatRow[]> => {

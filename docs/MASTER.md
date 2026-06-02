@@ -2713,3 +2713,34 @@ ORDER BY median_delivery_ts;
 - Offline photos queued in IndexedDB, synced via GAS webhook
 - Mid-cycle staff replacement = fresh assignments for remaining units, no transfer of partial completion
 - Route conflict >20% = flagged for admin review, not auto-committed
+
+### 2026-06-03 — Routes Tab Rewrite + 1000-Limit Fix — Location: Home
+
+**Goal:** Fix route tree truncation (20K limit), build route-based assignment workflow, fix 1000-row PostgREST limit in tables.
+
+**Done:**
+1. **RPC `get_route_tree`** — `scripts/sql/029-route-tree-rpc.sql`. Returns distinct routes per city/UC with counts + `is_unrouted` flag. Replaces old `SELECT ... LIMIT 20000` approach (truncated routes past row 20K).
+2. **`GET /api/routes` rewrite** — Mode 1 (route detail): batched PostgREST fetch, `surveyor_name/date/time` columns added. Mode 2 (tree): RPC with natural sort fallback.
+3. **`GET /api/assignments` Mode 3** — Added `route_name` filter param. Sort: `survey_id DESC` for Create tab (no routeName), `route_seq ASC` for Routes tab (with routeName). Batched PostgREST to bypass 1000 max-rows.
+4. **`confirm-dialog.tsx`** — Created global `ConfirmProvider` + `useConfirm()` promise-based hook. Added ESLint `no-restricted-globals` ban on native `confirm()`.
+5. **Routes tab** — Two-panel layout: left sidebar (UC groups with collapsible route tree, Unrouted count, hide unrouted-only UCs), right panel reuses `UCDetailPanel` with `routeName` prop.
+6. **UCDetailPanel** — Replaced PSID column with Address column. Accepts optional `routeName` prop. Pagination properly handles large datasets now.
+7. **1000 PostgREST limit fix** — Discovered PostgREST max-rows=1000 is a Supabase configuration limit (can't be overridden by `.range()`). Created `fetchAllRows()` helper that fetches in pages of 1000 and concatenates server-side. Applied to both `GET /api/assignments` and `GET /api/routes`.
+8. **Hooks** — Added `useRouteTree()`, `useRouteUnits()`, modified `useUnassignedBills()` to accept `routeName`.
+
+**Key fixes:**
+- `selectedCity` stores display name ("Sargodha") but RPC expects DB district ("SARGODHA") — fixed via `CITY_TEHSIL_MAP`
+- Route sort: alphabetical (`Route_1, Route_10, Route_2`) → natural (`Route_1, Route_2, ..., Route_10`)
+- PSID column removed from create table, Address column added (visible on all screen sizes)
+- Create tab sort regressed from `survey_id DESC` to `route_seq ASC` when Mode 3 was unified — fixed by branching on `routeName`
+
+**Key decisions:**
+- PostgREST max-rows=1000 is a Supabase project config — cannot override via headers. All large-table queries must use `fetchAllRows()` batched pattern.
+- `fetchAllRows()` pattern: raw REST fetch with `Range` header, fetched in 1000-row pages, concatenated server-side. Defined in `src/app/api/assignments/route.ts` and `src/app/api/routes/route.ts`.
+- Route tree RPC approach preferred over raw row fetch: bounded result (~300 rows vs 212K), fast, no limit issues.
+- `get_route_tree` RPC returns "Unrouted" rows with `is_unrouted=true` flag — frontend hides them from tree but shows count.
+
+**Remaining:**
+- DB gap #10: add `updated_at` column to `payment_history` (needs migration SQL + trigger)
+- Optional: move `fetchAllRows()` to shared utility (`src/lib/queries/` or `src/lib/supabase/`) for reuse across all API routes
+- The `uc-stats` API still uses `selectedCity` display name but does `CITY_TEHSIL_MAP[city]` lookup internally — working correctly

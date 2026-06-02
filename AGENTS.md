@@ -73,6 +73,41 @@ All legacy files copied from office PC (`F:\qoder\billing-system\` + `F:\Routing
 - **scripts/sql/_old/**: 17 SQL files from old routing station (for reference)
 - **scripts/data/** (gitignored, ~1.1 GB): `excel_dumps/`, `scraped_data/`, `processed_pdfs/`, `routing-station-pro-data/`
 
+## Batched PostgREST Fetch (Bypass 1000 max-rows)
+PostgREST has a hard limit of 1000 rows per request (Supabase project config). `.range()` cannot override this. For queries that return more than 1000 rows, use batched fetching:
+
+```ts
+async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const all: any[] = []
+  let offset = 0
+  while (true) {
+    const res = await fetch(url, {
+      headers: {
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Range: `${offset}-${offset + batchSize - 1}`,
+      },
+    })
+    if (!res.ok) throw new Error(`PostgREST ${res.status}`)
+    const chunk = await res.json()
+    if (!chunk?.length) break
+    all.push(...chunk)
+    offset += chunk.length
+    if (chunk.length < batchSize) break
+  }
+  return all
+}
+```
+
+Usage: construct a PostgREST URL with all filters + order, then pass to `fetchAllRows(url)`. The service role key is used directly via REST headers.
+
+## Route Tree RPC
+`get_route_tree(p_city text DEFAULT '')` — returns distinct routes per city/UC with `unit_count` and `is_unrouted` flag. Source: `scripts/sql/029-route-tree-rpc.sql`. Called by `GET /api/routes` Mode 2.
+
+## `selectedCity` vs DB District Name
+`useBillingStore.selectedCity` stores **display name** (`"Sargodha"`, `"Bhalwal"`, `"Khushab"`). When querying APIs that filter by DB column `city_district` (`"SARGODHA"`), always convert via `CITY_TEHSIL_MAP[selectedCity].district`. The Routes tab was broken because it passed the display name directly — fixed.
+
 ## No Native `confirm()` — Must Use `useConfirm()`
 Native browser `confirm()` is banned by ESLint (`no-restricted-globals`). Always use:
 ```ts
@@ -155,7 +190,7 @@ supabase.table("survey_units").upsert(rows, on_conflict="survey_id").execute()
 
 ### Schema
 - Base: `scripts/sql/reset-and-create.sql`
-- Migrations: `scripts/sql/` files `005`–`028` (apply in order)
+- Migrations: `scripts/sql/` files `005`–`029` (apply in order)
 - RPCs: `scripts/sql/007-data-insight-rpcs.sql` — admin-only aggregate functions
 - Triggers: `scripts/sql/009-triggers-and-automation.sql`, `010-reference-tables.sql`, `026-staff-sync-trigger.sql`
 
