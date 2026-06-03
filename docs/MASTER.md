@@ -844,26 +844,34 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 
 ### Phase B — Field Staff Delivery UI (~10 hrs)
 
-**B1 — Assignment Overview (`/deliver` page)**
-| Step | Time | Task |
-|------|------|------|
-| B.1 | 60 min | `/deliver` page: full-screen mobile map with assigned bill markers, bottom sheet with progress bar |
-| B.2 | 30 min | Deliver bottom sheet: name, address, bill amount, delivery status, photo button (existing `DeliverBottomSheet.tsx`) |
-| B.3 | 60 min | Photo capture: camera API → WebP compress → IndexedDB queue → GAS webhook → Drive URL saved to `delivery_photos` |
-| B.4 | 30 min | Status marking: delivered (photo+GPS) or missed (photo+reason+GPS) — both update `assignment_items` |
-| B.5 | 30 min | Live progress: "Delivered X/Y" from assignment_items photo count |
-| B.6 | 60 min | Swipeable card list view: pull-to-refresh, sorted by route sequence |
-| B.7 | 30 min | Offline support: cached assignment + IndexedDB photo queue + sync indicator |
-| B.8 | 30 min | Advance to next pending (after marking, find next pending item — no sequential lock) |
+**B1 — Assignment Overview (`/deliver` page) ✅ (Done 2026-06-02)**
+| Step | Time | Task | Status |
+|------|------|------|--------|
+| B.1 | 60 min | `/deliver` page: full-screen mobile map with assigned bill markers, bottom sheet with progress bar | ✅ |
+| B.2 | 30 min | Deliver bottom sheet: name, address, bill amount, delivery status, photo button | ✅ |
+| B.3 | 60 min | Photo capture: camera API → WebP compress → IndexedDB queue → GAS webhook → Drive URL | ✅ |
+| B.4 | 30 min | Status marking: delivered (photo+GPS) or missed (photo+reason+GPS) | ✅ |
+| B.5 | 30 min | Live progress: "Delivered X/Y" from assignment_items | ✅ |
+| B.6 | 60 min | Swipeable card list view: pull-to-refresh, sorted by route sequence | ✅ |
+| B.7 | 30 min | Offline support: cached assignment + IndexedDB photo queue + sync indicator | ✅ |
+| B.8 | 30 min | Advance to next pending | ✅ |
 
-**B2 — Map-Based Delivery Flow (QR + HouseDetailSheet)**
+**B2 — Map-Based Delivery Flow (QR + HouseDetailSheet) ⏳ (In Progress)**
 | Step | Time | Task |
 |------|------|------|
-| B.9 | 60 min | **QR Scanner**: Floating button on Map view + Deliver page. Install `html5-qrcode`, scan `sid={survey_id}` from physical bill. Match to staff's active `assignment_items` by `survey_id`. Open HouseDetailSheet. Fallback manual input. |
-| B.10 | 60 min | **HouseDetailSheet Deliver Button**: "Take Picture" button in HDS → native camera → photo confirm → GPS + timestamp captured silently → mark `assignment_items.status='delivered'` → create `delivery_photos` row. Use shared `useDeliverUnit()` hook (also used by DeliverBottomSheet). |
-| B.11 | 30 min | **HouseDetailSheet Navigate + Flag + Missed**: "Navigate" button → staff GPS vs house marker on map, distance. "Flag" → text notes → POST to `flagged_psids`. "Missed" → reason input + GPS → mark status. |
-| B.12 | 15 min | **Auto-advance from HDS**: After marking delivered in HDS, keep view open for next QR scan. Deliver page progress updates in real-time via query invalidation. |
-| B.13 | 15 min | **Add `survey_id` to `assignment_items`**: ALTER TABLE migration. Update assignment creation to write `survey_id`. Enables QR→assignment matching. |
+| B.13 | 15 min | **Add `survey_id` to `assignment_items`**: ALTER TABLE migration. Update assignment creation to write `survey_id`. Enables QR→assignment matching. | ✅ |
+| B.14 | 30 min | **Fix delivery target key**: Changed from `survey_id` to `psid` — always populated, no backfill needed. Fixes null-equality bug. | ✅ |
+| B.9 | 60 min | **QR Scanner**: Floating button on Map view + Deliver page. Install `html5-qrcode`, scan `sid={survey_id}` from physical bill. Match to staff's active `assignment_items` by `survey_id`. Open HouseDetailSheet. Fallback manual input. | ✅ |
+| B.15 | 30 min | **Shared marker module**: `src/lib/markers.ts` — `createMarkerIcon(color, opts?)` with CSS pulse animation. Used by both admin (`survey-markers.tsx`) and staff (`staff-map-markers.tsx`). 10px default, 12px staff, selected ring. | ✅ |
+| B.16 | 30 min | **UnitDeliverySheet redesign**: Full-bleed hero image with gradient overlay, overlaid info + action buttons, close button top-left, delivered green checkmark overlay, nav arrows (`top-1/3`), touch swipe (50px threshold). | ✅ |
+| B.17 | 30 min | **FlyToTarget + Satellite toggle on StaffMap**: Auto-flies to selected marker (zoom 18, 1s). Reads `mapType` from billing store same as admin MapView. | ✅ |
+| B.18 | 45 min | **Stats page for field_staff**: Bottom tab `/stats` route. `StaffPersonalStats` — today's progress cards + progress bar + 7/30/90 day historical KPIs. Uses `useStaffAssignment` + `useStaffStats` hooks. | ✅ |
+| B.19 | 30 min | **Deliver page redesigned**: Compact mobile list — progress header bar, pagination (50/page), route seq circles, consumer name + status dot, delivered timestamp, amount right-aligned. Removed per-row camera icons. | ✅ |
+| B.20 | 15 min | **Stale files deleted**: `deliver-map.tsx`, `deliver-bottom-sheet.tsx`, `deliver-action.tsx`, `deliver-card-list.tsx`. | ✅ |
+| B.21 | 15 min | **QR scanner guard + z-index fix**: Added `activeView === 'map'` guard; z-index `z-[100]` → `z-[1000]`; overlay also `z-[1000]`. | ✅ |
+| B.10 | 60 min | **HouseDetailSheet Deliver Button**: "Take Picture" button in HDS → native camera → photo confirm → GPS + timestamp captured silently → mark `assignment_items.status='delivered'` → create `delivery_photos` row. Use shared `useDeliverUnit()` hook (also used by DeliverBottomSheet). | 🔲 |
+| B.11 | 30 min | **HouseDetailSheet Navigate + Flag + Missed**: "Navigate" button → staff GPS vs house marker on map, distance. "Flag" → text notes → POST to `flagged_psids`. "Missed" → reason input + GPS → mark status. | 🔲 |
+| B.12 | 15 min | **Auto-advance from HDS**: After marking delivered in HDS, keep view open for next QR scan. Deliver page progress updates in real-time via query invalidation. | 🔲 |
 
 ### Phase C — Admin Dashboard (~3 hrs)
 | Step | Time | Task |
@@ -1005,35 +1013,39 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 0e | 2 hrs | 3.5 hrs |
 | 0f | 3 hrs | 6.5 hrs |
 | A | 3 hrs | 9.5 hrs |
-| B | 10 hrs | 19.5 hrs |
-| C | 3 hrs | 22.5 hrs |
-| E | 4 hrs | 26.5 hrs |
-| F | 3 hrs | 29.5 hrs |
-| G | 3 hrs | 32.5 hrs |
-| D | 4 hrs | 36.5 hrs |
-| RBAC | 3 hrs | 39.5 hrs |
-| 1 (Copy ref scripts) | 0.5 hrs | 40 hrs |
-| 2 (enrich-survey-units) | 2 hrs | 42 hrs |
-| 3 (load-payments) | 1 hr | 43 hrs |
-| 4 (city columns) | 0.5 hrs | 43.5 hrs |
-| 5 (ingest-all) | 1 hr | 44.5 hrs |
-| 6 (bill metadata) | 1.5 hrs | 46 hrs |
-| 2b (drop amount_due) | 0.5 hrs | 46.5 hrs |
+| B1 | 7 hrs | 16.5 hrs |
+| C | 3 hrs | 19.5 hrs |
+| E | 4 hrs | 23.5 hrs |
+| F | 3 hrs | 26.5 hrs |
+| G | 3 hrs | 29.5 hrs |
+| D | 4 hrs | 33.5 hrs |
+| RBAC | 3 hrs | 36.5 hrs |
+| 1 (Copy ref scripts) | 0.5 hrs | 37 hrs |
+| 2 (enrich-survey-units) | 2 hrs | 39 hrs |
+| 3 (load-payments) | 1 hr | 40 hrs |
+| 4 (city columns) | 0.5 hrs | 40.5 hrs |
+| 5 (ingest-all) | 1 hr | 41.5 hrs |
+| 6 (bill metadata) | 1.5 hrs | 43 hrs |
+| 2b (drop amount_due) | 0.5 hrs | 43.5 hrs |
+| **R.1-R.5 (Architecture)** | **6 hrs** | **49.5 hrs** |
+| **B2** (QR + HDS Delivery) | **3 hrs** | **52.5 hrs** |
 
 ### Execution Order (Remaining)
-| Order | Phase | Time | What |
-|-------|-------|------|------|
-| 1 | **2b** Drop `amount_due` | 30 min | Remove column — deferred cleanup |
-| 2 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks with approval chain support |
-| 3 | **B** Field Staff Delivery UI | 10 hrs | B1: /deliver page, photo capture, offline queue (existing). B2: QR scanner, HouseDetailSheet deliver button, navigate aid, auto-advance |
-| 4 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs |
-| 5 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions |
-| 6 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → write to survey_units → printer integration |
-| 7 | **G** Live Admin Monitoring | 3 hrs | Staff mode on map, breadcrumbs, near-real-time polling |
-| 8 | **RBAC** Approval Chain | 3 hrs | User management + assignment approval chain (draft→pending→approved→active) |
-| 9 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets |
-| 10 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 |
-| 11 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test |
+| Order | Phase | Time | What | Status |
+|-------|-------|------|------|--------|
+| 1 | **R.1-R.5** Architecture Improvement | 6 hrs | Security guard, Zod validation, repository layer, middleware, server component split | ✅ Done |
+| 2 | **2b** Drop `amount_due` | 30 min | Remove column — deferred cleanup | ✅ Done |
+| 3 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks with approval chain support | ✅ Done |
+| 4 | **B1** Field Staff Delivery Basics | 7 hrs | /deliver page, photo capture, offline queue, map, card list, bottom sheet | ✅ Done |
+| 5 | **B2** QR + HDS Delivery Flow | 3 hrs | QR scanner, HouseDetailSheet deliver/navigate/missed buttons, auto-advance | ⏳ In Progress |
+| 6 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs | 🔲 |
+| 7 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions | 🔲 |
+| 8 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → write to survey_units → printer integration | 🔲 |
+| 9 | **G** Live Admin Monitoring | 3 hrs | Staff mode on map, breadcrumbs, near-real-time polling | 🔲 |
+| 10 | **RBAC** Approval Chain | 3 hrs | User management + assignment approval chain (draft→pending→approved→active) | 🔲 |
+| 11 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
+| 12 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 | 🔲 |
+| 13 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test | 🔲 |
 
 ---
 ## 11. Implementation Workflow (Permanent Rule)
@@ -1954,6 +1966,8 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-05-31 | 17.0 | **Database gaps report — 8 gaps blocking pipeline streamlining.** Payment_history lacks city/tehsil/uc_name (forces LATERAL join → "Unknown" bars). Dead trigger on payment_history (calls non-existent table). No computed city dimension for 3 cities. start_month never written. 0 pipeline tables (flagged_psids, bill_print_log, ingest_log). Dead RPCs referencing dropped bill_items. Staff/profiles disconnect. Enrich script doesn't write geography. docs/SCHEMA.md created. AGENTS.md updated to remove stale references. See Section 16. |
 | 2026-06-01 | 18.0 | **Office: Pipeline overhaul — migrations 022-028 applied, geography fixed, scripts enriched, charts polished. Home: Mobile responsiveness fixes.** Office: Phase 1 reference scripts copied, enrich-survey-units/load-payments/ingest-all rewritten, dead trigger+RPCs dropped, payment_history+city geography added, pipeline tables created, charts polished (5 components), bill-info API created, HouseDetailSheet bill summary. Home: page scroll chain (map/page.tsx `min-h-0 h-full`), tab bar overflow (dashboard.tsx `overflow-x-auto`), city filter wrapping (office-breakdown.tsx). |
 | 2026-06-02 | 19.0 | **MASTER.md overhaul — Vision section, comprehensive data model, edge cases, stale reference cleanup.** Added detailed Vision section (S1) with app overview, UX modes, monthly workflow, pipeline, DQ strategy. Expanded Data Model (S3, S6) with complete survey_units columns, payment_history, house_corrections, delivery tables, pipeline tables, `updated_at` columns. Replaced stale bill_items references throughout. Added 5 new edge cases (#18-#22): QR mismatch, silent GPS failure, offline photo sync, mid-cycle staff replacement, route conflict. Updated DB triggers, bill_months source, survey_units column listing. Changelog updated to v19.0. |
+| 2026-06-03 | 20.0 | **Architecture Improvement Plan (R.1–R.5) complete.** Security guard (`server-only`), Zod validation layer (9 schemas, 5 routes), repository layer (4 repos, 6 routes slimmed 80%), Supabase SSR middleware (7 protected routes), stats server component split. Phase B1 marked done. Phase B2 (QR + HDS delivery) is next. Build verified: `tsc` zero errors, `build` successful. |
+| 2026-06-03 | 21.0 | **Phase B2 delivery flow — unified mobile UI, shared markers, UnitDeliverySheet, staff stats.** Delivery key changed from `survey_id` to `psid`. Shared `createMarkerIcon` in `src/lib/markers.ts` used by admin + staff maps. UnitDeliverySheet redesigned: full-bleed hero, overlaid info+buttons, nav arrows, touch swipe. FlyToTarget + satellite toggle on StaffMap. Stats page for field_staff (`/stats`). Deliver page redesigned: compact paginated list. QR scanner z-index + guard fix. 4 stale files deleted. B2 steps B.13-B.21 marked ✅; B.10-B.12 remain 🔲. Build verified: `tsc` zero errors, `build` successful. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -2744,3 +2758,88 @@ ORDER BY median_delivery_ts;
 - DB gap #10: add `updated_at` column to `payment_history` (needs migration SQL + trigger)
 - Optional: move `fetchAllRows()` to shared utility (`src/lib/queries/` or `src/lib/supabase/`) for reuse across all API routes
 - The `uc-stats` API still uses `selectedCity` display name but does `CITY_TEHSIL_MAP[city]` lookup internally — working correctly
+
+### 2026-06-03 (Part 2) — Architecture Improvement Plan (R.1–R.5) — Location: Office
+
+**Goal:** Execute 5-phase Architecture Improvement Plan to harden the codebase before feature work.
+
+**Done:**
+1. **R.1 — Security Guard (15 min):** Installed `server-only` package. Added `import 'server-only'` to `src/lib/supabase/admin.ts` + `server.ts` — build-time protection against service_role key leaks.
+2. **R.2 — Zod Validation Layer (1 hr):** Created `src/lib/validation/schemas.ts` (9 shared Zod schemas) + `src/lib/validation/validate-query.ts` helper. Updated 5 routes (billing-stats, flagged-psids, data-insight, assignments, surveys) to use typed validation.
+3. **R.3 — Repository Layer (2 hr):** Created 4 repository files in `src/lib/repositories/` — `flagged-psids-repository.ts` (6 fns), `survey-repository.ts` (2 fns), `assignment-repository.ts` (6 fns), `data-insight-repository.ts` (2 fns). Rewrote 6 API routes as thin HTTP wrappers (~80% code reduction).
+4. **R.5 — Middleware (1 hr):** Created `src/middleware.ts` — Supabase SSR session refresh + auth guard for 7 protected routes. Removed inline `useEffect` auth guards from 6 pages (`/`, `/map`, `/assignments`, `/stats`, `/route`, `/flagged-units`). `/deliver` retains `field_staff` role guard; `/flagged-units` retains admin role check client-side.
+5. **R.4a — Stats Server Component (30 min):** Split `/stats/page.tsx` into server component (fetches staff list from Supabase) + `stats-client.tsx` (filters, table, KPI cards, performance modal).
+6. **R.4b — Route page (abandoned):** Skipped as impractical — depends on Zustand `useBillingStore` (client-only); server pre-fetching all cities yields marginal benefit.
+
+**Key decisions:**
+- Route page stays `'use client'` — interactive expand/collapse + city-selection + route-units fetch make Server Component split counterproductive.
+- Stats page uses `placeholderData` pattern: server fetches initial staff list, client shows it while React Query refreshes.
+- `html5-qrcode` chosen for QR scanner, single HouseDetailSheet with `mode` prop, floating QR button on Map view (confirmed in planning discussion).
+
+**Verified:**
+- `npx tsc --noEmit` — zero errors
+- `npm run build` — successful. `/stats` changed from `○` (Static) to `ƒ` (Dynamic) — correct since server component now fetches from Supabase. Middleware shows as `ƒ Proxy (Middleware)`.
+- Build output shows 23 API routes, 7 pages, middleware registered correctly.
+
+**Updated in MASTER.md:**
+- Execution Order table: Orders 1-4 (R.1-R.5, 2b, A, B1) marked ✅ Done. B2 moved to Order 5.
+- Phase B section: B1 marked ✅ with status per step. B2 marked as current with ⏳.
+- Changelog v20.0 added.
+
+**Next step:**
+- Phase B2 — Step B.13: Add `survey_id` to `assignment_items` (DB migration + code update)
+
+### 2026-06-03 (Part 3) — Phase B2 Delivery Flow Implementation — Location: Office
+
+**Goal:** Complete Phase B2 delivery flow: unified mobile UI with QR scanning, marker-based map navigation, delivery bottom sheet, and staff stats.
+
+**Done:**
+1. **Delivery target key changed from `survey_id` to `psid`** — Fixes null-equality bug where all markers appeared selected. `deliver/page.tsx`, `map/page.tsx`, `staff-map-markers.tsx`, `qr-scanner-button.tsx` all use `psid`.
+2. **QR scanner fixed** — Added `activeView === 'map'` guard; z-index bumped `z-[100]` → `z-[1000]`; passes `psid` not `id`; overlay z-index also `z-[1000]`.
+3. **`src/lib/markers.ts` created** — Shared `createMarkerIcon(color, opts?)` — 12px default size, `2px solid rgba(0,0,0,0.35)` border, no shadow. Selected markers get `2px solid #1e40af` border + CSS pulse ring. Keyframes injected once into `<head>`.
+4. **`survey-markers.tsx` updated** — Uses shared `createMarkerIcon` with `{ size: 10 }`.
+5. **`staff-map-markers.tsx` updated** — Uses shared `createMarkerIcon` with `{ selected }`. Removed `<Popup>` (sheet replaces it). Selection compares `psid` with `deliverTargetId != null` guard.
+6. **`FlyToTarget` on StaffMap** — Flies to selected marker (zoom 18, 1s) when `deliverTargetId` changes.
+7. **Satellite toggle on StaffMap** — Reads `mapType` from billing store same as `MapView`.
+8. **UnitDeliverySheet redesigned** — Full-bleed hero image with gradient overlay, all info + action buttons overlaid on image, close button top-left (white X on dark bg). Delivered state shows centered green checkmark overlay. Navigation arrows (`z-20`, `top-1/3`) + touch swipe (50px threshold, `onTouchStart`/`onTouchEnd`). Arrow buttons have `onTouchEnd` with `stopPropagation` + ref clear to prevent swipe conflict. Photo preview replaces portal image in-place.
+9. **`AssignmentItemUnit` type expanded** — Added `survey_id: string | null` and `image_urls: string[]`. API query in `assignment-repository.ts` updated to select them. `UnitDeliverySheet` uses proper types (removed `as any` casts). `onViewDetails` uses `unit.survey_id`.
+10. **Stats page for field_staff** — Bottom tab now goes to `/stats` route. `StatsClient` shows `StaffPersonalStats` component for non-admin users — today's assignment progress (delivered/missed/pending cards + progress bar) + 7/30/90 day historical performance KPIs. Uses `useStaffAssignment` + `useStaffStats` hooks.
+11. **Deliver page redesigned** — Compact mobile list — progress header bar with thin progress meter, pagination (50/page with prev/next), route seq circles, consumer name + status dot, delivered timestamp, amount right-aligned. Removed camera icon per row, border-left accent cards.
+12. **Stale files deleted** — `deliver-map.tsx`, `deliver-bottom-sheet.tsx`, `deliver-action.tsx`, `deliver-card-list.tsx`.
+13. **Arrow buttons moved higher** — `top-1/2` → `top-1/3` to avoid overlapping bottom info text.
+
+**Verified:**
+- `npx tsc --noEmit` — zero errors
+- `npm run build` — successful (all 23 API routes, 7 pages, middleware)
+
+**Key decisions:**
+- `psid` used as delivery target key instead of `survey_id` — always populated, no backfill needed for existing assignments.
+- `createMarkerIcon` lives in `src/lib/markers.ts` — single source of truth for all map markers (admin + staff), with size and selected-state options.
+- UnitDeliverySheet uses full-bleed hero image with overlaid buttons — more compact, shows more of the portal image, matches modern mobile UI patterns.
+- Stats tab on mobile navigates to `/stats` route — staff see personal progress, admins see full dashboard.
+
+**Remaining (from home):**
+- **B.10 — Wire HDS toolbar Deliver/Missed buttons to real camera + GPS + mark actions via shared `useDeliverUnit()` hook.** Currently buttons are present but not wired to real actions. Need to:
+  1. Create or reuse `useDeliverUnit()` hook that captures photo via native camera, gets GPS via Geolocation API, creates `delivery_photos` row, marks `assignment_items.status='delivered'`.
+  2. Wire "Take Picture" button → opens native camera → photo confirm → GPS + timestamp captured silently → mark delivered.
+  3. Wire "Missed" button → reason dialog → GPS → mark missed.
+  4. Wire "Navigate" button → show distance/direction to house marker.
+  5. After marking delivered/missed, auto-advance to next pending unit (or show overlay confirming action).
+- **B.11 — "Flag" button** → text notes → POST to `flagged_psids`.
+- **B.12 — Auto-advance**: After marking delivered in HDS, keep view open for next QR scan. Deliver page progress updates in real-time via query invalidation.
+
+**Updated in MASTER.md:**
+- Phase B2 section: B.13, B.14, B.9, B.15, B.16, B.17, B.18, B.19, B.20, B.21 marked ✅. B.10, B.11, B.12 remain 🔲.
+- Execution Order: B2 changed from ⏳ Next to ⏳ In Progress.
+- Changelog v21.0 added.
+
+### Next Session (From Home)
+Start with **B.10**:
+1. Create a shared `useDeliverUnit()` hook in `src/hooks/use-deliver-unit.ts` that:
+   - Accepts photo capture (via file input or native camera)
+   - Captures GPS via `navigator.geolocation.getCurrentPosition()`
+   - POSTs to `POST /api/deliver/unit` which creates `delivery_photos` row + marks `assignment_items.status='delivered'`
+   - Returns mutation state for loading/error display
+2. Wire the "Take Picture" button in `UnitDeliverySheet` to this hook
+3. Wire "Missed" button → reason dialog → GPS → POST with status='missed'
+4. Run `npx tsc --noEmit` and `npm run build` to verify

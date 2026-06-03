@@ -8,7 +8,7 @@ import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { BillingSidebar } from './BillingSidebar'
 import { AppHeader } from './AppHeader'
 import { DesktopFilterBar } from '@/components/filter-panel'
-import { MapIcon, List, Truck } from 'lucide-react'
+import { MapIcon, List, Truck, BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -21,9 +21,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [
-    { id: 'map' as const, label: 'Map', icon: MapIcon, href: undefined },
-    { id: 'list' as const, label: 'List', icon: List, href: undefined },
-    { id: 'deliver' as const, label: 'Deliver', icon: Truck, href: '/deliver' },
+    { id: 'map' as const, label: 'Map', icon: MapIcon, href: undefined as string | undefined },
+    { id: 'list' as const, label: 'List', icon: List, href: undefined as string | undefined },
+    { id: 'deliver' as const, label: 'Deliver', icon: Truck, href: '/deliver' as string | undefined },
+    { id: 'stats' as const, label: 'Stats', icon: BarChart3, href: '/stats' as string | undefined },
   ]
 
   // Debounced resize handler

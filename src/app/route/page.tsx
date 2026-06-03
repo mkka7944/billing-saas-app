@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/stores/auth-store'
 import { AppShell } from '@/components/layout/AppShell'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,8 +12,6 @@ import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { useBillingStore } from '@/stores/billing-store'
 
 export default function RoutePage() {
-  const router = useRouter()
-  const user = useAuthStore((s) => s.user)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const globalCity = useBillingStore((s) => s.selectedCity)
   const globalFilters = useBillingStore((s) => s.filters)
@@ -31,10 +27,6 @@ export default function RoutePage() {
     selectedRoute?.route || null,
     globalTehsil,
   )
-
-  useEffect(() => {
-    if (!user) router.replace('/login')
-  }, [user, router])
 
   useEffect(() => {
     if (tree?.length && !selectedCity) {
@@ -56,8 +48,6 @@ export default function RoutePage() {
   }
 
   useEffect(() => { setPageIdentity('Routes') }, [setPageIdentity])
-
-  if (!user) return null
 
   return (
     <AppShell>

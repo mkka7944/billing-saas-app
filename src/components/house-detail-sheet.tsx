@@ -17,8 +17,14 @@ import Counter from 'yet-another-react-lightbox/plugins/counter'
 import 'yet-another-react-lightbox/plugins/counter.css'
 import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 import Fullscreen from 'yet-another-react-lightbox/plugins/fullscreen'
+import type { AssignmentItemWithUnit } from '@/types'
 
-export function HouseDetailSheet() {
+interface HouseDetailSheetProps {
+  mode?: 'admin' | 'delivery'
+  assignmentItem?: AssignmentItemWithUnit | null
+}
+
+export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetailSheetProps) {
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const selectHouse = useBillingStore((s) => s.selectHouse)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
@@ -139,7 +145,7 @@ export function HouseDetailSheet() {
       onTouchStart={canNav && !galleryOpen ? handleTouchStart : undefined}
       onTouchEnd={canNav && !galleryOpen ? handleTouchEnd : undefined}
     >
-      {/* Toolbar — Close, Survey ID, Map */}
+      {/* Toolbar — Close, Survey ID, Map, Delivery actions */}
       <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0 min-h-[52px]">
         <button onClick={() => selectHouse(null)} className="h-11 w-11 flex items-center justify-center rounded-lg border border-border bg-background hover:bg-muted cursor-pointer shrink-0" aria-label="Close">
           <X className="h-5 w-5" />
@@ -150,6 +156,17 @@ export function HouseDetailSheet() {
             <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-900 rounded px-1.5 py-0.5 shrink-0">ARCHIVED</span>
           )}
         </div>
+        {mode === 'delivery' && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button className="h-10 px-3 rounded-lg bg-green-600 text-white text-[11px] font-bold flex items-center gap-1.5 hover:bg-green-700 cursor-pointer min-h-[44px]">
+              <Camera className="h-4 w-4" />
+              Deliver
+            </button>
+            <button className="h-10 px-3 rounded-lg bg-red-600 text-white text-[11px] font-bold flex items-center gap-1.5 hover:bg-red-700 cursor-pointer min-h-[44px]">
+              Missed
+            </button>
+          </div>
+        )}
         {survey.lat && survey.lng && (
           <button onClick={openOnMap} className="h-11 w-11 flex items-center justify-center rounded-lg border border-border bg-background hover:bg-muted cursor-pointer shrink-0" aria-label="Show on map">
             <MapPin className="h-5 w-5" />
@@ -335,78 +352,75 @@ export function HouseDetailSheet() {
           </div>
         </div>
 
-        {/* Info Grid — compact 3-col, no labels, no district */}
-        {infoValues.length > 0 && (
-          <div className="px-4 py-3 border-b border-border">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2">Information</p>
-            <div className="grid grid-cols-3 gap-x-3 gap-y-2">
+        {/* Info + Bill Summary + Gallery — 2-column with divider */}
+        <div className="px-4 py-3 border-b border-border">
+          <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2">Information</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="border-r border-border pr-4 space-y-1.5">
               {infoValues.map((val, i) => (
                 <p key={i} className="text-xs font-medium truncate">{val}</p>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* Bill Summary */}
-        <div className="px-4 py-3 border-b border-border">
-          <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2">Bill Summary</p>
-          {billInfo ? (
-            <div className="space-y-1.5">
-              {billInfo.billNumber != null && billInfo.billTotal != null && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded px-1.5 py-0.5 shrink-0">
-                    Bill #{billInfo.billNumber}/{billInfo.billTotal}
-                  </span>
-                  {billInfo.routeName && (
-                    <span className="text-[10px] font-medium text-muted-foreground">{billInfo.routeName}</span>
+            <div className="pl-1 space-y-3">
+              {billInfo ? (
+                <div className="space-y-1.5">
+                  {billInfo.billNumber != null && billInfo.billTotal != null && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded px-1.5 py-0.5 shrink-0">
+                        Bill #{billInfo.billNumber}/{billInfo.billTotal}
+                      </span>
+                      {billInfo.routeName && (
+                        <span className="text-[10px] font-medium text-muted-foreground">{billInfo.routeName}</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">Paid months:</span>
+                    <span className="font-bold">{billInfo.paidMonths}</span>
+                    {billInfo.startMonth && (
+                      <>
+                        <span className="text-muted-foreground">Since:</span>
+                        <span className="font-medium">{billInfo.startMonth}</span>
+                      </>
+                    )}
+                  </div>
+                  {billInfo.currentBillMonth && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5">
+                        Current Month
+                      </span>
+                      <span className="text-xs font-medium">{billInfo.currentBillMonth}</span>
+                    </div>
                   )}
                 </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center">
+                  <p className="text-xs text-muted-foreground/60 dark:text-muted-foreground/80 italic">Loading...</p>
+                </div>
               )}
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-muted-foreground">Paid months:</span>
-                <span className="font-bold">{billInfo.paidMonths}</span>
-                {billInfo.startMonth && (
-                  <>
-                    <span className="text-muted-foreground">Since:</span>
-                    <span className="font-medium">{billInfo.startMonth}</span>
-                  </>
-                )}
-              </div>
-              {billInfo.currentBillMonth && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5">
-                    Current Month
-                  </span>
-                  <span className="text-xs font-medium">{billInfo.currentBillMonth}</span>
+
+              {/* Gallery thumbnails */}
+              {allImages.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
+                    <Image className="h-3 w-3" /> Photos ({allImages.length})
+                  </p>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {allImages.map((src, i) => (
+                      <button
+                        key={i}
+                        onClick={() => openGallery(i)}
+                        className="shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer"
+                      >
+                        <img src={src} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center">
-              <p className="text-xs text-muted-foreground/60 dark:text-muted-foreground/80 italic">Loading...</p>
-            </div>
-          )}
-        </div>
-
-        {/* Delivery Photos */}
-        {deliveryPhotos.length > 0 && (
-          <div className="px-4 py-3 border-b border-border">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2 flex items-center gap-1">
-              <Image className="h-3 w-3" /> Delivery Photos ({deliveryPhotos.length})
-            </p>
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-              {deliveryPhotos.map((p, i) => (
-                <button
-                  key={p.id}
-                  onClick={() => openGallery(surveyImages.length + i)}
-                  className="shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer"
-                >
-                  <img src={p.photo_url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                </button>
-              ))}
-            </div>
           </div>
-        )}
+        </div>
 
         <div className="h-3" />
       </div>

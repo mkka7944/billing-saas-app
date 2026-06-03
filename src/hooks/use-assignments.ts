@@ -18,7 +18,6 @@ export interface UnassignedBill {
   lat: number | null
   lng: number | null
   psid: string | null
-  amount_due: number | null
   monthly_fee: number | null
   arrears: number | null
   route_seq: number | null
@@ -177,7 +176,6 @@ export interface RouteUnit {
   survey_id: string
   consumer_name: string | null
   psid: string | null
-  amount_due: number | null
   monthly_fee: number | null
   arrears: number | null
   route_seq: number | null

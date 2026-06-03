@@ -7,7 +7,6 @@ export interface RouteUnit {
   consumer_name: string | null
   address: string | null
   psid: string | null
-  amount_due: number | null
   monthly_fee: number | null
   arrears: number | null
   route_seq: number | null

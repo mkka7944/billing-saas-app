@@ -2,8 +2,8 @@
 """
 Enrich survey_units from Lifecycle XLSX
 
-Reads current month lifecycle files and updates survey_units with all 20 fields:
-  psid, monthly_fee, billing_category, amount_due, arrears,
+Reads current month lifecycle files and updates survey_units with all 19 fields:
+  psid, monthly_fee, billing_category, arrears,
   route_name, route_seq, current_bill_month,
   consumer_name, address, city_district, tehsil, uc_name,
   surveyor_name, survey_date, survey_time, lat, lng,
@@ -108,7 +108,6 @@ def main():
 
     psid_col = lc.get("psid", "Biller PSID")
     sid_col = lc.get("survey_id", "Survey ID")
-    amount_col = lc.get("amount_due", "Total Payable")
     arrears_col = lc.get("arrears", "Arrears")
     fee_col = lc.get("monthly_fee", "Monthly Fee")
     cat_col = lc.get("billing_category", "Billing Category")
@@ -190,7 +189,6 @@ def main():
                     "psid": psid,
                     "monthly_fee": safe_int(row.get(fee_col, "0")),
                     "billing_category": str(row.get(cat_col, "")).strip().upper()[:10],
-                    "amount_due": safe_int(row.get(amount_col, "0")),
                     "arrears": safe_int(row.get(arrears_col, "0")),
                     "route_name": safe_str(row.get(route_col, "")) or None,
                     "route_seq": safe_int(row.get(route_seq_col, "0")),
@@ -209,7 +207,6 @@ def main():
                 }
             else:
                 # Multiple PSIDs for same survey — sum amounts, keep first psid
-                enrichment[sid]["amount_due"] += safe_int(row.get(amount_col, "0"))
                 enrichment[sid]["arrears"] += safe_int(row.get(arrears_col, "0"))
 
             count += 1
@@ -332,7 +329,6 @@ def main():
             "psid": data["psid"],
             "monthly_fee": data["monthly_fee"],
             "billing_category": data["billing_category"] if data["billing_category"] and data["billing_category"] != "NAN" else "UNKNOWN",
-            "amount_due": data["amount_due"],
             "arrears": data["arrears"],
             "route_name": data["route_name"],
             "route_seq": data["route_seq"],

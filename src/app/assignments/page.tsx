@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/stores/auth-store'
 import { AppShell } from '@/components/layout/AppShell'
 import { CreateAssignmentTab } from '@/components/assignments/create-assignment-tab'
 import { ManageAssignmentsTab } from '@/components/assignments/manage-assignments-tab'
@@ -18,18 +16,10 @@ const TABS: { key: Tab; label: string }[] = [
 ]
 
 export default function AssignmentsPage() {
-  const router = useRouter()
-  const user = useAuthStore((s) => s.user)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const [tab, setTab] = useState<Tab>('create')
 
-  useEffect(() => {
-    if (!user) router.replace('/login')
-  }, [user, router])
-
   useEffect(() => { setPageIdentity('Assignments') }, [setPageIdentity])
-
-  if (!user) return null
 
   return (
     <AppShell>

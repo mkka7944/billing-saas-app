@@ -2,19 +2,9 @@
 
 import { useMemo } from 'react'
 import { Marker, Popup } from 'react-leaflet'
-import L from 'leaflet'
 import { useBillingStore } from '@/stores/billing-store'
+import { createMarkerIcon } from '@/lib/markers'
 import type { SurveyUnit } from '@/types'
-
-function createIcon(color: string): L.DivIcon {
-  return L.divIcon({
-    className: '',
-    html: `<div style="width:10px;height:10px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 2px rgba(0,0,0,0.2)"></div>`,
-    iconSize: [10, 10],
-    iconAnchor: [5, 5],
-    popupAnchor: [0, -7],
-  })
-}
 
 const UC_COLORS = [
   '#0072f5', '#e5484d', '#ffb224', '#36a2eb', '#ff6384',
@@ -33,7 +23,7 @@ function getUcColor(ucName: string | null): string {
   return UC_COLORS[Math.abs(hash) % UC_COLORS.length]
 }
 
-const grayIcon = createIcon('#9ca3af')
+const grayIcon = createMarkerIcon('#9ca3af', { size: 10 })
 
 interface SurveyMarkersProps {
   data: SurveyUnit[]
@@ -54,7 +44,7 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
         <Marker
           key={s.survey_id}
           position={[s.lat!, s.lng!]}
-          icon={createIcon(getUcColor(s.uc_name))}
+          icon={createMarkerIcon(getUcColor(s.uc_name), { size: 10 })}
           eventHandlers={{
             click: () => selectHouse(s.survey_id),
           }}

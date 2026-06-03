@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { applyActiveFilter } from '@/lib/queries/survey-units'
 
-const ROUTE_COLS_DETAIL = 'survey_id, consumer_name, address, psid, amount_due, monthly_fee, arrears, route_seq, route_name, surveyor_name, survey_date, survey_time, lat, lng'
+const ROUTE_COLS_DETAIL = 'survey_id, consumer_name, address, psid, monthly_fee, arrears, route_seq, route_name, surveyor_name, survey_date, survey_time, lat, lng'
 
 async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
   const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!

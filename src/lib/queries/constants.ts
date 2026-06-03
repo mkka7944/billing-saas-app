@@ -23,7 +23,6 @@ export const SURVEY_UNIT_COLS = [
   'psid',
   'monthly_fee',
   'billing_category',
-  'amount_due',
   'arrears',
   'route_name',
   'route_seq',

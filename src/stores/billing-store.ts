@@ -11,6 +11,7 @@ interface BillingState {
   filters: FilterState
   pendingFilters: FilterState
   selectedHouseId: string | null
+  deliverTargetId: string | null
   mapCenter: [number, number]
   mapZoom: number
   mapType: 'streets' | 'satellite'
@@ -19,6 +20,7 @@ interface BillingState {
   houseListTotal: number
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
+  setDeliverTarget: (id: string | null) => void
   setFilters: (partial: Partial<FilterState>) => void
   setSortConfig: (config: SortConfig) => void
   resetFilters: () => void
@@ -62,6 +64,7 @@ export const useBillingStore = create<BillingState>()(
       filters: { ...defaultFilters },
       pendingFilters: { ...defaultFilters },
       selectedHouseId: null,
+      deliverTargetId: null,
       houseList: [],
       houseListIndex: 0,
       houseListTotal: 0,
@@ -100,6 +103,8 @@ export const useBillingStore = create<BillingState>()(
       setPendingFilter: (partial) => set((s) => ({ pendingFilters: { ...s.pendingFilters, ...partial } })),
       applyFilters: () => set((s) => ({ filters: { ...s.pendingFilters } })),
       cancelFilters: () => set((s) => ({ pendingFilters: { ...s.filters } })),
+      setDeliverTarget: (id) => set({ deliverTargetId: id, activeView: id ? 'map' : (get().activeView === 'map' ? 'map' : get().activeView) }),
+
       selectHouse: (id, list, total) => {
         if (!id) {
           const prev = get().previousView || 'map'

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { AppShell } from '@/components/layout/AppShell'
@@ -60,8 +59,6 @@ const REASON_CONFIG: Record<string, { label: string; color: string; icon: React.
 const PAGE_SIZE = 25
 
 export default function FlaggedUnitsPage() {
-  const router = useRouter()
-  const user = useAuthStore((s) => s.user)
   const roleName = useAuthStore((s) => s.roleName)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
 
@@ -79,10 +76,6 @@ export default function FlaggedUnitsPage() {
     entry: FlaggedPsidEntry
     siblings: FlaggedPsidEntry[]
   } | null>(null)
-
-  useEffect(() => {
-    if (!user) router.replace('/login')
-  }, [user, router])
 
   useEffect(() => { setPageIdentity('Flagged Units') }, [setPageIdentity])
 

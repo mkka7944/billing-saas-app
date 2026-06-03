@@ -134,6 +134,14 @@ export function RoutesTab() {
                             <div className="ml-2 space-y-0.5">
                               {uc.routes.map((r) => {
                                 const isActive = selected?.uc === uc.uc && selected?.route === r.route_name
+                                const routeColor =
+                                  r.unit_count === 0
+                                    ? 'text-neutral-400 dark:text-neutral-500'
+                                    : r.unit_count <= 30
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : r.unit_count <= 100
+                                    ? 'text-blue-600 dark:text-blue-400'
+                                    : 'text-amber-600 dark:text-amber-400'
                                 return (
                                   <button
                                     key={r.route_name}
@@ -148,7 +156,7 @@ export function RoutesTab() {
                                     <span className={`truncate flex-1 ${isActive ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-neutral-600 dark:text-neutral-400'}`}>
                                       {r.route_name}
                                     </span>
-                                    <span className={`tabular-nums shrink-0 ${isActive ? 'text-blue-600' : 'text-neutral-500'}`}>
+                                    <span className={`tabular-nums shrink-0 font-medium ${isActive ? 'text-blue-600' : routeColor}`}>
                                       {r.unit_count.toLocaleString()}
                                     </span>
                                   </button>
@@ -179,7 +187,7 @@ export function RoutesTab() {
         {selected ? (
           <UCDetailPanel
             uc={selected.uc}
-            city={cityCfg?.district || null}
+            city={selectedCity !== 'All Cities' ? selectedCity : null}
             routeName={selected.route}
             onCreated={() => {
               setSelected(null)

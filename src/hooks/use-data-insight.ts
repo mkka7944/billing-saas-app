@@ -37,7 +37,6 @@ export interface UnitRow {
   psid: string
   consumer_name: string | null
   status: string
-  amount_due: number
   surveyor_name: string | null
   survey_date: string | null
   survey_time: string | null

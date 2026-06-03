@@ -91,7 +91,7 @@ export function UCListPanel({ ucStats, selectedUc, onSelect, search }: Props) {
                       <span className="text-[10px] text-blue-500/70 dark:text-blue-400/60 leading-none mt-0.5">active</span>
                     </div>
                   </div>
-                  <div className="w-full h-1 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-300 ${
                         pct > 80 ? 'bg-green-500' : pct > 30 ? 'bg-blue-500' : 'bg-amber-400'
@@ -101,7 +101,9 @@ export function UCListPanel({ ucStats, selectedUc, onSelect, search }: Props) {
                   </div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-neutral-500">{uc.total_units.toLocaleString()} total</span>
-                    <span className="text-neutral-400">{pct}% assigned</span>
+                    <span className={`tabular-nums font-medium ${
+                      pct > 80 ? 'text-green-600 dark:text-green-400' : pct > 30 ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400'
+                    }`}>{pct}% assigned</span>
                   </div>
                 </button>
               )

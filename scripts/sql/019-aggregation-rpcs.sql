@@ -79,7 +79,7 @@ BEGIN
 
   EXECUTE format($sql$
     WITH base AS (
-      SELECT su.psid, su.tehsil, su.uc_name, su.billing_category, su.amount_due
+      SELECT su.psid, su.tehsil, su.uc_name, su.billing_category, COALESCE(su.monthly_fee, 0) + COALESCE(su.arrears, 0) AS amount_due
       FROM survey_units su
       WHERE su.current_bill_month = %L%s
     ),

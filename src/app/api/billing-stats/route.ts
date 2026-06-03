@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { currentMonth } from '@/lib/constants'
+import { validateQuery } from '@/lib/validation/validate-query'
+import { billingStatsSchema } from '@/lib/validation/schemas'
 
 export async function GET(request: Request) {
-  const sp = new URL(request.url).searchParams
-  const district = sp.get('district') || ''
-  const tehsil = sp.get('tehsil') || ''
-  const month = sp.get('month') || currentMonth()
+  const params = validateQuery(request, billingStatsSchema)
+  if (params instanceof NextResponse) return params
+
+  const district = params.district
+  const tehsil = params.tehsil
+  const month = params.month || currentMonth()
 
   const sup = await createClient()
 

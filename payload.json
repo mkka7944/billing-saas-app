@@ -1,1 +1,0 @@
-{"query": "SELECT city_district, uc_name, route_name, unit_count::int, is_unrouted FROM get_route_tree('SARGODHA') WHERE NOT is_unrouted LIMIT 10;"}

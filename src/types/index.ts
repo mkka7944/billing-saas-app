@@ -5,7 +5,6 @@ export interface SurveyUnit {
   lat: number | null
   lng: number | null
   psid: string | null
-  amount_due: number | null
   arrears: number | null
   current_bill_month: string | null
   route_name: string | null
@@ -117,6 +116,7 @@ export interface AssignmentItem {
   id: string
   assignment_id: string
   psid: string
+  survey_id: string | null
   route_seq: number
   status: 'pending' | 'delivered' | 'missed' | 'skipped'
   delivered_at: string | null
@@ -127,16 +127,17 @@ export interface AssignmentItem {
 
 export interface AssignmentItemUnit {
   psid: string
+  survey_id: string | null
   consumer_name: string | null
   address: string | null
   lat: number | null
   lng: number | null
-  amount_due: number | null
   monthly_fee: number | null
   arrears: number | null
   route_name: string | null
   route_seq: number | null
   uc_name: string | null
+  image_urls: string[]
 }
 
 export interface AssignmentItemWithUnit extends AssignmentItem {

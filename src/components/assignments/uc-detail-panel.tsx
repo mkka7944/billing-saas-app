@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUnassignedBills, useStaffList, useCreateAssignment } from '@/hooks/use-assignments'
 import { currentMonth, today } from '@/lib/constants'
 import { Card, CardContent } from '@/components/ui/card'
@@ -31,6 +31,8 @@ export function UCDetailPanel({ uc, city, routeName, onCreated }: Props) {
   const [selectedStaff, setSelectedStaff] = useState('')
   const [rangeInput, setRangeInput] = useState('')
   const [page, setPage] = useState(0)
+
+  useEffect(() => { setPage(0) }, [uc, routeName])
 
   const bills = data?.data || []
   const total = data?.total || 0
