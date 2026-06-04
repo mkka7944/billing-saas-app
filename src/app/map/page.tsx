@@ -35,6 +35,18 @@ export default function MapPage() {
 
   useEffect(() => { setPageIdentity('Map') }, [setPageIdentity])
 
+  // Read ?target=PSID from URL (passed from /deliver page) on initial mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const target = params.get('target')
+    if (target && !deliverTargetId) {
+      setDeliverTarget(target)
+      const url = new URL(window.location.href)
+      url.searchParams.delete('target')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fetch staff assignment items for field_staff role
   const { data: staffData } = useStaffAssignment(
     roleName === 'field_staff' ? user?.id || null : null
@@ -112,6 +124,23 @@ export default function MapPage() {
               items={staffItems}
               onUnitScanned={handleQRScanned}
             />
+          )}
+
+          {/* DEBUG badge — shows condition states for sheet rendering */}
+          <div className="absolute top-2 right-2 z-[9999] bg-black/80 text-white text-[10px] p-2 rounded font-mono leading-relaxed pointer-events-none">
+            <div>activeView={activeView}</div>
+            <div>deliverTargetId={deliverTargetId ? '✓' : '✗'}</div>
+            <div>deliveryUnit={deliveryUnit ? '✓' : '✗'}</div>
+            <div>roleName={roleName}</div>
+            <div>staffItems={staffItems.length}</div>
+            <div>match={deliveryItem ? '✓' : '✗'}</div>
+          </div>
+
+          {/* DEBUG indicator — confirms sheet component renders */}
+          {activeView === 'map' && deliverTargetId && deliveryUnit && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[9999] bg-green-600 text-white text-xs font-bold px-3 py-1 rounded shadow-lg">
+              SHEET RENDERED ✓ (should appear below)
+            </div>
           )}
         </div>
       </div>

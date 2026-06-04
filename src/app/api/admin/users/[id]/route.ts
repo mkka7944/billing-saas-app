@@ -61,6 +61,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // Update assigned city
+    if ('assignedCity' in body) {
+      const { error: cityError } = await (admin.from('staff') as any)
+        .upsert({
+          id,
+          assigned_city: body.assignedCity || null,
+          is_active: true,
+        }, { onConflict: 'id' })
+
+      if (cityError) {
+        return NextResponse.json({ error: cityError.message }, { status: 500 })
+      }
+    }
+
     // Sign out user if frozen
     if (signOutUser) {
       await admin.auth.admin.signOut(id)

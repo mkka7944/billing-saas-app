@@ -32,7 +32,7 @@ const GROUP_LABELS: Record<number, { label: string; color: string }> = {
 
 export function UCListPanel({ ucStats, selectedUc, onSelect, search }: Props) {
   const filtered = useMemo(
-    () => search ? ucStats.filter((u) => u.uc_name.toLowerCase().includes(search.toLowerCase())) : ucStats,
+    () => (search ? ucStats.filter((u) => u.uc_name.toLowerCase().includes(search.toLowerCase())) : ucStats).filter((u) => u.active_units > 0),
     [ucStats, search]
   )
 

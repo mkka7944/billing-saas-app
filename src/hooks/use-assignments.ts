@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { DailyAssignment, AssignmentItemWithUnit } from '@/types'
-import { currentMonth, today } from '@/lib/constants'
+import { currentMonth } from '@/lib/constants'
 
 export interface UCTotals {
   uc_name: string
@@ -84,7 +84,7 @@ export function useStaffList() {
 export function useCreateAssignment() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (body: { staff_id: string; assigned_date: string; uc_name: string; psids: string[] }) => {
+    mutationFn: async (body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[] }) => {
       const res = await fetch('/api/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -105,12 +105,12 @@ export function useCreateAssignment() {
   })
 }
 
-export function useStaffAssignment(staffId: string | null, date: string = today()) {
+export function useStaffAssignment(staffId: string | null) {
   return useQuery<{ data: DailyAssignment | null; items: AssignmentItemWithUnit[] }>({
-    queryKey: ['staff-assignment', staffId, date],
+    queryKey: ['staff-assignment', staffId],
     queryFn: async () => {
       if (!staffId) return { data: null, items: [] }
-      const res = await fetch(`/api/assignments?staff_id=${staffId}&date=${date}`)
+      const res = await fetch(`/api/assignments?staff_id=${staffId}`)
       if (!res.ok) throw new Error('Failed to fetch assignment')
       return res.json()
     },
@@ -123,7 +123,7 @@ export interface AssignmentWithStats {
   id: string
   staff_id: string
   staff_name: string
-  assigned_date: string
+  issued_at: string
   uc_name: string
   total_items: number
   pending: number
@@ -133,11 +133,14 @@ export interface AssignmentWithStats {
   created_at: string
 }
 
-export function useAssignmentList(date: string = today()) {
+export function useAssignmentList(district?: string | null, tehsil?: string | null) {
   return useQuery<AssignmentWithStats[]>({
-    queryKey: ['assignment-list', date],
+    queryKey: ['assignment-list', district, tehsil],
     queryFn: async () => {
-      const res = await fetch(`/api/assignments?list=true&date=${date}`)
+      const params = new URLSearchParams({ list: 'true' })
+      if (district) params.set('district', district)
+      if (tehsil) params.set('tehsil', tehsil)
+      const res = await fetch(`/api/assignments?${params}`)
       if (!res.ok) throw new Error('Failed to fetch assignments')
       const json = await res.json()
       return json.data || []

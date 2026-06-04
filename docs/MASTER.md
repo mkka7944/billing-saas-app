@@ -2843,3 +2843,290 @@ Start with **B.10**:
 2. Wire the "Take Picture" button in `UnitDeliverySheet` to this hook
 3. Wire "Missed" button → reason dialog → GPS → POST with status='missed'
 4. Run `npx tsc --noEmit` and `npm run build` to verify
+
+---
+### 2026-06-04 — Khushab Investigation + Delivery KPIs Removal + Aggregate Status Toggle — Location: Office
+
+**Goal:** Investigate Khushab data failing in Create Assignments and Data Insight; fix client-reported issues.
+
+**Investigation:**
+- Confirmed Khushab data IS correct: 65,122 survey_units with `current_bill_month='MAY2026'`, API returns data (KHB 01: 814 unassigned, KHB 02: 4157, UC-23 GIROTE: 2128).
+- No mismatches between `hierarchy_summary` and `survey_units` for Khushab UCs.
+- "All bills assigned" message appeared for UCs with 0 active units (JBD 02: 181 archived, UC-7 PADHRAR: 1008 archived) — this is **correct behavior**, not a bug.
+- The UC list panel already shows `active_units` count per UC.
+- Root cause of confusion: UCs with 0 active units were visible and selectable, leading to empty detail panel.
+
+**Done:**
+1. **Delivery KPIs removed entirely** (4 files):
+   - Deleted `getDeliveryKpis` function + `DeliveryKpis` interface from `data-insight-repository.ts`
+   - Removed from API route (`data-insight/route.ts`) — no more `kpisPromise` or `delivery_kpis` in responses
+   - Removed from hook (`use-data-insight.ts`) — `DeliveryKpis` type and `delivery_kpis` field removed
+   - Removed from component: `DeliveryKpiCards`, `dkpiConfig`, unused icons (Truck, Camera, PersonStanding, Percent)
+
+2. **Status toggle now visible at aggregate level** (2 files):
+   - `use-data-insight.ts:89` — `if (status)` always sends status param (was `if (drillUC && status)`)
+   - `data-insight.tsx` — toggle bar moved outside `{level === 'unit'}` block, shows Active/Archived at both levels. "Duplicates" only at drill-down (RPC can't filter duplicates at aggregate).
+   - The RPC `get_hierarchy_stats` already supports `p_status` — no DB changes needed.
+
+3. **UC list hides 0-active UCs** (1 file):
+   - `uc-list-panel.tsx:34-37` — added `.filter(u => u.active_units > 0)` so archived-only UCs don't appear.
+
+4. **Aggregate table hides 0-total rows** (1 file):
+   - `data-insight.tsx:336` — `.filter(r => r.total_units > 0)` so toggle state hides empty rows.
+
+**Key decisions:**
+- Status filter at aggregate level uses the same RPC `p_status` param as drill-down — the RPC already handles it.
+- "Duplicates" excluded from aggregate toggle — RPC doesn't support duplicates filtering at group level.
+- 0-active-unit UCs hidden from assignment list — no point clicking a UC with nothing to assign.
+
+**Verified:**
+- `npx tsc --noEmit` — zero errors.
+- `npm run build` — successful after clearing `.next/` cache (Turbopack had cached stale `getDeliveryKpis` import).
+
+**Next session:**
+- Phase B2 remaining: B.10 (wire deliver buttons to real camera/GPS/actions), B.11 (Flag button), B.12 (auto-advance).
+- Backlog: DB gap #10 — add `updated_at` to `payment_history`.
+
+### 2026-06-04 (Part 2) — Desktop Deliver Sheet Debugging — Location: Office
+
+**Goal:** Make the `UnitDeliverySheet` (staff delivery bottom sheet) appear on desktop when clicking a marker on `/map`.
+
+**Investigation:**
+1. **Admin gate removed** (line 46 of `map/page.tsx`): `if (!deliverTargetId || roleName !== 'field_staff')` → `if (!deliverTargetId)` — allowed sheet to render for any role. Did not fix staff desktop issue (staff already passed the gate).
+2. **URL param approach** (`?target=PSID` from `/deliver` to `/map`): Added `useEffect` to read `?target=` on mount. Did not fix the marker-click flow (the user tested by clicking markers directly on `/map`, not via `/deliver` navigation).
+3. **Inline sheet on `/deliver` page**: Replaced `router.push('/map')` with local `selectedItemId` state + inline `UnitDeliverySheet` on `/deliver` page. Avoided cross-page state entirely but **broke everything** — reverted.
+4. **Debug badge overlay**: Added a top-right debug badge showing all condition states (`activeView`, `deliverTargetId`, `deliveryUnit`, `roleName`, `staffItems.length`, `match`). All showed ✓ — confirming the JSX condition was met but the sheet was not visible.
+5. **Green "SHEET RENDERED ✓" indicator**: Rendered with the same JSX condition as the sheet — confirmed the condition WAS true.
+6. **Sheet CSS investigation**: Added red border, `minWidth: 400px`, `minHeight: 200px` to the sheet's outermost div, plus a debug return path inside the sheet component — sheet became visible.
+
+**Root cause:**
+The `UnitDeliverySheet` component rendered in the DOM but was visually invisible on desktop due to CSS layout collapse:
+- The sheet used `position: fixed; bottom: 0; left: 50%; right: auto;` with no explicit `width`
+- Inside, `flex-1 min-h-[300px]` children had no extrinsic height reference because the parent had `max-h-[80vh]` but no definite `h-*`
+- On desktop (sidebar open, narrower content area), the collapsed layout made the sheet effectively 0px × 0px — invisible to the user
+- The `lg:left-1/2 lg:-translate-x-1/2 lg:max-w-md` centered the element, but a collapsed element has nothing to display
+
+**Done:**
+1. Removed admin gate from `deliveryItem` resolver in `map/page.tsx`
+2. Added URL param (`?target=PSID`) reading in `map/page.tsx` for deliver → map flow
+3. Added `?target=` param to `router.push` in `deliver/page.tsx`
+4. Added debug badge overlay (z-[9999], top-right) for diagnosing condition states
+5. Added green confirmation indicator at same condition as sheet
+6. Added `minWidth`, `minHeight`, and red border to sheet for visibility
+7. Added debug null-return path in `UnitDeliverySheet` with red banner explaining why
+
+**Verified:**
+- `npx tsc --noEmit` — zero errors
+- `npm run build` — successful
+
+**Key decisions:**
+- The debug badge + green indicator pattern proved the condition was met but CSS was hiding the sheet — useful diagnostic approach for future visual bugs.
+- `minWidth` and `minHeight` on `fixed` elements prevent layout collapse on desktop when the element has no intrinsic size.
+- Two session log locations exist in MASTER.md (Section 12 + Appendix C) — this entry appended to Appendix C for consistency with recent format.
+
+**Remaining:**
+- The CSS fix (minWidth/minHeight) is a diagnostic aid, not a permanent fix. The actual `UnitDeliverySheet` needs proper responsive layout.
+- Phase B2: B.10, B.11, B.12 still 🔲
+
+---
+## 19. Data Model Rules (Comprehensive Reference)
+
+This section codifies every data-modeling rule discovered during development. Violations cause bugs. Read before making any schema or query changes.
+
+### 19.1 Geography Model (3 Cities, 1 District Overlap)
+
+Sargodha is BOTH a district AND a tehsil. Bhalwal is a tehsil within Sargodha district. This creates a containment trap — filtering only by `city_district` when "Sargodha" is selected also returns Bhalwal UCs.
+
+**Rules:**
+- Every city-scoped query MUST filter by BOTH `city_district` AND `tehsil` — never just one.
+- Use `CITY_TEHSIL_MAP` from `src/lib/queries/hierarchy.ts` to get the correct pair:
+  ```
+  Sargodha → { district: 'SARGODHA', tehsil: 'SARGODHA' }
+  Bhalwal  → { district: 'SARGODHA', tehsil: 'BHALWAL' }
+  Khushab  → { district: 'KHUSHAB', tehsil: 'KHUSHAB' }
+  ```
+- `useBillingStore.selectedCity` stores **display name** (`"Sargodha"`). Always convert via `CITY_TEHSIL_MAP[selectedCity]` before passing to APIs.
+- `getCityFromTehsil(district, tehsil)` reverses the lookup — useful for city resolution from DB row data.
+
+**Broken patterns (historical):**
+- `/map` filter bar — `District/Tehsil` cascade was replaced by CitySwitcher for this reason
+- `getAssignmentList` in Manage tab — was filtering by `city_district` only (fixed: now also filters by `tehsil`)
+- Routes tab — was passing display name directly instead of via `CITY_TEHSIL_MAP` (fixed)
+
+### 19.2 survey_units.status Semantics
+
+Three distinct states:
+
+| status value | Meaning | Count |
+|-------------|---------|-------|
+| `NULL` | Enriched from lifecycle (has PSID, monthly_fee, etc.) — effectively active | ~160K |
+| `'ACTIVE'` | Explicitly set active (survey-only, no lifecycle enrichment) | ~53K |
+| `'ARCHIVED'` | Lifecycle `Deleted in Portal = Yes` | ~5K |
+
+**Rules:**
+- NEVER use bare `.eq('status', 'ACTIVE')` — it misses the 160K null-status enriched units.
+- ACTIVE filter: `or('status.is.null,status.eq.ACTIVE')` via `applyActiveFilter()` from `src/lib/queries/survey-units.ts`.
+- ARCHIVED filter: `not('status', 'is', null).neq('status', 'ACTIVE')` via `applyArchivedFilter()`.
+- DUPLICATES: filtered via `flagged_psids` join (not a status value).
+
+### 19.3 Delivery Target Key: psid (not survey_id)
+
+| Field | survey_units coverage | Purpose |
+|-------|----------------------|---------|
+| `psid` | 207,746 / 212,428 (98%) — always populated after enrichment | Delivery target, QR fallback, payment join |
+| `survey_id` | 212,428 (100%) — PK, always non-null | Frontend list keys, QR primary scan target |
+
+**Rules:**
+- `psid` is the delivery target key — all assignment items, delivery tracking, and map markers use psid.
+- `survey_id` is the canonical frontend list key (always non-null, avoids React duplicate-key warnings).
+- Frontend expand states use `survey_id` instead of `psid` — prevents `null === null` auto-expand bug.
+- QR scanning matches by `survey_id` (from `sid={survey_id}` in QR code) → looks up assignment item by `survey_id`.
+- `psid = null` means **new/unregistered survey** — no lifecycle PSID assigned yet.
+
+### 19.4 Domain Separation: Biller Data ≠ Payment Data
+
+These are two independent domains bridged only by `psid`. Never couple their queries.
+
+| Domain | Table | Source | Update frequency |
+|--------|-------|--------|-----------------|
+| Biller data | `survey_units` (21 enriched fields) | Lifecycle XLSX via `enrich-survey-units.py` | Monthly (16th–20th) |
+| Payments | `payment_history` | Payment CSV via `load-payments.py` | Daily (multiple times) |
+
+**Rules:**
+- `survey_units` holds the **current month snapshot** of billing data (monthly_fee, arrears, route_name, etc.) — overwritten each month.
+- `payment_history` is **append-only** — all months historically complete, keyed on `(psid, bill_month)` with upsert.
+- The bridge is `psid`: `payment_history.psid → survey_units.psid`.
+- `amount_due` is DROPPED — SWMC miscalcs it. App computes `monthly_fee + arrears` in UI.
+- Billing charts aggregate directly from `payment_history` via the `get_charts_data` RPC — no `survey_units` join in aggregation (caused 30s timeout on 122K rows).
+- For geography filtering in charts: payment_history now stores `city_district`, `tehsil`, `uc_name` directly — no LATERAL join needed.
+- **Orphaned PSIDs** (490 rows in payment_history without matching survey_units) exist because govt portal allows deleting survey IDs without deactivating PSIDs. Charts show "Unknown" for these.
+
+### 19.5 Assignment & Delivery Model
+
+| Table | Key concept | Key columns |
+|-------|-------------|-------------|
+| `daily_assignments` | Creation event per staff+UC | `id`, `staff_id`, `issued_at` (not assigned_date), `uc_name`, `total_items` |
+| `assignment_items` | Individual PSID delivery | `assignment_id`, `psid`, `survey_id`, `status` (pending/delivered/missed/skipped) |
+| `delivery_photos` | Photo proof per delivery event | `assignment_item_id`, `photo_url`, `gps_lat/lng`, `captured_at` |
+| `staff_daily_stats` | Per-assignment rollup | `staff_id`, `assignment_id`, `delivered`, `missed` |
+
+**Rules:**
+- `issued_at` = creation timestamp, NOT a delivery deadline. Staff sees ALL pending items across ALL batches.
+- `staff_daily_stats` keyed on `(staff_id, assignment_id)` — one row per assignment batch, not per day.
+- Trigger `refresh_staff_daily_stats` recomputes stats on `assignment_items` INSERT/UPDATE/DELETE.
+- `delivery_photos` is linked to `assignment_items` (not `survey_units`) — one house has 12 photos across 12 monthly deliveries.
+- GPS is captured silently on photo confirm — staff does not know. GPS failure silently produces NULL (photo timestamp alone is sufficient proof).
+- `survey_id` on `assignment_items` enables QR scan → match by `survey_id` directly without extra psid lookup.
+
+### 19.6 Staff-City Assignment
+
+**Rules:**
+- `staff.assigned_city` is set in Settings → Users → Edit City.
+- Only field_staff with `assignedCity` set will be filtered in assignment UI dropdowns (no fallback to unassigned staff).
+- Cross-city assignments are blocked server-side: `createAssignment` looks up staff's `assigned_city`, validates against UC's district/tehsil via `CITY_TEHSIL_MAP`, returns 400 on mismatch.
+- CitySwitcher auto-filters: staff with `assignedCity` see only that city's option, chevron hidden, button disabled.
+- AppShell auto-selects assigned city on mount for field_staff (calls `setCity` with correct district/tehsil).
+- Staff with no `assignedCity` (fallback for unconfigured accounts) see all 4 options.
+- Admin writes to `staff` table (e.g., PATCH assigned_city) must use `createAdminClient()` (service_role key) — `createClient()` uses anon key and triggers RLS violations.
+
+### 19.7 Auth & User Model
+
+| Table | Purpose | Key |
+|-------|---------|-----|
+| `auth.users` | Supabase Auth — actual login | id (UUID) |
+| `profiles` | App-level user metadata: role_id, username, display_name, suspended_at, deleted_at | id → auth.users |
+| `staff` | Field staff operational data: assigned_city, is_active | id → auth.users |
+| `roles` | Role definitions: super_admin (1), admin (2), field_staff (3) | id |
+
+**Rules:**
+- Username-based auth: app transforms `input` → `input@billing.local` via `toEmail()` for Supabase Auth.
+- Frozen accounts (`suspended_at != NULL`) blocked with "Account is frozen. Contact your admin." message.
+- Soft-delete (`deleted_at`) preserves performance history — hard delete only if GDPR required.
+- `trg_sync_profile_to_staff` trigger auto-syncs field_staff profiles → `staff` table on INSERT/UPDATE/DELETE.
+- `GET /api/staff` uses two-query approach (profiles → staff rows) because no FK exists between them — both reference `auth.users` independently.
+- Staff without a `staff` table row default to `is_active: true` (from the two-query approach).
+
+### 19.8 Reference Tables (Filter Dropdowns)
+
+Three reference tables replace `SELECT DISTINCT` on 212K-row tables:
+
+| Table | Populated from | Maintenance |
+|-------|---------------|-------------|
+| `hierarchy` | `survey_units` DISTINCT (city_district, tehsil, uc_name) for ACTIVE units | Trigger `trg_survey_units_upsert_hierarchy` on survey_units changes |
+| `surveyors` | `survey_units` DISTINCT surveyor_name for ACTIVE units | Manual re-seed from `enrich-survey-units.py` |
+| `bill_months` | `payment_history` DISTINCT bill_month | Manual re-seed from `load-payments.py` |
+
+**Rules:**
+- All filter dropdowns query these tables — never DISTINCT on survey_units.
+- These three tables never exceed 1000 rows total — zero PostgREST row limit issues.
+- Hierarchy trigger handles INSERT/UPDATE/DELETE on survey_units — new UC combos added, orphaned combos removed.
+- If reference tables go stale (e.g., after bulk import), re-run the import script which upserts them.
+
+### 19.9 Billing Cycle
+
+**Critical: A billing month runs from 16th of current month to 15th of next month.**
+
+- `MAY2026` billing cycle = May 16, 2026 → June 15, 2026 (midnight)
+- `JUN2026` billing cycle = June 16, 2026 → July 15, 2026 (midnight)
+- `currentMonth()` in `src/lib/constants.ts`: if `new Date().getDate() < 16`, use previous calendar month.
+- **May 31 does NOT signify end of billing cycle.** The cycle always runs 16th → 15th.
+- Charts use cycle-relative day numbering: Day 1 = 16th of bill month. Formula: `(paid_date - (to_date(bill_month, 'MonYYYY') + 15) + 1)`.
+- `sortMonths()` helper converts `"MMMYYYY"` → `year*12 + monthIndex` for correct chronological sort (alphabetical is wrong: APR < FEB < JAN < ...).
+
+### 19.10 Database Trigger Inventory
+
+| Trigger | Table | Event | Function | Purpose |
+|---------|-------|-------|----------|---------|
+| `trg_payment_history_refresh_summary` | `payment_history` | AFTER INSERT/UPDATE/DELETE | `refresh_payment_summary()` | Recomputes `payment_summary` for affected bill_month |
+| `trg_survey_units_upsert_hierarchy` | `survey_units` | AFTER INSERT/UPDATE/DELETE | `sync_hierarchy()` | Maintains `hierarchy` reference table |
+| `trg_refresh_staff_stats` | `assignment_items` | AFTER INSERT/UPDATE/DELETE | `refresh_staff_daily_stats()` | Recomputes `staff_daily_stats` for affected staff+assignment |
+| `trg_sync_profile_to_staff` | `profiles` | AFTER INSERT/UPDATE/DELETE | `sync_profile_to_staff()` | Auto-syncs field_staff profiles → staff table |
+
+### 19.11 API Route Data Flow
+
+```
+Browser hook → fetch('/api/...') → Next.js API route → Supabase client → DB
+                                  ↑
+                          imports from
+                      src/lib/queries/
+                      src/lib/repositories/
+```
+
+**Rules:**
+- All client data goes through SSR API routes — NO direct `createClient()` calls in hooks, stores, or components (except `supabase.auth.*` SDK calls).
+- API routes use `createClient()` (anon key, respects RLS) for reads. Admin writes use `createAdminClient()` (service_role, bypasses RLS).
+- Shared query modules in `src/lib/queries/` are the single source of truth for filters and column lists.
+- Repositories in `src/lib/repositories/` encapsulate complex multi-step query logic.
+- `select('*')` is BANNED — always name explicit columns. Exception: count-only queries (`head: true`).
+- PostgREST 1000-row hard limit: use `fetchAllRows()` batched fetch for queries returning >1000 rows.
+- Every hook must have explicit `staleTime` from `STALE_TIMES` constants — never default 0.
+- Mutation → invalidate pattern: every mutation invalidates affected query keys by prefix.
+
+### 19.12 Approved RPCs (All Others Banned)
+
+RPCs are banned for client-facing features. Only these exceptions are allowed:
+
+| RPC | Purpose | Source |
+|-----|---------|--------|
+| `get_charts_data` | Billing charts aggregation (122K payment rows) | `scripts/sql/021-charts-aggregation.sql` |
+| `get_survey_group_stats` | Data Insight admin aggregation | `scripts/sql/007-data-insight-rpcs.sql` |
+| `get_billing_group_stats` | Data Insight admin aggregation | `scripts/sql/007-data-insight-rpcs.sql` |
+| `get_billing_summary` | Admin billing KPI cards | `scripts/sql/007-data-insight-rpcs.sql` |
+| `get_payment_summary` | Admin payment summary | `scripts/sql/007-data-insight-rpcs.sql` |
+| `get_route_tree` | Route tree sidebar | `scripts/sql/029-route-tree-rpc.sql` |
+
+All other aggregation must happen in TypeScript (repository layer).
+
+### 19.13 Data Integrity Rules
+
+| Rule | Enforcement | Notes |
+|------|-------------|-------|
+| `payment_history.(psid, bill_month)` unique | DB constraint + upsert | Idempotent — safe to run daily import multiple times |
+| `assignment_items.(assignment_id, psid)` unique | DB constraint | Same PSID can't be in the same batch twice |
+| `staff_daily_stats.(staff_id, assignment_id)` unique | DB constraint | One stats row per assignment batch |
+| `hierarchy.(city_district, tehsil, uc_name)` unique | DB constraint | No duplicate geography entries |
+| `survey_units.psid` partial unique index | DB index | `WHERE psid IS NOT NULL` — allows multiple NULLs for unregistered surveys |
+| Payment CSV upsert idempotent | `ON CONFLICT DO NOTHING` | Safe to re-run multiple times daily |
+| Lifecycle enrichment overwrites current month | Upsert on survey_id | Old enrichment remains until overwritten |
+| City validation on assignment creation | Server-side in `createAssignment` | Rejects cross-city with 400 |
+| Staff-city auto-restriction | CitySwitcher + AppShell | Single-option for assigned staff, chevron hidden

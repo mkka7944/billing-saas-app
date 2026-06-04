@@ -81,14 +81,17 @@ export default function UnitDeliverySheet({
     }
   }, [photoFile, assignmentItemId, delivering, onDeliver])
 
-  if (!unit || !assignmentItemId) return null
+  // DEBUG: show a red dot even if returning null
+  if (!unit || !assignmentItemId) {
+    return <div className="fixed bottom-0 left-0 right-0 z-[9998] bg-red-500 text-white p-4 text-xs">SHEET NULL: unit={!!unit} assignmentItemId={!!assignmentItemId}</div>
+  }
 
   const hasPortalImage = (unit.image_urls?.length ?? 0) > 0
   const totalDue = (unit.monthly_fee ?? 0) + (unit.arrears ?? 0)
   const displayImage = photo || unit.image_urls?.[0] || null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[1001] flex flex-col rounded-t-2xl overflow-hidden shadow-2xl bg-background max-h-[80vh] lg:left-1/2 lg:-translate-x-1/2 lg:max-w-md lg:right-auto">
+    <div className="fixed bottom-0 left-0 right-0 z-[1001] flex flex-col rounded-t-2xl overflow-hidden shadow-2xl bg-background max-h-[80vh] lg:left-1/2 lg:-translate-x-1/2 lg:max-w-md lg:right-auto" style={{ border: '4px solid red', minWidth: '400px', minHeight: '200px' }}>
       {/* Full-bleed hero image with everything overlaid */}
       <div
         className="relative flex-1 min-h-[300px]"

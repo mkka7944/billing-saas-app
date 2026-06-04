@@ -116,6 +116,28 @@ const confirm = useConfirm()
 const ok = await confirm({ title, message, confirmLabel, variant })
 ```
 
+## No Native `alert()` — Must Use `useToast()`
+Native browser `alert()` is banned. Always use the global toast system:
+```ts
+import { useToast } from '@/hooks/use-toast'
+const { toast } = useToast()
+toast('Message here', 'success')   // 'success' | 'error' | 'info' | 'warning'
+```
+The `ToastProvider` is already in `layout.tsx` — no additional setup needed.
+Toasts auto-dismiss after 4 seconds. Click to dismiss early.
+
+## Admin Writes Must Use `createAdminClient()`
+`src/lib/supabase/server.ts` uses the **anon key** (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) — it respects RLS policies.
+`src/lib/supabase/admin.ts` uses the **service_role key** (`SUPABASE_SERVICE_ROLE_KEY`) — it bypasses RLS.
+- **Reads**: Use `createClient()` (anon key) — fine for SELECT with RLS.
+- **Admin writes** (user management, staff table mutations, role changes): Use `createAdminClient()` (service_role key) to avoid RLS violations.
+Example:
+```ts
+const admin = createAdminClient()
+await (admin.from('staff') as any).upsert({ id, assigned_city }, { onConflict: 'id' })
+```
+The `as any` cast is needed because the admin client lacks generated Supabase types.
+
 ## Implementation Workflow (Permanent Rule)
 Every task is broken into short atomic steps (max 1-2 file changes per step).
 1. Present the next step with clear description + time estimate
@@ -211,3 +233,46 @@ supabase.table("survey_units").upsert(rows, on_conflict="survey_id").execute()
 | `enrich-survey-units.py` | Lifecycle XLSX → survey_units (21 fields) | Phase 2 (rewrite existing) |
 | `load-payments.py` | Payment CSV → payment_history | Phase 3 (create) |
 | `ingest-all.py` | Orchestrator (interactive menu) | Phases 2+3 (create) |
+
+## Testing Verification (Permanent Rule)
+After every implementation (each atomic step), provide the user with a concrete **Testing Verification** section before presenting the next step. This must cover:
+
+- **What to do** — exact UI actions, API calls, or commands
+- **What to expect** — the specific behavior change to observe
+- **Edge cases** — boundary conditions, error states, null values
+- **Where to inspect** — URL path, DB query, network tab, console
+
+Example format:
+```
+**Testing Verification:**
+1. Open `/settings` → Users tab → Edit City → select "Bhalwal" → Save
+2. Staff dropdown on `/assignments` now filters to Bhalwal staff only
+3. Server rejects cross-city assignment with 400
+4. Staff logs in → CitySwitcher shows only "Bhalwal", no chevron
+5. `/deliver` shows all pending items across all batches
+```
+
+## Data Model Rules (Critical — Avoid the Lost-Hour Traps)
+
+### Geography: Sargodha Contains Bhalwal
+Sargodha is both a district AND tehsil. Bhalwal is a tehsil WITHIN Sargodha district.
+- **CRITICAL: city-scoped queries must filter by BOTH `city_district` AND `tehsil`** — never just `city_district`.
+- Use `CITY_TEHSIL_MAP` (`src/lib/queries/hierarchy.ts`): `{ Sargodha: {district:'SARGODHA',tehsil:'SARGODHA'}, Bhalwal: {district:'SARGODHA',tehsil:'BHALWAL'}, Khushab: {district:'KHUSHAB',tehsil:'KHUSHAB'} }`.
+- The Manage tab in `/assignments` was broken because it filtered only by `city_district` — Bhalwal UCs leaked into Sargodha view. Fixed by adding `tehsil` filter.
+
+### survey_units.status: NULL = Active
+- ~160K enriched units have `status = NULL`, not `status = 'ACTIVE'`.
+- NEVER use `.eq('status', 'ACTIVE')` — use `applyActiveFilter()` which does `or('status.is.null,status.eq.ACTIVE')`.
+
+### Delivery Key: psid (not survey_id)
+- `psid` is always populated (98% coverage). It's the delivery target, assignment key, and payment join.
+- `survey_id` (100%, PK) is for frontend list keys and QR scanning.
+- The old code used `survey_id` for delivery targets — caused null-equality bugs.
+
+### Staff-City Enforcement
+- Staff with `assignedCity` set in `staff` table: CitySwitcher restricts them, chevron hidden.
+- Cross-city assignments blocked server-side: `createAssignment` validates staff city vs UC city.
+- Admin writes to `staff` table must use `createAdminClient()` (service_role key).
+
+### Reference: MASTER.md Section 19
+For ALL data model rules (geography model, status semantics, domain separation, assignment model, auth model, reference tables, billing cycle, trigger inventory, API data flow, approved RPCs, data integrity rules), see `docs/MASTER.md` Section 19 (Data Model Rules Comprehensive Reference). Read before making any schema or query changes.

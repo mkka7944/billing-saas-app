@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useUnassignedBills, useStaffList, useCreateAssignment } from '@/hooks/use-assignments'
-import { currentMonth, today } from '@/lib/constants'
+import { currentMonth } from '@/lib/constants'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
+import { Select, SelectTrigger, SelectContent, SelectItem } from '@/components/ui/select'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface Props {
@@ -44,7 +45,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated }: Props) {
   const rangeCount = range ? range[1] - range[0] + 1 : 0
 
   const filteredStaff = (staffList || []).filter(
-    (s) => s.is_active && (!city || !s.assigned_city || s.assigned_city === city)
+    (s) => s.is_active && (!city || s.assigned_city === city)
   )
 
   const handleCreate = async () => {
@@ -54,7 +55,6 @@ export function UCDetailPanel({ uc, city, routeName, onCreated }: Props) {
     try {
       await createAssignment.mutateAsync({
         staff_id: selectedStaff,
-        assigned_date: today(),
         uc_name: uc,
         psids,
       })
@@ -151,16 +151,18 @@ export function UCDetailPanel({ uc, city, routeName, onCreated }: Props) {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 pt-3 border-t border-border bg-background">
         <div className="flex-1">
           <label className="block text-xs text-muted-foreground mb-1">Assign to</label>
-          <select
-            value={selectedStaff}
-            onChange={(e) => setSelectedStaff(e.target.value)}
-            className="w-full h-8 px-2 text-sm rounded-md border border-input bg-background"
-          >
-            <option value="">Select staff...</option>
-            {filteredStaff.map((s) => (
-              <option key={s.id} value={s.id}>{s.full_name}</option>
-            ))}
-          </select>
+          <Select value={selectedStaff} onValueChange={(v) => v && setSelectedStaff(v)}>
+            <SelectTrigger className="w-full h-8">
+              <span className="flex flex-1 text-left truncate">
+                {selectedStaff ? (filteredStaff.find(s => s.id === selectedStaff)?.full_name || 'Select staff...') : 'Select staff...'}
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {filteredStaff.map((s) => (
+                <SelectItem key={s.id} value={s.id}>{s.full_name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="w-full sm:w-44">
           <label className="block text-xs text-muted-foreground mb-1">

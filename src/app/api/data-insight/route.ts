@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { currentMonth } from '@/lib/constants'
 import { validateQuery } from '@/lib/validation/validate-query'
 import { dataInsightSchema } from '@/lib/validation/schemas'
-import { getDeliveryKpis, getDrillDownUnits } from '@/lib/repositories/data-insight-repository'
+import { getDrillDownUnits } from '@/lib/repositories/data-insight-repository'
 
 interface AggRow {
   level: 'district' | 'tehsil' | 'uc' | 'unit'
@@ -32,14 +32,9 @@ export async function GET(request: Request) {
     const dbStatus = statusFilter === 'archived' ? 'ARCHIVED' : statusFilter === 'active' ? 'ACTIVE' : ''
     const drillUC = params.drill || ''
 
-    const kpisPromise = getDeliveryKpis(sup)
-
     // Drill-down mode
     if (drillUC) {
-      const [drillResult, deliveryKpis] = await Promise.all([
-        getDrillDownUnits(sup, { billMonth, district, tehsil, drillUC, dbStatus, statusFilter, page, pageSize: ps, sort }),
-        kpisPromise,
-      ])
+      const drillResult = await getDrillDownUnits(sup, { billMonth, district, tehsil, drillUC, dbStatus, statusFilter, page, pageSize: ps, sort })
 
       if ('error' in drillResult) {
         return NextResponse.json({ error: drillResult.error }, { status: 500 })
@@ -47,7 +42,6 @@ export async function GET(request: Request) {
 
       return NextResponse.json({
         kpis: drillResult.kpis || { total_units: 0, active_units: 0, archived_units: 0, billed_units: 0, paid_units: 0, total_collected: 0, unique_surveyors: 0, no_coords: 0 },
-        delivery_kpis: deliveryKpis,
         unitRows: drillResult.unitRows,
         rows: [],
         total: drillResult.total,
@@ -56,16 +50,13 @@ export async function GET(request: Request) {
     }
 
     // Normal aggregation flow
-    const [deliveryKpis, { data: raw, error: rpcErr }] = await Promise.all([
-      kpisPromise,
-      sup.rpc('get_hierarchy_stats', {
-        p_month: billMonth,
-        p_district: district,
-        p_tehsil: tehsil,
-        p_uc: uc,
-        p_status: dbStatus || '',
-      }),
-    ])
+    const { data: raw, error: rpcErr } = await sup.rpc('get_hierarchy_stats', {
+      p_month: billMonth,
+      p_district: district,
+      p_tehsil: tehsil,
+      p_uc: uc,
+      p_status: dbStatus || '',
+    })
 
     if (rpcErr) {
       console.error('get_hierarchy_stats RPC error:', rpcErr)
@@ -80,7 +71,6 @@ export async function GET(request: Request) {
     if (!r?.rows?.length) {
       return NextResponse.json({
         kpis: { total_units: 0, active_units: 0, archived_units: 0, billed_units: 0, paid_units: 0, total_collected: 0, unique_surveyors: 0, no_coords: 0 },
-        delivery_kpis: { total_delivered: 0, total_assigned: 0, delivery_rate: 0, total_photos: 0, staff_with_deliveries: 0 },
         rows: [], total: 0, level: lvl,
       })
     }
@@ -120,7 +110,6 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       kpis: r.kpis || { total_units: 0, active_units: 0, archived_units: 0, billed_units: 0, paid_units: 0, total_collected: 0, unique_surveyors: 0, no_coords: 0 },
-      delivery_kpis: deliveryKpis,
       rows: pageRows,
       total: totalRows,
       level: lvl,

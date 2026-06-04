@@ -15,6 +15,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGr
 import { Building2, ChevronDown, ChevronRight, Sun, Moon, Monitor, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { useToast } from '@/hooks/use-toast'
 
 const THEMES = [
   { id: 'light', label: 'Light', icon: Sun, desc: 'Default light' },
@@ -37,6 +38,7 @@ interface UserRow {
   username: string | null
   displayName: string | null
   roleName: string
+  assignedCity: string | null
   suspendedAt: string | null
   deletedAt: string | null
   createdAt: string | null
@@ -98,6 +100,7 @@ export default function SettingsPage() {
   const [addDisplayName, setAddDisplayName] = useState('')
   const [addPassword, setAddPassword] = useState('')
   const [addRole, setAddRole] = useState('field_staff')
+  const [addCity, setAddCity] = useState('')
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addResult, setAddResult] = useState<{ username: string; password: string } | null>(null)
 
@@ -107,8 +110,12 @@ export default function SettingsPage() {
   const [editRoleValue, setEditRoleValue] = useState('field_staff')
   const [resetPwOpen, setResetPwOpen] = useState(false)
   const [resetPwValue, setResetPwValue] = useState('')
+  const [editCityOpen, setEditCityOpen] = useState(false)
+  const [editCityValue, setEditCityValue] = useState<string | null>('')
+  const [editCitySaving, setEditCitySaving] = useState(false)
 
   const confirm = useConfirm()
+  const { toast } = useToast()
 
   useEffect(() => {
     setPageIdentity('Settings', 'Appearance and account')
@@ -141,6 +148,7 @@ export default function SettingsPage() {
           password: addPassword,
           displayName: addDisplayName || addUsername,
           roleName: addRole,
+          assignedCity: addCity || null,
         }),
       })
       const json = await res.json()
@@ -148,10 +156,10 @@ export default function SettingsPage() {
         setAddResult(json.data)
         await fetchUsers()
       } else {
-        alert(json.error || 'Failed to create user')
+        toast(json.error || 'Failed to create user', 'error')
       }
     } catch {
-      alert('Network error')
+      toast('Network error', 'error')
     } finally {
       setAddSubmitting(false)
     }
@@ -164,7 +172,7 @@ export default function SettingsPage() {
       body: JSON.stringify({ roleName: newRole }),
     })
     if (res.ok) { setEditRoleOpen(false); await fetchUsers() }
-    else { const j = await res.json(); alert(j.error) }
+    else { const j = await res.json(); toast(j.error, 'error') }
   }
 
   async function handleResetPassword(userId: string, password: string) {
@@ -173,8 +181,8 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),
     })
-    if (res.ok) { setResetPwOpen(false); setResetPwValue(''); alert('Password reset successfully') }
-    else { const j = await res.json(); alert(j.error) }
+    if (res.ok) { setResetPwOpen(false); setResetPwValue(''); toast('Password reset successfully', 'success') }
+    else { const j = await res.json(); toast(j.error, 'error') }
   }
 
   async function handleToggleFreeze(user: UserRow) {
@@ -185,7 +193,7 @@ export default function SettingsPage() {
       body: JSON.stringify({ suspendedAt }),
     })
     if (res.ok) await fetchUsers()
-    else { const j = await res.json(); alert(j.error) }
+    else { const j = await res.json(); toast(j.error, 'error') }
   }
 
   async function handleToggleDelete(user: UserRow) {
@@ -204,7 +212,20 @@ export default function SettingsPage() {
     const method = user.deletedAt ? 'PATCH' : 'DELETE'
     const res = await fetch(url, { method })
     if (res.ok) await fetchUsers()
-    else { const j = await res.json(); alert(j.error) }
+    else { const j = await res.json(); toast(j.error, 'error') }
+  }
+
+  async function handleEditCity(userId: string, city: string | null) {
+    setEditCitySaving(true)
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedCity: city }),
+    })
+    const json = await res.json()
+    setEditCitySaving(false)
+    if (res.ok) { setEditCityOpen(false); await fetchUsers(); toast('City updated', 'success') }
+    else { toast(json.error || 'Failed to update city', 'error') }
   }
 
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
@@ -296,7 +317,7 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">{users.length} user{users.length !== 1 ? 's' : ''}</p>
-              <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) { setAddResult(null); setAddUsername(''); setAddDisplayName(''); setAddPassword(''); setAddRole('field_staff') } }}>
+              <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) { setAddResult(null); setAddUsername(''); setAddDisplayName(''); setAddPassword(''); setAddRole('field_staff'); setAddCity('') } }}>
                 <DialogTrigger render={<Button size="sm"><Plus className="h-4 w-4" />Add User</Button>} />
                 <DialogContent>
                   <DialogHeader>
@@ -329,6 +350,22 @@ export default function SettingsPage() {
                       <div>
                         <label className="text-xs font-medium text-muted-foreground mb-1 block">Role</label>
                         <RoleSelect value={addRole} onChange={(v) => v && setAddRole(v)} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">City (optional)</label>
+                        <Select value={addCity} onValueChange={(v) => setAddCity(v || '')}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select city..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="Sargodha">Sargodha</SelectItem>
+                              <SelectItem value="Bhalwal">Bhalwal</SelectItem>
+                              <SelectItem value="Khushab">Khushab</SelectItem>
+                              <SelectItem value="">— None —</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   )}
@@ -365,13 +402,15 @@ export default function SettingsPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-semibold truncate">{u.displayName || u.username || '—'}</span>
                           <StatusBadge user={u} />
+                          {u.assignedCity && <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{u.assignedCity}</span>}
                         </div>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          @{u.username || '—'} · {u.roleName.replace('_', ' ')}
+                          @{u.username || '—'} · {u.roleName.replace('_', ' ')}{u.assignedCity ? ` · ${u.assignedCity}` : ''}
                         </p>
                       </div>
                       <Select value="" onValueChange={(v) => {
                         if (v === 'edit-role') { setActionUser(u); setEditRoleValue(u.roleName === 'super_admin' ? 'admin' : u.roleName); setEditRoleOpen(true) }
+                        else if (v === 'edit-city') { setActionUser(u); setEditCityValue(u.assignedCity || ''); setEditCityOpen(true) }
                         else if (v === 'reset-pw') { setActionUser(u); setResetPwOpen(true) }
                         else if (v === 'freeze') handleToggleFreeze(u)
                         else if (v === 'delete') handleToggleDelete(u)
@@ -382,6 +421,7 @@ export default function SettingsPage() {
                         <SelectContent align="end" alignItemWithTrigger={false}>
                           <SelectGroup>
                             <SelectItem value="edit-role" disabled={u.roleName === 'super_admin'}><UserCog className="h-3.5 w-3.5" />Edit Role</SelectItem>
+                            <SelectItem value="edit-city"><Building2 className="h-3.5 w-3.5" />Edit City</SelectItem>
                             <SelectItem value="reset-pw"><KeyRound className="h-3.5 w-3.5" />Reset Password</SelectItem>
                             <SelectItem value="freeze" disabled={!!u.deletedAt}>{u.suspendedAt ? <RefreshCw className="h-3.5 w-3.5" /> : <Snowflake className="h-3.5 w-3.5" />}{u.suspendedAt ? 'Unfreeze' : 'Freeze'}</SelectItem>
                             <SelectItem value="delete" disabled={u.roleName === 'super_admin'}>{u.deletedAt ? <RefreshCw className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}{u.deletedAt ? 'Restore' : 'Delete'}</SelectItem>
@@ -407,6 +447,37 @@ export default function SettingsPage() {
                 <DialogFooter>
                   <DialogClose render={<Button variant="outline">Cancel</Button>} />
                   <Button onClick={() => actionUser && handleEditRole(actionUser.id, editRoleValue)}>Save</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Edit City dialog */}
+            <Dialog open={editCityOpen} onOpenChange={(o) => { setEditCityOpen(o); if (!o) setEditCityValue('') }}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit City</DialogTitle>
+                  <DialogDescription>Assign city for {actionUser?.username}</DialogDescription>
+                </DialogHeader>
+                <div className="py-2">
+                  <Select value={editCityValue} onValueChange={(v) => setEditCityValue(v)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select city..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="Sargodha">Sargodha</SelectItem>
+                        <SelectItem value="Bhalwal">Bhalwal</SelectItem>
+                        <SelectItem value="Khushab">Khushab</SelectItem>
+                        <SelectItem value="">— None —</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <DialogFooter>
+                  <DialogClose render={<Button variant="outline" disabled={editCitySaving}>Cancel</Button>} />
+                  <Button onClick={() => actionUser && handleEditCity(actionUser.id, editCityValue || null)} disabled={editCitySaving}>
+                    {editCitySaving ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Saving...</> : 'Save'}
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>

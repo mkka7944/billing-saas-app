@@ -17,14 +17,6 @@ export interface AggregationRow {
   no_coords: number
 }
 
-export interface DeliveryKpis {
-  total_assigned: number
-  total_delivered: number
-  delivery_rate: number
-  total_photos: number
-  staff_with_deliveries: number
-}
-
 export interface FlaggedSummary {
   action: 'DO_NOT_DELIVER' | 'DELIVER' | 'PENDING'
   label: string
@@ -61,7 +53,6 @@ export interface DataInsightResponse {
     unique_surveyors: number
     no_coords: number
   }
-  delivery_kpis: DeliveryKpis
   rows: AggregationRow[]
   unitRows?: UnitRow[]
   total: number
@@ -87,7 +78,7 @@ export function useDataInsight({ filters, page, pageSize, drillUC, status }: Use
       if (filters.surveyor) params.set('surveyor', filters.surveyor)
       if (filters.billMonth) params.set('billMonth', filters.billMonth)
       if (drillUC) params.set('drill', drillUC)
-      if (drillUC && status) params.set('status', status)
+      if (status) params.set('status', status)
       if (filters.sort) {
         params.set('sortField', filters.sort.field)
         params.set('sortDirection', filters.sort.direction)

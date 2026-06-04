@@ -105,7 +105,7 @@ export interface CategoryStat {
 export interface DailyAssignment {
   id: string
   staff_id: string
-  assigned_date: string
+  issued_at: string
   uc_name: string
   total_items: number
   created_by: string | null

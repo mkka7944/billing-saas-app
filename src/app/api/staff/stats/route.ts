@@ -23,9 +23,9 @@ export async function GET(request: Request) {
     // Fallback: live aggregate from assignments + items
     let aq = sup
       .from('daily_assignments')
-      .select('id, staff_id, assigned_date, total_items')
-      .gte('assigned_date', fromDate)
-      .lte('assigned_date', toDate)
+      .select('id, staff_id, issued_at, total_items')
+      .gte('issued_at', fromDate)
+      .lte('issued_at', toDate)
     if (staffId) aq = aq.eq('staff_id', staffId)
 
     const { data: assignments } = await aq

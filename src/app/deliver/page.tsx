@@ -78,7 +78,7 @@ export default function DeliverPage() {
     if (!item?.unit) return
     setDeliverTarget(item.psid)
     setView('map')
-    router.push('/map')
+    router.push(`/map?target=${encodeURIComponent(item.psid)}`)
   }
 
   return (

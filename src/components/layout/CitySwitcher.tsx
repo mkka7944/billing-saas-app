@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { cn } from '@/lib/utils'
 import { ChevronDown } from 'lucide-react'
 
@@ -43,7 +44,14 @@ function CityAvatar({ identity, size }: { identity: CityIdentity; size: 'sm' | '
 export function CitySwitcher({ isCollapsed }: { isCollapsed?: boolean }) {
   const selectedCity = useBillingStore((s) => s.selectedCity)
   const setCity = useBillingStore((s) => s.setCity)
+  const roleName = useAuthStore((s) => s.roleName)
+  const assignedCity = useAuthStore((s) => s.assignedCity)
   const [open, setOpen] = useState(false)
+
+  // Staff with assigned city: only show their city
+  const visibleOptions = (roleName === 'field_staff' && assignedCity)
+    ? CITY_OPTIONS.filter((o) => o.city === assignedCity)
+    : CITY_OPTIONS
 
   const current = currentIdentity(selectedCity)
 
@@ -60,6 +68,7 @@ export function CitySwitcher({ isCollapsed }: { isCollapsed?: boolean }) {
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-3 p-1.5 rounded-lg hover:bg-sidebar-accent/30 transition-all cursor-pointer group"
+        disabled={visibleOptions.length <= 1}
       >
         <CityAvatar identity={current} size="md" />
         <div className="flex flex-col items-start overflow-hidden flex-1 text-left">
@@ -70,7 +79,7 @@ export function CitySwitcher({ isCollapsed }: { isCollapsed?: boolean }) {
             {current.subtitle}
           </span>
         </div>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/40" />
+        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-sidebar-foreground/40", visibleOptions.length <= 1 && "hidden")} />
       </button>
 
       {open && (
@@ -80,7 +89,7 @@ export function CitySwitcher({ isCollapsed }: { isCollapsed?: boolean }) {
             <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground/60 dark:text-muted-foreground/80 uppercase tracking-widest mb-1 border-b border-border/40">
               Switch City
             </div>
-            {CITY_OPTIONS.map((opt) => (
+            {visibleOptions.map((opt) => (
               <button
                 key={opt.label}
                 onClick={() => { setCity(opt.city, opt.district, opt.tehsil); setOpen(false) }}

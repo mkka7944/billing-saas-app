@@ -30,6 +30,18 @@ export async function GET() {
       }
     })
 
+    // Enrich with assigned_city from staff table
+    const userIds = users.map(u => u.id)
+    const { data: staffRows } = await sup
+      .from('staff')
+      .select('id, assigned_city')
+      .in('id', userIds)
+
+    const cityMap = new Map((staffRows || []).map((s: any) => [s.id, s.assigned_city]))
+    for (const u of users) {
+      (u as any).assignedCity = cityMap.get(u.id) || null
+    }
+
     return NextResponse.json({ data: users })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Internal server error'
@@ -39,7 +51,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { username, password, displayName, roleName } = await req.json()
+    const { username, password, displayName, roleName, assignedCity } = await req.json()
 
     if (!username || !password || !roleName) {
       return NextResponse.json({ error: 'username, password, and roleName are required' }, { status: 400 })
@@ -105,6 +117,14 @@ export async function POST(req: NextRequest) {
       // Rollback auth user on profile failure
       await admin.auth.admin.deleteUser(userId)
       return NextResponse.json({ error: profileError.message }, { status: 500 })
+    }
+
+    // Set assigned city if provided
+    if (assignedCity) {
+      await (admin.from('staff') as any).upsert({
+        id: userId,
+        assigned_city: assignedCity,
+      }, { onConflict: 'id' })
     }
 
     return NextResponse.json({

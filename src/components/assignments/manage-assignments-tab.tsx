@@ -1,7 +1,8 @@
 'use client'
 
 import { useAssignmentList, useRevokeAssignment } from '@/hooks/use-assignments'
-import { today } from '@/lib/constants'
+import { useBillingStore } from '@/stores/billing-store'
+import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { useConfirm } from '@/components/ui/confirm-dialog'
@@ -9,7 +10,9 @@ import { XCircle } from 'lucide-react'
 
 export function ManageAssignmentsTab() {
   const confirm = useConfirm()
-  const { data: assignments, isLoading } = useAssignmentList()
+  const selectedCity = useBillingStore((s) => s.selectedCity)
+  const cityCfg = selectedCity ? CITY_TEHSIL_MAP[selectedCity] : null
+  const { data: assignments, isLoading } = useAssignmentList(cityCfg?.district, cityCfg?.tehsil)
   const revoke = useRevokeAssignment()
 
   if (isLoading) {
@@ -23,7 +26,7 @@ export function ManageAssignmentsTab() {
   if (!assignments?.length) {
     return (
       <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
-        No assignments for {today()}
+        No active assignments
       </div>
     )
   }

@@ -5,7 +5,7 @@ import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
 import { useDataInsight } from '@/hooks/use-data-insight'
 import { useSurveyPayments } from '@/hooks/use-survey-data'
 import { currentMonth } from '@/lib/constants'
-import type { AggregationRow, DeliveryKpis, UnitRow } from '@/hooks/use-data-insight'
+import type { AggregationRow, UnitRow } from '@/hooks/use-data-insight'
 import type { SurveyUnit } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ChevronDown, Truck, Camera, PersonStanding, Percent, Flag } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Flag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PaginationBar } from '@/components/pagination-bar'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
@@ -265,32 +265,6 @@ function UnitTable({ unitRows, onOpen, showFlag }: { unitRows: UnitRow[]; onOpen
   )
 }
 
-const dkpiConfig: { key: keyof DeliveryKpis; label: string; icon: typeof Truck; accent: string; fmt?: (v: number) => string }[] = [
-  { key: 'total_assigned', label: 'Assigned', icon: Truck, accent: 'text-blue-500 dark:text-blue-300' },
-  { key: 'total_delivered', label: 'Delivered', icon: Truck, accent: 'text-green-500 dark:text-green-300' },
-  { key: 'delivery_rate', label: 'Rate', icon: Percent, accent: 'text-purple-500 dark:text-purple-300', fmt: (v) => `${v}%` },
-  { key: 'total_photos', label: 'Photos', icon: Camera, accent: 'text-amber-500 dark:text-amber-300' },
-  { key: 'staff_with_deliveries', label: 'Staff', icon: PersonStanding, accent: 'text-indigo-500 dark:text-indigo-300' },
-]
-
-function DeliveryKpiCards({ kpis }: { kpis: DeliveryKpis }) {
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-      {dkpiConfig.map((k) => {
-        const value = kpis[k.key] ?? 0
-        const display = k.fmt ? k.fmt(value) : value.toLocaleString()
-        return (
-          <div key={k.key} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
-            <k.icon className={`h-3.5 w-3.5 shrink-0 ${k.accent}`} />
-            <span className="text-xs text-muted-foreground truncate">{k.label}</span>
-            <span className={`ml-auto text-sm font-bold ${k.accent}`}>{display}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 export function DataInsight() {
   const sharedFilters = useBillingStore((s) => s.filters)
   const selectedCity = useBillingStore((s) => s.selectedCity)
@@ -359,7 +333,7 @@ export function DataInsight() {
 
   const kpis = data?.kpis
   const unitRows = data?.unitRows || []
-  const rows = data?.rows || []
+  const rows = (data?.rows || []).filter(r => r.total_units > 0)
 
   return (
     <div className="absolute inset-0 flex flex-col">
@@ -367,42 +341,41 @@ export function DataInsight() {
         <div className="p-4 space-y-4">
           {kpis && <KpiCards data={kpis as Record<string, number>} />}
 
-          {data?.delivery_kpis && (
-            <div>
-              <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Delivery KPIs</h3>
-              <DeliveryKpiCards kpis={data.delivery_kpis} />
+          {level === 'unit' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={handleBack} className="h-9 gap-1.5">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to MC/UC View
+              </Button>
+              <span className="text-xs text-muted-foreground font-mono">{drillUC}</span>
             </div>
           )}
 
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
+            <button
+              onClick={() => { setStatusFilter('active'); setPage(1) }}
+              className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'active' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => { setStatusFilter('archived'); setPage(1) }}
+              className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'archived' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Archived
+            </button>
+            {level === 'unit' && (
+              <button
+                onClick={() => { setStatusFilter('duplicates'); setPage(1) }}
+                className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'duplicates' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Duplicates
+              </button>
+            )}
+          </div>
+
           {level === 'unit' ? (
             <>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" onClick={handleBack} className="h-9 gap-1.5">
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back to MC/UC View
-                </Button>
-                <span className="text-xs text-muted-foreground font-mono">{drillUC}</span>
-                <div className="ml-auto flex items-center gap-1 bg-muted rounded-lg p-0.5">
-                  <button
-                    onClick={() => { setStatusFilter('active'); setPage(1) }}
-                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'active' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    Active
-                  </button>
-                  <button
-                    onClick={() => { setStatusFilter('archived'); setPage(1) }}
-                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'archived' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    Archived
-                  </button>
-                  <button
-                    onClick={() => { setStatusFilter('duplicates'); setPage(1) }}
-                    className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'duplicates' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    Duplicates
-                  </button>
-                </div>
-              </div>
               <UnitTable
                 unitRows={unitRows}
                 onOpen={(row) => {

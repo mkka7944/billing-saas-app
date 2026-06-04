@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useUCStats } from '@/hooks/use-uc-stats'
 import { useBillingStore } from '@/stores/billing-store'
 import { Search } from 'lucide-react'
@@ -13,6 +13,9 @@ export function CreateAssignmentTab() {
   const { data: ucStats } = useUCStats(selectedCity, month)
   const [selectedUc, setSelectedUc] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+
+  // Reset UC selection when city changes
+  useEffect(() => { setSelectedUc(null); setSearch('') }, [selectedCity])
 
   const totalUnassigned = useMemo(
     () => (ucStats || []).reduce((s, u) => s + (u.total_units - u.assigned_today), 0),

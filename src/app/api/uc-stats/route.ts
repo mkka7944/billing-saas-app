@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { currentMonth, today } from '@/lib/constants'
+import { currentMonth } from '@/lib/constants'
 import { CITY_TEHSIL_MAP, type UCStatRow } from '@/lib/queries/hierarchy'
 
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams
   const city = sp.get('city')
   const month = sp.get('month') || currentMonth()
-  const date = sp.get('date') || today()
 
   const sup = await createClient()
 
@@ -48,14 +47,14 @@ export async function GET(request: Request) {
     })
   }
 
-  const { data: todayAssignments } = await sup
+  // Count all assignments (not just today's) to show correct assignment progress per UC
+  const { data: allAssignments } = await sup
     .from('daily_assignments')
     .select('id, uc_name')
-    .eq('assigned_date', date)
 
-  if (todayAssignments?.length) {
+  if (allAssignments?.length) {
     type AssignmentRow = { id: string; uc_name: string }
-    const rows = todayAssignments as AssignmentRow[]
+    const rows = allAssignments as AssignmentRow[]
     const assignmentIds = rows.map((a) => a.id)
     const ucByAssignmentId = new Map(rows.map((a) => [a.id, a.uc_name] as const))
 
@@ -82,7 +81,7 @@ export async function GET(request: Request) {
         existing.assigned_today = counts.assigned
         existing.delivered_today = counts.delivered
         existing.missed_today = counts.missed
-      } else {
+      } else if (!cfg) {
         ucRowMap.set(ucName, {
           uc_name: ucName,
           total_units: 0,

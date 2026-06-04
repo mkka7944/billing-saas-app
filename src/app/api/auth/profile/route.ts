@@ -16,7 +16,7 @@ export async function GET() {
     .single()
 
   if (error) {
-    return NextResponse.json({ data: { roleName: 'staff', displayName: null, username: null } })
+    return NextResponse.json({ data: { roleName: 'staff', displayName: null, username: null, assignedCity: null } })
   }
 
   const roleName = (data as any)?.roles?.name || (data as any)?.roles?.[0]?.name || 'staff'
@@ -29,11 +29,19 @@ export async function GET() {
     return NextResponse.json({ error: 'Account is frozen. Contact your admin.' }, { status: 403 })
   }
 
+  // Get assigned_city from staff table
+  const { data: staffRow } = await sup
+    .from('staff')
+    .select('assigned_city')
+    .eq('id', user.id)
+    .maybeSingle()
+
   return NextResponse.json({
     data: {
       roleName,
       displayName: data?.full_name || data?.username || null,
       username: data?.username || null,
+      assignedCity: (staffRow as any)?.assigned_city || null,
     },
   })
 }

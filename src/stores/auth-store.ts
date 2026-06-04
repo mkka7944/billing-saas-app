@@ -10,18 +10,19 @@ interface ProfileInfo {
   roleName: string
   displayName: string | null
   username: string | null
+  assignedCity: string | null
 }
 
 async function fetchProfile(): Promise<ProfileInfo> {
   try {
     const res = await fetch('/api/auth/profile')
     if (res.status === 401 || res.status === 404 || res.status === 403) {
-      return { roleName: 'staff', displayName: null, username: null }
+      return { roleName: 'staff', displayName: null, username: null, assignedCity: null }
     }
     const json = await res.json()
-    return json.data || { roleName: 'staff', displayName: null, username: null }
+    return json.data || { roleName: 'staff', displayName: null, username: null, assignedCity: null }
   } catch {
-    return { roleName: 'staff', displayName: null, username: null }
+    return { roleName: 'staff', displayName: null, username: null, assignedCity: null }
   }
 }
 
@@ -32,6 +33,7 @@ interface AuthState {
   initialized: boolean
   roleName: string
   displayName: string | null
+  assignedCity: string | null
   setUser: (user: User | null) => void
   setSession: (session: Session | null) => void
   setInitialized: (val: boolean) => void
@@ -47,6 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   initialized: false,
   roleName: 'staff',
   displayName: null,
+  assignedCity: null,
 
   setUser: (user) => set({ user }),
   setSession: (session) => set({ session }),
@@ -60,14 +63,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       const profile = await fetchProfile()
       set({ session, user, ...profile, isLoading: false, initialized: true })
     } else {
-      set({ session: null, user: null, roleName: 'staff', displayName: null, isLoading: false, initialized: true })
+      set({ session: null, user: null, roleName: 'staff', displayName: null, assignedCity: null, isLoading: false, initialized: true })
     }
   },
 
   signOut: async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
-    set({ user: null, session: null, roleName: 'staff', displayName: null })
+    set({ user: null, session: null, roleName: 'staff', displayName: null, assignedCity: null })
   },
 
   signIn: async (input, password) => {

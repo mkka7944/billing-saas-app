@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { currentMonth, today } from '@/lib/constants'
+import { currentMonth } from '@/lib/constants'
 import { validateQuery } from '@/lib/validation/validate-query'
 import { assignmentQuerySchema } from '@/lib/validation/schemas'
 import {
@@ -12,7 +12,6 @@ export async function GET(request: Request) {
   const params = validateQuery(request, assignmentQuerySchema)
   if (params instanceof NextResponse) return params
 
-  const date = params.date || today()
   const month = params.month || currentMonth()
   const sup = await createClient()
 
@@ -24,7 +23,6 @@ export async function GET(request: Request) {
     district: params.district,
     tehsil: params.tehsil,
     routeName: params.route_name,
-    date,
     month,
   }
 

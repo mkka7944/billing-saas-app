@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { applyActiveFilter } from '@/lib/queries/survey-units'
+import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 
 async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
   const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -23,7 +24,7 @@ async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
   return all
 }
 
-const ASSIGNMENT_COLS = 'id, staff_id, assigned_date, uc_name, total_items, created_by, created_at'
+const ASSIGNMENT_COLS = 'id, staff_id, issued_at, uc_name, total_items, created_by, created_at'
 const ITEM_COLS = 'id, assignment_id, psid, survey_id, route_seq, status, delivered_at, gps_lat, gps_lng, notes'
 const PSID_COLS = 'survey_id, consumer_name, address, lat, lng, psid, monthly_fee, arrears, route_seq, route_name, surveyor_name, survey_date, survey_time'
 
@@ -34,7 +35,6 @@ export interface AssignmentQuery {
   list: boolean
   district: string
   tehsil: string
-  date: string
   routeName: string
   month: string
 }
@@ -55,14 +55,13 @@ export async function getUcTotals(sup: SupabaseClient, q: AssignmentQuery) {
     counts.set(row.uc_name, { total: row.active_units, assigned: 0 })
   }
 
-  const { data: todayAssignments } = await sup
+  const { data: allAssignments } = await sup
     .from('daily_assignments')
     .select('id, uc_name')
-    .eq('assigned_date', q.date)
 
-  if (todayAssignments?.length) {
+  if (allAssignments?.length) {
     type TA = { id: string; uc_name: string }
-    const taRows = todayAssignments as TA[]
+    const taRows = allAssignments as TA[]
     const ucFromId = new Map(taRows.map((a) => [a.id, a.uc_name]))
     type AI = { assignment_id: string }
     const { data: items } = await sup
@@ -84,15 +83,31 @@ export async function getUcTotals(sup: SupabaseClient, q: AssignmentQuery) {
 }
 
 export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery) {
-  const { data: assignments } = await sup
+  let query = sup
     .from('daily_assignments')
     .select(ASSIGNMENT_COLS)
-    .eq('assigned_date', q.date)
-    .order('created_at', { ascending: false })
+
+  // Filter by district/tehsil via hierarchy_summary UC names
+  if (q.district) {
+    let hsQuery = sup
+      .from('hierarchy_summary')
+      .select('uc_name')
+      .eq('city_district', q.district)
+    if (q.tehsil) hsQuery = hsQuery.eq('tehsil', q.tehsil)
+
+    const { data: ucRows } = await hsQuery
+
+    const ucNames = [...new Set((ucRows || []).map(r => r.uc_name))]
+    if (ucNames.length) {
+      query = query.in('uc_name', ucNames)
+    }
+  }
+
+  const { data: assignments } = await query.order('created_at', { ascending: false })
 
   if (!assignments?.length) return { data: [] }
 
-  type DA = { id: string; staff_id: string; assigned_date: string; uc_name: string; total_items: number; created_by: string; created_at: string }
+  type DA = { id: string; staff_id: string; issued_at: string; uc_name: string; total_items: number; created_by: string; created_at: string }
   const daRows = assignments as DA[]
   const staffIds = [...new Set(daRows.map((a) => a.staff_id))]
   type SR = { id: string; full_name: string | null }
@@ -123,7 +138,7 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
       id: a.id,
       staff_id: a.staff_id,
       staff_name: staffNameMap.get(a.staff_id) || 'Unknown',
-      assigned_date: a.assigned_date,
+      issued_at: a.issued_at,
       uc_name: a.uc_name,
       total_items: a.total_items,
       ...counts,
@@ -139,7 +154,6 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
   const { data: existingAssignments } = await sup
     .from('daily_assignments')
     .select('id')
-    .eq('assigned_date', q.date)
     .eq('uc_name', q.uc)
 
   type ExDA = { id: string }
@@ -155,7 +169,6 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
 
   const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const filterParts = [
-    `current_bill_month=eq.${encodeURIComponent(q.month)}`,
     `uc_name=eq.${encodeURIComponent(q.uc!)}`,
     'psid=not.is.null',
     'or=(status.is.null,status.eq.ACTIVE)',
@@ -177,25 +190,25 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
 }
 
 export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery) {
-  const { data: assignment, error: ae } = await sup
+  const { data: assignments, error: ae } = await sup
     .from('daily_assignments')
     .select(ASSIGNMENT_COLS)
     .eq('staff_id', q.staffId)
-    .eq('assigned_date', q.date)
-    .maybeSingle()
+    .order('created_at', { ascending: false })
 
   if (ae) return { error: ae.message }
-  if (!assignment) return { data: null, items: [] }
+  if (!assignments?.length) return { data: null, items: [] }
 
+  const assignmentIds = (assignments as any[]).map((a) => a.id)
   const { data: items, error: ie } = await sup
     .from('assignment_items')
     .select(ITEM_COLS)
-    .eq('assignment_id', assignment.id)
+    .in('assignment_id', assignmentIds)
     .order('route_seq', { ascending: true, nullsFirst: false })
 
   if (ie) return { error: ie.message }
 
-  const psids = (items || []).map((i) => i.psid)
+  const psids = (items || []).map((i: any) => i.psid)
   const { data: units } = psids.length
     ? await sup
         .from('survey_units')
@@ -203,33 +216,51 @@ export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery
         .in('psid', psids)
     : { data: [] }
 
-  const unitMap = new Map((units || []).map((u) => [u.psid, u]))
-  const itemsWithUnits = (items || []).map((item) => ({
+  const unitMap = new Map((units || []).map((u: any) => [u.psid, u]))
+  const itemsWithUnits = (items || []).map((item: any) => ({
     ...item,
     unit: unitMap.get(item.psid) || null,
   }))
 
-  return { data: assignment, items: itemsWithUnits }
+  return { data: (assignments as any[])[0], items: itemsWithUnits }
 }
 
 export async function createAssignment(
   sup: SupabaseClient,
-  body: { staff_id: string; assigned_date: string; uc_name: string; psids: string[] }
+  body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[] }
 ) {
-  const { staff_id, assigned_date, uc_name, psids } = body
+  const { staff_id, uc_name, psids } = body
+  const issued_at = body.issued_at || new Date().toISOString().slice(0, 10)
 
-  if (!staff_id || !assigned_date || !uc_name || !psids?.length) {
-    return { error: 'staff_id, assigned_date, uc_name, and psids[] required' }
+  if (!staff_id || !uc_name || !psids?.length) {
+    return { error: 'staff_id, uc_name, and psids[] required' }
   }
 
-  const { data: existing } = await sup
-    .from('daily_assignments')
-    .select('id')
-    .eq('staff_id', staff_id)
-    .eq('assigned_date', assigned_date)
-    .maybeSingle()
+  // Validate staff's assigned_city matches the UC's city
+  const { data: staffRow } = await sup
+    .from('staff')
+    .select('full_name, assigned_city')
+    .eq('id', staff_id)
+    .single()
 
-  if (existing) return { error: 'Staff already has an assignment for this date', status: 409 }
+  if (staffRow?.assigned_city) {
+    const staffCityCfg = CITY_TEHSIL_MAP[staffRow.assigned_city as string]
+    if (staffCityCfg) {
+      const { data: ucRow } = await sup
+        .from('hierarchy_summary')
+        .select('city_district, tehsil')
+        .eq('uc_name', uc_name)
+        .eq('bill_month', issued_at.slice(0, 7).replace('-', '')) // approximate month
+        .maybeSingle()
+
+      if (ucRow && (ucRow.city_district !== staffCityCfg.district || ucRow.tehsil !== staffCityCfg.tehsil)) {
+        return {
+          error: `Staff "${(staffRow as any).full_name || staff_id}" is assigned to ${staffRow.assigned_city} but UC "${uc_name}" belongs to a different city`,
+          status: 400,
+        }
+      }
+    }
+  }
 
   const { data: units } = await sup
     .from('survey_units')
@@ -242,7 +273,7 @@ export async function createAssignment(
 
   const { data: assignment, error: ae } = await sup
     .from('daily_assignments')
-    .insert({ staff_id, assigned_date, uc_name, total_items: psids.length })
+    .insert({ staff_id, issued_at, uc_name, total_items: psids.length })
     .select(ASSIGNMENT_COLS)
     .single()
 

@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { AuthInit } from "@/components/providers/auth-init";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
+import { ToastProvider } from "@/hooks/use-toast";
 
 const outfit = Outfit({
   subsets: ["latin"],
@@ -50,7 +51,9 @@ export default function RootLayout({
           <QueryProvider>
             <AuthInit>
               <ConfirmProvider>
-                {children}
+                <ToastProvider>
+                  {children}
+                </ToastProvider>
               </ConfirmProvider>
             </AuthInit>
           </QueryProvider>

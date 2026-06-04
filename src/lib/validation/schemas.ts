@@ -83,7 +83,6 @@ export const assignmentQuerySchema = z.object({
   list: z.union([z.boolean(), z.string()]).transform(v => v === true || v === 'true').default(false),
   district: z.string().default(''),
   tehsil: z.string().default(''),
-  date: z.string().default(''),
   route_name: z.string().default(''),
   month: z.string().default(''),
   mode: z.coerce.number().int().min(1).max(4).default(1),

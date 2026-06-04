@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
-import { useBillingStore } from '@/stores/billing-store'
+import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { BillingSidebar } from './BillingSidebar'
 import { AppHeader } from './AppHeader'
@@ -15,9 +15,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const roleName = useAuthStore((s) => s.roleName)
+  const assignedCity = useAuthStore((s) => s.assignedCity)
+  const selectedCity = useBillingStore((s) => s.selectedCity)
+  const setCity = useBillingStore((s) => s.setCity)
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
   const { setSidebarOpen } = useBillingUIStore()
+
+  // Auto-select assigned city for field staff on mount
+  useEffect(() => {
+    if (roleName === 'field_staff' && assignedCity && selectedCity !== assignedCity) {
+      const cfg = CITY_CONFIG[assignedCity]
+      if (cfg) setCity(assignedCity, cfg.district, cfg.tehsil)
+    }
+  }, [roleName, assignedCity, selectedCity, setCity])
 
   // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [
