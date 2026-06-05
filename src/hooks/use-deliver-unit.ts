@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import { compressImage } from '@/lib/image/compress'
 
-function captureGPS(timeout = 3000): Promise<{ lat: number; lng: number } | null> {
+function captureGPS(timeout = 8000): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve(null)
@@ -45,13 +45,14 @@ export function useDeliverUnit() {
     targetLat: number | null,
     targetLng: number | null,
     email?: string | null,
+    gpsOverride?: { lat: number; lng: number } | null,
   ): Promise<DeliveryResult | null> => {
     setIsDelivering(true)
     setLastResult(null)
 
     try {
-      // 1. Capture GPS (best-effort, 3s timeout)
-      const gps = await captureGPS(3000)
+      // 1. Capture GPS — use pre-warmed position if available, else fallback
+      const gps = gpsOverride ?? await captureGPS(8000)
 
       // 2. Compress photo
       const compressed = await compressImage(photoFile)

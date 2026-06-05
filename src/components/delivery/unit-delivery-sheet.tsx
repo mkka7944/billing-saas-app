@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useCallback, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft, Crosshair } from 'lucide-react'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
@@ -36,9 +37,12 @@ export default function UnitDeliverySheet({
   const [deliveryGpsLng, setDeliveryGpsLng] = useState<number | null>(null)
   const [liveDistance, setLiveDistance] = useState<number | null>(null)
   const [liveGpsStatus, setLiveGpsStatus] = useState<'idle' | 'locating' | 'ready' | 'unavailable'>('idle')
+  const [userLat, setUserLat] = useState<number | null>(null)
+  const [userLng, setUserLng] = useState<number | null>(null)
   const touchXRef = useRef<number | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
+  const queryClient = useQueryClient()
   const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
   const { deliver } = useDeliverUnit()
   const { enqueuePhoto } = usePhotoQueue()
@@ -62,6 +66,8 @@ export default function UnitDeliverySheet({
     setDeliveryDistance(null)
     setDeliveryGpsLat(null)
     setDeliveryGpsLng(null)
+    setUserLat(null)
+    setUserLng(null)
   }, [unit?.psid])
 
   // Live GPS tracking — watch position while sheet is idle
@@ -77,6 +83,8 @@ export default function UnitDeliverySheet({
       (pos) => {
         const d = Math.round(haversine(pos.coords.latitude, pos.coords.longitude, unit.lat!, unit.lng!))
         setLiveDistance(d)
+        setUserLat(pos.coords.latitude)
+        setUserLng(pos.coords.longitude)
         setLiveGpsStatus('ready')
       },
       () => {
@@ -121,7 +129,8 @@ export default function UnitDeliverySheet({
 
     setIsDelivering(true)
 
-    // 1. Try online delivery (GPS + compress + POST)
+    // 1. Try online delivery (uses pre-warmed GPS from live tracking if available)
+    const gpsOverride = userLat != null && userLng != null ? { lat: userLat, lng: userLng } : null
     const result = await deliver(
       assignmentItemId,
       unit.psid,
@@ -129,6 +138,7 @@ export default function UnitDeliverySheet({
       unit.lat,
       unit.lng,
       email,
+      gpsOverride,
     )
 
     if (result) {
@@ -136,6 +146,8 @@ export default function UnitDeliverySheet({
       setDeliveryDistance(result.distance)
       setDeliveryGpsLat(result.gps_lat)
       setDeliveryGpsLng(result.gps_lng)
+      queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
+      queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
       setIsDelivering(false)
       return
     }
@@ -159,7 +171,7 @@ export default function UnitDeliverySheet({
       toast('Failed to save photo offline', 'error')
       setIsDelivering(false)
     }
-  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, toast])
+  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, toast, userLat, userLng, queryClient])
 
   if (!unit) return null
 
