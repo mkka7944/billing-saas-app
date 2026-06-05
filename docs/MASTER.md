@@ -3169,7 +3169,89 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 
 **Build verification:** `tsc --noEmit` zero errors. `npm run build` successful.
 
+### 2026-06-05 (Part 6) — GPS Enforcement Toggle + Test Data + Live GPS Tracking — Location: Remote
+
+**Focus:** GPS enforcement settings (toggle + threshold), test survey units in DB, live distance indicator in sheet, pre-warmed GPS fix, query invalidation, staff location marker on map
+
+**Done:**
+- **Test data** — `scripts/sql/032-test-data.sql`: 5 survey units at admin PC coordinates (32.071639, 72.657694) with distances 20m/30m/40m/55m/70m, status=NULL, SARGODHA/SARGODHA/TESTMC. Pre-assigned batch for staff 'zubair' (uuid `671dd08c-...`).
+- **GPS badge in sheet** — `POST /api/deliveries/mark` now returns `gps_lat`, `gps_lng`, `target_lat`, `target_lng`. `useDeliverUnit` returns all GPS fields. Sheet overlay shows GPS coords + distance after delivery.
+- **App settings table** — `scripts/sql/033-app-settings.sql`: `app_settings(key, value jsonb)` + seed `gps_enforcement = {"enforce":true,"threshold":50}`.
+- **Settings API** — `GET/PATCH /api/settings`. PATCH admin-only (checks role via profiles).
+- **Settings UI** — New "Delivery" tab in Settings page (admin-only): toggle + threshold input + save.
+- **Enforcement wired** — Mark route reads `gps_enforcement` from DB. `enforce=false` → always `delivered`. Configurable threshold instead of hardcoded 50.
+- **Live GPS distance** — Sheet shows continuous distance via `watchPosition`: green ≤50m, amber 51-200m, white >200m.
+- **Fix: GPS timeout** — `captureGPS` timeout 3s→8s. Sheet stores pre-warmed GPS from `watchPosition`, passes as `gpsOverride` to `deliver()` — instant GPS, no cold fix wait.
+- **Fix: Stale cache** — `queryClient.invalidateQueries(['staff-assignment'])` fires after delivery — status updates instantly on `/deliver` list and map markers.
+- **Fix: Staff location marker** — `useUserLocation()` hook (reusable `watchPosition` wrapper). Blue dot on staff map, no accuracy circle.
+- **Switch component** — `src/components/ui/switch.tsx` (base-ui Switch primitive).
+
+**New files:**
+- `src/hooks/use-user-location.ts`
+- `src/app/api/settings/route.ts`
+- `src/components/ui/switch.tsx`
+- `scripts/sql/032-test-data.sql`
+- `scripts/sql/033-app-settings.sql`
+
+**Modified files:**
+- `src/components/delivery/unit-delivery-sheet.tsx`
+- `src/components/delivery/staff-map.tsx`
+- `src/hooks/use-deliver-unit.ts`
+- `src/app/api/deliveries/mark/route.ts`
+- `src/app/settings/page.tsx`
+
+**Key discoveries:**
+- 3s GPS timeout was too short for `enableHighAccuracy` on mobile — caused null GPS → `processing` for every delivery
+- `app_settings` table had `text` column (pre-existing) instead of `jsonb` — had to DROP and recreate
+- `city` column (migration 024) not applied to this Supabase project — omitted from test data INSERT
+- No query invalidation existed after `POST /api/deliveries/mark` — delivery status was stale for 30s
+
+**Testing Verification:**
+1. Staff `/deliver` → tap item → sheet shows live distance + blue dot on map
+2. Take photo at 5m → instant `delivered` (no GPS timeout "processing")
+3. Status updates immediately on `/deliver` list and map marker color
+4. Admin Settings → Delivery → toggle OFF → any distance = `delivered`
+5. Change threshold to 80m → 55m delivery now `delivered` instead of `processing`
+6. Staff map shows blue dot following their position
+
+**Remaining phases (priority order):**
+1. **P1** Egress & Stability (PSID pagination loop, unbounded fetches, staff stats fallback) — 6h
+2. **P2** Authorization Hardening (`requireRole()`, RLS policies, ownership checks) — 4h
+3. **C** Admin Dashboard (staff performance, delivery KPIs) — 3h
+4. **E** Flag Management UI — 4h
+5. **RBAC** Approval Chain (draft→pending→approved→active) — 3h
+6. P3-P6 Validation, logging, egress caching — 17h
+7. **F** Auto-Route Generation — 3h
+8. **G** Live Admin Monitoring — 3h
+9. **D** Visual Rehaul — 4h
+10. **Z** Audit Cleanup — 4h
+11. **Deploy** Office PC pipeline — 1h
+
+### 2026-06-05 (Part 7) — Fix Invisible "Processing" Status — Location: Remote
+
+**Focus:** Items with `status='processing'` (GPS null or distance > threshold) showed as blue "Pending" instead of amber "Processing" because `STATUS_CONFIG` and `STATUS_COLORS` had no `processing` key.
+
+**Files changed (3):**
+
+1. **`src/types/index.ts:121`** — Added `'processing'` to `AssignmentItem.status` union type (`'pending' | 'processing' | 'delivered' | 'missed' | 'skipped'`).
+
+2. **`src/app/deliver/page.tsx`** — Added `processing: { label: 'Processing', dot: 'bg-amber-500' }` to `STATUS_CONFIG` (line 20). Added `item.status === 'processing' && 'text-amber-600'` to label color class (line 189).
+
+3. **`src/components/delivery/staff-map-markers.tsx:11`** — Added `processing: '#f59e0b'` to `STATUS_COLORS`.
+
+**Effect:** Items with `status='processing'` now show amber dot + "Processing" label on `/deliver` list and amber markers on the staff map. No longer falsely shown as "Pending".
+
+**Build verification:** `npx tsc --noEmit` zero errors. `npm run build` successful.
+
+**Remaining phases (unchanged):**
+1. **P1** Egress & Stability — 6h
+2. **P2** Authorization Hardening — 4h
+3. **C** Admin Dashboard — 3h
+4. **E** Flag Management UI — 4h
+5-11. Remaining phases per priority order
+
 ---
+
 ## 19. Data Model Rules (Comprehensive Reference)
 
 This section codifies every data-modeling rule discovered during development. Violations cause bugs. Read before making any schema or query changes.

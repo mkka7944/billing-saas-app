@@ -17,6 +17,7 @@ const PAGE_SIZE = 50
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string }> = {
   pending: { label: 'Pending', dot: 'bg-blue-500' },
+  processing: { label: 'Processing', dot: 'bg-amber-500' },
   delivered: { label: 'Delivered', dot: 'bg-green-500' },
   missed: { label: 'Missed', dot: 'bg-red-500' },
   skipped: { label: 'Skipped', dot: 'bg-gray-400' },
@@ -187,6 +188,7 @@ export default function DeliverPage() {
                         item.status === 'delivered' && 'text-green-600',
                         item.status === 'missed' && 'text-red-600',
                         item.status === 'pending' && 'text-blue-600',
+                        item.status === 'processing' && 'text-amber-600',
                         item.status === 'skipped' && 'text-gray-500',
                       )}>
                         {cfg.label}

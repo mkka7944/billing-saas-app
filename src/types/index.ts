@@ -118,7 +118,7 @@ export interface AssignmentItem {
   psid: string
   survey_id: string | null
   route_seq: number
-  status: 'pending' | 'delivered' | 'missed' | 'skipped'
+  status: 'pending' | 'processing' | 'delivered' | 'missed' | 'skipped'
   delivered_at: string | null
   gps_lat: number | null
   gps_lng: number | null
