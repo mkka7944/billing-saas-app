@@ -3633,6 +3633,7 @@ Camera → OffscreenCanvas compress → WebP blob (q0.6, 1024px)
 | M12 | `survey-markers.tsx:53-71` | New L.divIcon created every render — marker flicker | 🟢 Perf |
 | — | `map/page.tsx:130-143` | Debug badge visible in production | 🟢 UX |
 | — | `unit-delivery-sheet.tsx:94` | Red border (debug CSS) in production | 🟢 UX |
+| F1 | `api/deliveries/mark/route.ts:60-81` | **2026-06-05 field test**: live delivery stuck on "Processing" — DB status not updating, photo not syncing to Drive. Suspected: GAS webhook hangs/times out (10s Vercel function limit), so `await` blocks the response, client falls through to offline IndexedDB queue. Photo + status lost on page reload. **Needs office PC investigation:** Network tab on `/api/deliveries/mark`, Vercel function logs, GAS `Executions` log, confirm `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` env var set. Likely fix: 5s `AbortController` timeout on webhook + move DB write before webhook (fire-and-forget). | 🔴 Blocker |
 
 ### 21.5 Staff Counting & Egress Reality
 
