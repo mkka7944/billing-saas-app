@@ -235,21 +235,33 @@ supabase.table("survey_units").upsert(rows, on_conflict="survey_id").execute()
 | `ingest-all.py` | Orchestrator (interactive menu) | Phases 2+3 (create) |
 
 ## Testing Verification (Permanent Rule)
-After every implementation (each atomic step), provide the user with a concrete **Testing Verification** section before presenting the next step. This must cover:
+After every implementation step (atomic step OR phase/sub-phase completion), provide the user with a concrete **Testing Verification** section. This must cover:
 
 - **What to do** — exact UI actions, API calls, or commands
 - **What to expect** — the specific behavior change to observe
 - **Edge cases** — boundary conditions, error states, null values
 - **Where to inspect** — URL path, DB query, network tab, console
 
-Example format:
+Format (required at end of every implementation message):
 ```
 **Testing Verification:**
-1. Open `/settings` → Users tab → Edit City → select "Bhalwal" → Save
-2. Staff dropdown on `/assignments` now filters to Bhalwal staff only
-3. Server rejects cross-city assignment with 400
-4. Staff logs in → CitySwitcher shows only "Bhalwal", no chevron
-5. `/deliver` shows all pending items across all batches
+1. Open `/page` → do X → expect Y
+2. Network tab shows `GET /api/endpoint` returning `{...}`
+3. DB: `SELECT ... FROM table` confirms write
+4. Edge case: no data / null / error → expect graceful fallback
+5. Edge case: offline / slow network → expect fallback behavior
+```
+
+Real example from session 2026-06-05 (B.10+D phases):
+```
+**Testing Verification:**
+1. Staff `/deliver` → tap pending → sheet shows "Take Picture & Deliver"
+2. Tap → camera → photo → green checkmark "Delivered (14m from target)" → auto-advance
+3. Network tab: POST /api/deliveries/mark → returns {status, distance, photo_url}
+4. DB: delivery_photos has new row, assignment_items.status = 'delivered'
+5. Offline: amber "Processing" overlay → auto-syncs when online
+6. Admin `/map` → click marker → sheet shows "View Details" (no delivery action)
+7. Open HDS → gallery shows portal images + old Drive images (via webhook)
 ```
 
 ## Data Model Rules (Critical — Avoid the Lost-Hour Traps)

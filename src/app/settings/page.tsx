@@ -8,11 +8,12 @@ import { AppShell } from '@/components/layout/AppShell'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup } from '@/components/ui/select'
-import { Building2, ChevronDown, ChevronRight, Sun, Moon, Monitor, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2 } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight, Sun, Moon, Monitor, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -28,6 +29,7 @@ const THEMES = [
 const tabs = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'account', label: 'Account' },
+  { id: 'delivery', label: 'Delivery', adminOnly: true },
   { id: 'users', label: 'Users', adminOnly: true },
 ] as const
 
@@ -114,6 +116,12 @@ export default function SettingsPage() {
   const [editCityValue, setEditCityValue] = useState<string | null>('')
   const [editCitySaving, setEditCitySaving] = useState(false)
 
+  // Delivery settings
+  const [deliverySettings, setDeliverySettings] = useState<{ enforce: boolean; threshold: number } | null>(null)
+  const [deliveryEnforce, setDeliveryEnforce] = useState(true)
+  const [deliveryThreshold, setDeliveryThreshold] = useState(50)
+  const [deliverySaving, setDeliverySaving] = useState(false)
+
   const confirm = useConfirm()
   const { toast } = useToast()
 
@@ -135,6 +143,45 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeTab === 'users') fetchUsers()
   }, [activeTab, fetchUsers])
+
+  useEffect(() => {
+    if (activeTab === 'delivery') {
+      fetch('/api/settings')
+        .then(r => r.json())
+        .then(data => {
+          const gps = data?.gps_enforcement || {}
+          setDeliveryEnforce(gps.enforce !== false)
+          setDeliveryThreshold(typeof gps.threshold === 'number' ? gps.threshold : 50)
+          setDeliverySettings({ enforce: gps.enforce !== false, threshold: typeof gps.threshold === 'number' ? gps.threshold : 50 })
+        })
+        .catch(() => toast('Failed to load settings', 'error'))
+    }
+  }, [activeTab, toast])
+
+  async function handleSaveDelivery() {
+    setDeliverySaving(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'gps_enforcement',
+          value: { enforce: deliveryEnforce, threshold: deliveryThreshold },
+        }),
+      })
+      if (res.ok) {
+        setDeliverySettings({ enforce: deliveryEnforce, threshold: deliveryThreshold })
+        toast('Delivery settings saved', 'success')
+      } else {
+        const j = await res.json()
+        toast(j.error || 'Failed to save', 'error')
+      }
+    } catch {
+      toast('Network error', 'error')
+    } finally {
+      setDeliverySaving(false)
+    }
+  }
 
   async function handleAddUser() {
     setAddSubmitting(true)
@@ -308,6 +355,56 @@ export default function SettingsPage() {
               <div className="text-xs text-muted-foreground">
                 User ID: <span className="font-mono text-foreground">{user?.id}</span>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Delivery tab (admin-only) */}
+        {activeTab === 'delivery' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-bold">Delivery Settings</CardTitle>
+              <CardDescription className="text-xs">Configure GPS enforcement for staff deliveries.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold">GPS Distance Enforcement</p>
+                  <p className="text-xs text-muted-foreground">Reject deliveries farther than the threshold</p>
+                </div>
+                <Switch
+                  checked={deliveryEnforce}
+                  onCheckedChange={setDeliveryEnforce}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Threshold (meters)</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={deliveryThreshold}
+                  onChange={(e) => setDeliveryThreshold(Number(e.target.value))}
+                  disabled={!deliveryEnforce}
+                  className="max-w-[120px]"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  When enforcement is on, deliveries beyond {deliveryThreshold}m get &quot;processing&quot; status instead of &quot;delivered&quot;.
+                </p>
+              </div>
+              <Button
+                onClick={handleSaveDelivery}
+                disabled={deliverySaving}
+                size="sm"
+              >
+                {deliverySaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Save Changes
+              </Button>
+              {deliverySettings && (
+                <p className="text-[10px] text-muted-foreground">
+                  Current: {deliverySettings.enforce ? `On (${deliverySettings.threshold}m threshold)` : 'Off'}
+                </p>
+              )}
             </CardContent>
           </Card>
         )}

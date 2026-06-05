@@ -873,8 +873,8 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | B.19 | 30 min | **Deliver page redesigned**: Compact mobile list — progress header bar, pagination (50/page), route seq circles, consumer name + status dot, delivered timestamp, amount right-aligned. | ✅ |
 | B.20 | 15 min | **Stale files deleted**: Removed old deliver-map, deliver-bottom-sheet, deliver-action, deliver-card-list. | ✅ |
 | B.21 | 15 min | **QR scanner guard + z-index fix**: activeView guard, z-index bump to z-[1000]. | ✅ |
-| B.10 | 90 min | **One-tap delivery with GPS verification**: Create `useDeliverUnit()` hook + `POST /api/deliveries/mark`. One-tap flow: Take Picture → compress WebP (q0.6, 1024px, 30-70KB) → capture GPS (silent, 3s timeout) → POST FormData to server → server uploads to GAS webhook → saves to Drive + staff_sync_logs + delivery_photos → calculates Haversine distance from survey marker → if ≤50m: status='delivered', else: status='processing'. No manual "Confirm Delivery" step. UnitDeliverySheet button auto-advances after photo. | 🔲 |
-| B.11 | 30 min | **Auto-advance + distance indicator**: After one-tap delivery, auto-advance to next pending item (B.12 merged). Show green checkmark if auto-verified, yellow "processing" badge if pending review. Staff map shows current GPS dot vs target marker. | 🔲 |
+| B.10 | 90 min | **One-tap delivery with GPS verification**: Create `useDeliverUnit()` hook + `POST /api/deliveries/mark`. One-tap flow: Take Picture → compress WebP (q0.6, 1024px, 30-70KB) → capture GPS (silent, 3s timeout) → POST FormData to server → server uploads to GAS webhook → saves to Drive + delivery_photos → calculates Haversine distance from survey marker → if ≤50m: status='delivered', else: status='processing'. No manual "Confirm Delivery" step. UnitDeliverySheet button auto-advances after photo. | ✅ |
+| B.11 | 30 min | **Auto-advance + distance indicator**: After one-tap delivery, auto-advance to next pending item (B.12 merged). Show green checkmark if auto-verified, yellow "processing" badge if pending review. Distance badge on delivered overlay. Drive photos in HDS gallery via `GET /api/delivery/photos/drive` + `useDrivePhotos` hook. | ✅ |
 | B.12 | — | _(merged into B.10-B.11)_ | — |
 
 ### Phase C — Admin Dashboard (~3 hrs)
@@ -1041,7 +1041,7 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 2 | **2b** Drop `amount_due` | 30 min | Remove column — deferred cleanup | ✅ Done |
 | 3 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks with approval chain support | ✅ Done |
 | 4 | **B1** Field Staff Delivery Basics | 7 hrs | /deliver page, photo capture, offline queue, map, card list, bottom sheet | ✅ Done |
-| 5 | **B2** QR + One-Tap Delivery | 2 hrs | QR scanner, UnitDeliverySheet, one-tap photo+GPS+auto-verify, auto-advance | ⏳ In Progress |
+| 5 | **B2** QR + One-Tap Delivery | 2 hrs | QR scanner, UnitDeliverySheet, one-tap photo+GPS+auto-verify, auto-advance, Drive images in HDS gallery | ✅ Done |
 | 6 | **P1** Egress & Stability (H1-H3) | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | 🔲 |
 | 7 | **P2** Authorization Hardening | 4 hrs | `requireRole()`, RLS policies, ownership checks | 🔲 |
 | 8 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs | 🔲 |
@@ -1068,6 +1068,26 @@ Every task is broken into short atomic steps (max 1-2 file changes per step).
 
 Never skip ahead or batch multiple steps without explicit approval.
 When in a phase/step and the user asks a question: Answer the question, then return to the current phase/step without advancing unless told to proceed.
+
+---
+## 12. Testing Verification (Permanent Rule)
+After every implementation step (atomic step OR phase/sub-phase completion), provide a concrete **Testing Verification** section. Must cover:
+
+- **What to do** — exact UI actions, API calls, or commands
+- **What to expect** — the specific behavior change to observe
+- **Edge cases** — boundary conditions, error states, null values
+- **Where to inspect** — URL path, DB query, network tab, console
+
+Format (required at end of every implementation message):
+```
+
+**Testing Verification:**
+1. Open `/page` → do X → expect Y
+2. Network tab shows `GET /api/endpoint` returning `{...}`
+3. DB: `SELECT ... FROM table` confirms write
+4. Edge case: no data / null / error → expect graceful fallback
+5. Edge case: offline / slow network → expect fallback behavior
+```
 
 ---
 ## 16. Pipeline Reference
@@ -2986,6 +3006,168 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 4. P2 — Authorization hardening (requireRole, RLS, ownership checks)
 5. C — Admin Dashboard (staff performance, delivery KPIs)
 6. Continue with remaining phases per execution order
+
+### 2026-06-05 (Part 2) — Universal UnitDeliverySheet — Location: Office
+
+**Focus:** Fix desktop sheet invisibility, make UnitDeliverySheet work for both staff and admin, add filter-aware navigation.
+
+**Problem statement:** The UnitDeliverySheet (the action sheet with photo capture) was:
+1. Hidden on desktop due to a CSS bug (`left-1/2 -translate-x-1/2` removed right anchor without setting width)
+2. Only accessible to staff with assignment (admin couldn't open it)
+3. Only navigable through `staffItems` (not the visible filtered set)
+
+**Files changed (5):**
+
+1. **`src/components/delivery/unit-delivery-sheet.tsx`**
+   - Line 91: Replaced broken centering CSS `fixed bottom-0 left-0 right-0 ... lg:left-1/2 lg:-translate-x-1/2 lg:max-w-md lg:right-auto` with `fixed bottom-0 inset-x-0 ... min-h-[300px] mx-auto w-full max-w-md`
+   - Line 84: Removed `!assignmentItemId` from null-return guard — admin can now see the sheet
+   - Lines 208-249: Action buttons are now role-aware. When `assignmentItemId` is present (staff with assignment): show "Take Picture & Deliver" + secondary "Details" button. When null (admin or no assignment): hide delivery button, show only prominent "View Details" button.
+
+2. **`src/stores/billing-store.ts`**
+   - Added `deliverTargetUnit: AssignmentItemUnit | null` to state
+   - Added `deliverableList: AssignmentItemUnit[]` and `deliverableIndex: number` for filter-aware navigation
+   - Updated `setDeliverTarget(id, unit?)` — now stores unit data directly, removes role-specific lookup dependency
+   - Added `setDeliverableList(list)` — populates from filtered markers
+   - Added `nextDeliverable()` and `prevDeliverable()` — navigate through the visible set
+
+3. **`src/components/survey-markers.tsx`** (admin markers)
+   - Marker click: changed from `selectHouse(survey_id)` to `setDeliverTarget(s.psid, unitData)`
+   - Added `toAssignmentUnit()` helper to convert SurveyUnit → AssignmentItemUnit shape
+   - Added useEffect that populates `deliverableList` from filtered markers
+   - Filter excludes markers without `psid` (98% have one)
+
+4. **`src/components/delivery/staff-map-markers.tsx`** (staff markers)
+   - Marker click: now passes `item.unit` directly to `setDeliverTarget(psid, unit)` instead of relying on a lookup
+
+5. **`src/app/map/page.tsx`**
+   - Removed `roleName !== 'field_staff'` gate from sheet rendering
+   - Reads `deliverTargetUnit` directly from store (no more `staffItems.find()` lookup)
+   - Added useEffect that populates `deliverableList` from `staffItems` for field_staff
+   - Added sync useEffect that updates `deliverTargetUnit` when URL-param target ID is found in the loaded deliverableList
+   - Sheet `onPrev`/`onNext` now use store's `prevDeliverable`/`nextDeliverable` (works for both roles)
+
+**New behavior:**
+- **Staff with assignment:** Tap any marker on `/map` → UnitDeliverySheet opens with "Take Picture & Deliver" + "Details" buttons. Prev/next navigates through staff's assignment.
+- **Staff without assignment / Admin:** Tap any marker on `/map` → UnitDeliverySheet opens with ONLY "View Details" button (no delivery action). Prev/next navigates through currently filtered set.
+- **Desktop:** Sheet now visible at 28rem wide, centered at viewport bottom (was hidden before).
+
+**Key data flow:**
+- Admin map → SurveyMarkers click → setDeliverTarget(psid, unit) → sheet opens with unit data
+- Staff map → StaffMapMarkers click → setDeliverTarget(psid, unit) → sheet opens with unit data
+- `/deliver` flow → URL param → setDeliverTarget(psid) → staff data loads → sync effect updates unit → sheet opens
+
+**Build verification:** `tsc --noEmit` zero errors. `npm run build` successful.
+
+**Remaining work (unchanged from prior session):**
+1. B.10 — Implement `useDeliverUnit()` hook + `POST /api/deliveries/mark` + one-tap flow
+2. B.11 — Auto-advance + distance badge + current-location dot on StaffMap
+3. P1 — Fix H1-H3 egress bugs (PSID loop, unbounded fetches, staff stats)
+4. P2 — Authorization hardening (requireRole, RLS, ownership checks)
+
+### 2026-06-05 (Part 3) — UnitDeliverySheet Persistence Across HDS — Location: Office
+
+**Focus:** When user opens HDS (HouseDetailSheet) via "View Details" on UnitDeliverySheet, then closes HDS, the delivery sheet should still be open on the map.
+
+**Problem:** `onViewDetails` was calling `setDeliverTarget(null)` which cleared `deliverTargetId` and `deliverTargetUnit`. When HDS closed and `activeView` reverted to `'map'`, the sheet condition (`activeView === 'map' && deliverTargetId && deliveryUnit`) was false because the target was cleared.
+
+**Files changed (1):**
+
+1. **`src/app/map/page.tsx`**
+   - Removed `setDeliverTarget(null)` from the `onViewDetails` handler (lines 117-121)
+   - The handler now only calls `selectHouse(unitSurveyId)` to open HDS
+   - `deliverTargetId` and `deliverTargetUnit` stay in the store while HDS is open
+   - When HDS closes, `activeView` reverts to `'map'`, sheet reopens with same unit
+
+**New behavior:**
+
+```
+1. Map → click marker → UnitDeliverySheet opens (unit A)
+2. Click "View Details" → HDS opens (sheet hidden behind)
+3. Browse HDS freely (navigate to units B, C, D)
+4. Close HDS → map returns
+5. UnitDeliverySheet still open for unit A ✓
+```
+
+**No regression for explicit close:** Clicking X on the sheet still calls `setDeliverTarget(null)` — explicit user intent is honored.
+
+**No regression for delivery:** `handleDeliver` still calls `setDeliverTarget(null)` after enqueuing the photo — sheet closes after successful delivery.
+
+**Build verification:** `tsc --noEmit` zero errors. `npm run build` successful.
+
+### 2026-06-05 (Part 4) — Minimal Marker Tooltip — Location: Office
+
+**Focus:** Replace verbose Leaflet Popup (4 fields) with sleek hover Tooltip (1 field: survey_id). Industry-standard pattern for large-scale maps.
+
+**Problem:** Clicking an admin marker opened BOTH a Leaflet Popup (consumer name, survey_id, uc, address) AND the UnitDeliverySheet — fighting for screen space. Staff markers had no hover info at all.
+
+**Files changed (3):**
+
+1. **`src/components/survey-markers.tsx`**
+   - Imported `Tooltip` from react-leaflet (replaced `Popup`)
+   - Marker now shows `<Tooltip direction="top" offset={[0,-8]} className="survey-tooltip">{s.survey_id}</Tooltip>`
+   - Click handler still calls `setDeliverTarget(s.psid, unit)` — no longer fights with a Popup
+
+2. **`src/components/delivery/staff-map-markers.tsx`**
+   - Added Tooltip showing `survey_id` (or `psid` fallback) for consistency
+   - Staff now gets hover-to-peek at survey_id like admin
+
+3. **`src/app/globals.css`**
+   - Added `.leaflet-tooltip.survey-tooltip` styles in `@layer base`
+   - Styled to match project theme: popover background, mono font (Geist Mono), 11px, 6px border-radius
+   - Customized all 4 directional arrows (top/bottom/left/right) to match the popover background color
+
+**New behavior:**
+- **Hover** marker → small sleek tooltip appears with `survey_id` only (no Popup, no sheet)
+- **Click** marker → tooltip dismisses, UnitDeliverySheet opens directly (no Popup fighting)
+- **Staff markers** now have consistent hover tooltip like admin
+- **Dark mode** automatically uses the dark theme's `--popover` variable
+
+**Industry standard:** Google Maps, Uber, Lyft all use hover tooltips for quick peeks and click for full info. This pattern is now implemented.
+
+**Tooltip CSS:**
+```css
+.leaflet-tooltip.survey-tooltip {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  white-space: nowrap;
+}
+```
+
+**Build verification:** `tsc --noEmit` zero errors. `npm run build` successful.
+
+### 2026-06-05 (Part 5) — Heartbeat on Admin Map Markers — Location: Office
+
+**Focus:** Bring the selected-marker heartbeat animation (previously only on staff delivery markers) to the normal admin map.
+
+**Problem:** `SurveyMarkers` (admin) rendered static markers. Clicking a marker opened the UnitDeliverySheet but the marker had no visual feedback indicating it was the active target. The pulse/heartbeat animation only worked on `StaffMapMarkers`.
+
+**Files changed (1):**
+
+1. **`src/components/survey-markers.tsx`**
+   - Read `deliverTargetId` from `useBillingStore` (already imported)
+   - For each marker, compute `isSelected = deliverTargetId != null && s.psid === deliverTargetId`
+   - Pass `{ size: 10, selected: isSelected }` to `createMarkerIcon` (reusing the existing heartbeat logic in `src/lib/markers.ts`)
+
+**How it works (existing infrastructure):**
+- `createMarkerIcon(color, { selected: true })` renders a pulse ring around the marker
+- The pulse uses `@keyframes marker-pulse` injected once in `markers.ts` (1.5s ease-in-out infinite, scale 0.6 → 2.5, opacity 0.5 → 0)
+- Selected border: `2px solid #1e40af` (blue) vs `2px solid rgba(0,0,0,0.35)` (default)
+
+**New behavior:**
+- Open `/map` as admin → click any marker → that marker now pulses with a blue border + expanding ring
+- Navigate prev/next via sheet → heartbeat follows the active marker
+- Close sheet (X) → all markers return to static state
+- Same behavior on staff map (was already working)
+
+**Build verification:** `tsc --noEmit` zero errors. `npm run build` successful.
 
 ---
 ## 19. Data Model Rules (Comprehensive Reference)

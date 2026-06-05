@@ -14,7 +14,6 @@ import { AppShell } from '@/components/layout/AppShell'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import UnitDeliverySheet from '@/components/delivery/unit-delivery-sheet'
 import QRScannerButton from '@/components/delivery/qr-scanner-button'
-import { usePhotoQueue } from '@/hooks/use-photo-queue'
 import type { AssignmentItemWithUnit } from '@/types'
 
 const StaffMap = dynamic(
@@ -26,12 +25,17 @@ export default function MapPage() {
   const activeView = useBillingStore((s) => s.activeView)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
+  const deliverTargetUnit = useBillingStore((s) => s.deliverTargetUnit)
+  const deliverableList = useBillingStore((s) => s.deliverableList)
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
+  const setDeliverableList = useBillingStore((s) => s.setDeliverableList)
+  const nextDeliverable = useBillingStore((s) => s.nextDeliverable)
+  const prevDeliverable = useBillingStore((s) => s.prevDeliverable)
   const selectHouse = useBillingStore((s) => s.selectHouse)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const roleName = useAuthStore((s) => s.roleName)
   const user = useAuthStore((s) => s.user)
-  const { enqueuePhoto } = usePhotoQueue()
+
 
   useEffect(() => { setPageIdentity('Map') }, [setPageIdentity])
 
@@ -53,29 +57,38 @@ export default function MapPage() {
   )
   const staffItems = useMemo(() => (staffData?.items as unknown as AssignmentItemWithUnit[]) || [], [staffData])
 
-  // Find the delivery target unit
+  // For field_staff: populate deliverableList from staffItems so prev/next works
+  useEffect(() => {
+    if (roleName !== 'field_staff') return
+    const list = staffItems
+      .map((i) => i.unit)
+      .filter((u): u is NonNullable<typeof u> => u !== null)
+    setDeliverableList(list)
+  }, [roleName, staffItems, setDeliverableList])
+
+  // When deliverableList updates (e.g., staff data loads), sync deliverTargetUnit
+  // if there is a pending targetId from the URL param that has no unit yet
+  useEffect(() => {
+    if (!deliverTargetId || deliverTargetUnit) return
+    const item = deliverableList.find((u) => u.psid === deliverTargetId)
+    if (item) {
+      setDeliverTarget(deliverTargetId, item)
+    }
+  }, [deliverTargetId, deliverTargetUnit, deliverableList, setDeliverTarget])
+
+  // Find the matching assignment item (only for staff with assignment) to get the assignment_item_id
   const deliveryItem = useMemo(() => {
     if (!deliverTargetId || roleName !== 'field_staff') return null
     return staffItems.find((i) => i.psid === deliverTargetId) || null
   }, [deliverTargetId, staffItems, roleName])
 
-  const deliveryUnit = deliveryItem?.unit || null
+  const deliveryUnit = deliverTargetUnit
   const deliveryItemId = deliveryItem?.id || null
-
-  const handleDeliver = async (itemId: string, dataUrl: string) => {
-    await enqueuePhoto({
-      assignmentItemId: itemId,
-      psid: deliveryUnit?.psid || '',
-      dataUrl,
-      email: user?.email || '',
-    })
-    setDeliverTarget(null)
-  }
 
   const handleQRScanned = (psid: string) => {
     const item = staffItems.find((i) => i.psid === psid)
     if (item) {
-      setDeliverTarget(item.psid)
+      setDeliverTarget(item.psid, item.unit)
     }
   }
 
@@ -95,26 +108,18 @@ export default function MapPage() {
             <DataInsight />
           </div>
 
-          {/* UnitDeliverySheet overlay — staff delivery flow */}
+          {/* UnitDeliverySheet overlay — universal action sheet (staff + admin) */}
           {activeView === 'map' && deliverTargetId && deliveryUnit && (
             <UnitDeliverySheet
               unit={deliveryUnit}
               assignmentItemId={deliveryItemId}
-              onDeliver={handleDeliver}
               onViewDetails={() => {
-                setDeliverTarget(null)
                 const unitSurveyId = deliveryUnit?.survey_id
                 if (unitSurveyId) selectHouse(unitSurveyId)
               }}
               onClose={() => setDeliverTarget(null)}
-              onPrev={deliverTargetId && roleName === 'field_staff' ? () => {
-                const idx = staffItems.findIndex((i) => i.psid === deliverTargetId)
-                if (idx > 0) setDeliverTarget(staffItems[idx - 1].psid)
-              } : undefined}
-              onNext={deliverTargetId && roleName === 'field_staff' ? () => {
-                const idx = staffItems.findIndex((i) => i.psid === deliverTargetId)
-                if (idx < staffItems.length - 1) setDeliverTarget(staffItems[idx + 1].psid)
-              } : undefined}
+              onPrev={prevDeliverable}
+              onNext={nextDeliverable}
             />
           )}
 
@@ -126,22 +131,7 @@ export default function MapPage() {
             />
           )}
 
-          {/* DEBUG badge — shows condition states for sheet rendering */}
-          <div className="absolute top-2 right-2 z-[9999] bg-black/80 text-white text-[10px] p-2 rounded font-mono leading-relaxed pointer-events-none">
-            <div>activeView={activeView}</div>
-            <div>deliverTargetId={deliverTargetId ? '✓' : '✗'}</div>
-            <div>deliveryUnit={deliveryUnit ? '✓' : '✗'}</div>
-            <div>roleName={roleName}</div>
-            <div>staffItems={staffItems.length}</div>
-            <div>match={deliveryItem ? '✓' : '✗'}</div>
-          </div>
 
-          {/* DEBUG indicator — confirms sheet component renders */}
-          {activeView === 'map' && deliverTargetId && deliveryUnit && (
-            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[9999] bg-green-600 text-white text-xs font-bold px-3 py-1 rounded shadow-lg">
-              SHEET RENDERED ✓ (should appear below)
-            </div>
-          )}
         </div>
       </div>
     </AppShell>

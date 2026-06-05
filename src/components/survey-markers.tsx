@@ -1,10 +1,10 @@
 'use client'
 
-import { useMemo } from 'react'
-import { Marker, Popup } from 'react-leaflet'
+import { useEffect, useMemo } from 'react'
+import { Marker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import { createMarkerIcon } from '@/lib/markers'
-import type { SurveyUnit } from '@/types'
+import type { SurveyUnit, AssignmentItemUnit } from '@/types'
 
 const UC_COLORS = [
   '#0072f5', '#e5484d', '#ffb224', '#36a2eb', '#ff6384',
@@ -29,36 +29,72 @@ interface SurveyMarkersProps {
   data: SurveyUnit[]
 }
 
+function toAssignmentUnit(s: SurveyUnit): AssignmentItemUnit | null {
+  if (!s.psid) return null
+  return {
+    psid: s.psid,
+    survey_id: s.survey_id,
+    consumer_name: s.consumer_name,
+    address: s.address,
+    lat: s.lat,
+    lng: s.lng,
+    monthly_fee: s.monthly_fee ?? null,
+    arrears: s.arrears,
+    route_name: s.route_name,
+    route_seq: s.route_seq,
+    uc_name: s.uc_name,
+    image_urls: s.image_urls ?? [],
+  }
+}
+
 export default function SurveyMarkers({ data }: SurveyMarkersProps) {
-  const selectHouse = useBillingStore((s) => s.selectHouse)
+  const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
+  const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
+  const setDeliverableList = useBillingStore((s) => s.setDeliverableList)
 
   const markers = useMemo(() => {
-    return data.filter((s) => s.lat && s.lng)
+    return data.filter((s) => s.lat && s.lng && s.psid)
   }, [data])
+
+  const deliverableList = useMemo<AssignmentItemUnit[]>(
+    () => markers.map((s) => toAssignmentUnit(s)!).filter((u): u is AssignmentItemUnit => u !== null),
+    [markers]
+  )
+
+  useEffect(() => {
+    setDeliverableList(deliverableList)
+  }, [deliverableList, setDeliverableList])
 
   if (!markers.length) return null
 
   return (
     <>
-      {markers.map((s) => (
-        <Marker
-          key={s.survey_id}
-          position={[s.lat!, s.lng!]}
-          icon={createMarkerIcon(getUcColor(s.uc_name), { size: 10 })}
-          eventHandlers={{
-            click: () => selectHouse(s.survey_id),
-          }}
-        >
-          <Popup>
-            <div className="text-sm">
-              <p className="font-medium">{s.consumer_name || 'Unknown'}</p>
-              <p className="text-xs text-muted-foreground">{s.survey_id}</p>
-              {s.uc_name && <p className="text-xs text-muted-foreground">{s.uc_name}</p>}
-              {s.address && <p className="text-xs mt-1">{s.address}</p>}
-            </div>
-          </Popup>
-        </Marker>
-      ))}
+      {markers.map((s) => {
+        const unit = toAssignmentUnit(s)
+        if (!unit) return null
+        const isSelected = deliverTargetId != null && s.psid === deliverTargetId
+        return (
+          <Marker
+            key={s.survey_id}
+            position={[s.lat!, s.lng!]}
+            icon={createMarkerIcon(getUcColor(s.uc_name), { size: 10, selected: isSelected })}
+            eventHandlers={{
+              click: () => {
+                setDeliverTarget(s.psid, unit)
+              },
+            }}
+          >
+            <Tooltip
+              direction="top"
+              offset={[0, -8]}
+              className="survey-tooltip"
+              opacity={1}
+            >
+              {s.survey_id}
+            </Tooltip>
+          </Marker>
+        )
+      })}
     </>
   )
 }

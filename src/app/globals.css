@@ -237,6 +237,33 @@
     display: none !important;
   }
 
+  /* Minimal hover tooltip for map markers — shows survey_id only */
+  .leaflet-tooltip.survey-tooltip {
+    background: var(--popover);
+    color: var(--popover-foreground);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-family: var(--font-geist-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    white-space: nowrap;
+  }
+  .leaflet-tooltip-top.survey-tooltip::before {
+    border-top-color: var(--popover);
+  }
+  .leaflet-tooltip-bottom.survey-tooltip::before {
+    border-bottom-color: var(--popover);
+  }
+  .leaflet-tooltip-left.survey-tooltip::before {
+    border-left-color: var(--popover);
+  }
+  .leaflet-tooltip-right.survey-tooltip::before {
+    border-right-color: var(--popover);
+  }
+
   .leaflet-control-attribution {
     display: none !important;
   }

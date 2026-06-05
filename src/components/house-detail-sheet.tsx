@@ -5,6 +5,7 @@ import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSurveyById, useSurveyPayments, useSurveyBillInfo } from '@/hooks/use-survey-data'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
+import { useDrivePhotos } from '@/hooks/use-drive-photos'
 import { shortenMCName } from '@/lib/mc-utils'
 import { currentMonth } from '@/lib/constants'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
@@ -41,6 +42,7 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
   const { data: billData } = useSurveyPayments(selectedHouseId)
   const { data: billInfo } = useSurveyBillInfo(selectedHouseId)
   const { data: deliveryPhotos = [] } = useDeliveryPhotos(survey?.psid || null)
+  const { data: drivePhotos = [] } = useDrivePhotos(survey?.survey_id || null)
 
   const [imgIdx, setImgIdx] = useState(0)
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -70,10 +72,30 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
       .catch(() => { setFlaggedSummary(null); setFlaggedEntries([]) })
   }, [survey?.survey_id, survey?.psid])
 
+  interface GalleryImage {
+    src: string
+    thumb: string
+    source: 'portal' | 'drive' | 'delivery'
+  }
+
   // Compute before effects so allImages is accessible
   const surveyImages = (survey?.image_urls)?.filter(Boolean) || []
-  const deliveryPhotoUrls = (deliveryPhotos || []).map((p) => p.photo_url)
-  const allImages = [...surveyImages, ...deliveryPhotoUrls]
+  const driveImageList = (drivePhotos || []).map((p) => ({
+    src: p.photo_url,
+    thumb: p.thumbnail_url,
+    source: 'drive' as const,
+  }))
+  const deliveryImageList = (deliveryPhotos || []).map((p) => ({
+    src: p.photo_url,
+    thumb: p.photo_url,
+    source: 'delivery' as const,
+  }))
+
+  const allImages: GalleryImage[] = [
+    ...surveyImages.map((url) => ({ src: url, thumb: url, source: 'portal' as const })),
+    ...driveImageList,
+    ...deliveryImageList,
+  ].filter((img, i, arr) => arr.findIndex((x) => x.src === img.src) === i)
 
   const openGallery = (idx: number) => {
     setImgIdx(idx)
@@ -114,7 +136,7 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
 
   const payments = billData?.payments
   const currentImage = allImages[imgIdx] || null
-  const slides = allImages.map((src) => ({ src }))
+  const slides = allImages.map((img) => ({ src: img.src }))
 
   const hasNext = houseListIndex < houseList.length - 1
   const hasPrev = houseListIndex > 0
@@ -186,12 +208,17 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
                 aria-label="Open gallery"
               >
                 <img
-                  src={currentImage!}
+                  src={currentImage!.src}
                   alt=""
                   className="w-full h-full object-cover"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                 />
               </button>
+              {currentImage && (
+                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm z-10 uppercase tracking-wider">
+                  {currentImage.source === 'drive' ? 'Drive' : currentImage.source === 'portal' ? 'Portal' : 'Delivery'}
+                </div>
+              )}
               {allImages.length > 1 && (
                 <>
                   {imgIdx > 0 && (
@@ -406,13 +433,20 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
                     <Image className="h-3 w-3" /> Photos ({allImages.length})
                   </p>
                   <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                    {allImages.map((src, i) => (
+                    {allImages.map((img, i) => (
                       <button
                         key={i}
                         onClick={() => openGallery(i)}
-                        className="shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer"
+                        className="shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer relative"
                       >
-                        <img src={src} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                        <img src={img.thumb} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                        <div className={`absolute bottom-0 left-0 right-0 text-[7px] font-bold text-white text-center leading-[1.2] py-[1px] ${
+                          img.source === 'drive' ? 'bg-blue-600/80' :
+                          img.source === 'portal' ? 'bg-green-700/80' :
+                          'bg-amber-600/80'
+                        }`}>
+                          {img.source === 'drive' ? 'DRIVE' : img.source === 'portal' ? 'PORTAL' : 'DELIV'}
+                        </div>
                       </button>
                     ))}
                   </div>

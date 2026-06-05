@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Marker } from 'react-leaflet'
+import { Marker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import { createMarkerIcon } from '@/lib/markers'
 import type { AssignmentItemUnit } from '@/types'
@@ -41,12 +41,23 @@ export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
             icon={createMarkerIcon(color, { selected: isSelected })}
             eventHandlers={{
               click: () => {
-                setDeliverTarget(
-                  deliverTargetId === item.psid ? null : item.psid
-                )
+                if (deliverTargetId === item.psid) {
+                  setDeliverTarget(null)
+                } else {
+                  setDeliverTarget(item.psid, item.unit)
+                }
               },
             }}
-          />
+          >
+            <Tooltip
+              direction="top"
+              offset={[0, -8]}
+              className="survey-tooltip"
+              opacity={1}
+            >
+              {item.unit?.survey_id || item.psid}
+            </Tooltip>
+          </Marker>
         )
       })}
     </>

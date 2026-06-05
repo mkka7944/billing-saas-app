@@ -1,15 +1,19 @@
 'use client'
 
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft, Crosshair } from 'lucide-react'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
+import { useDeliverUnit } from '@/hooks/use-deliver-unit'
+import { usePhotoQueue } from '@/hooks/use-photo-queue'
+import { useAuthStore } from '@/stores/auth-store'
+import { compressImage } from '@/lib/image/compress'
+import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 import type { AssignmentItemUnit } from '@/types'
 
 interface UnitDeliverySheetProps {
   unit: AssignmentItemUnit | null
   assignmentItemId: string | null
-  isMarking?: boolean
-  onDeliver?: (itemId: string, dataUrl: string) => void
   onViewDetails?: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -19,31 +23,90 @@ interface UnitDeliverySheetProps {
 export default function UnitDeliverySheet({
   unit,
   assignmentItemId,
-  isMarking,
-  onDeliver,
   onViewDetails,
   onPrev,
   onNext,
   onClose,
 }: UnitDeliverySheetProps) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [photo, setPhoto] = useState<string | null>(null)
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [delivering, setDelivering] = useState(false)
-  const photoUrlRef = useRef<string | null>(null)
-  const [delivered, setDelivered] = useState(false)
+  const [isDelivering, setIsDelivering] = useState(false)
+  const [deliveryStatus, setDeliveryStatus] = useState<'idle' | 'delivered' | 'processing'>('idle')
+  const [deliveryDistance, setDeliveryDistance] = useState<number | null>(null)
+  const [deliveryGpsLat, setDeliveryGpsLat] = useState<number | null>(null)
+  const [deliveryGpsLng, setDeliveryGpsLng] = useState<number | null>(null)
+  const [liveDistance, setLiveDistance] = useState<number | null>(null)
+  const [liveGpsStatus, setLiveGpsStatus] = useState<'idle' | 'locating' | 'ready' | 'unavailable'>('idle')
   const touchXRef = useRef<number | null>(null)
+  const watchIdRef = useRef<number | null>(null)
 
   const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
+  const { deliver } = useDeliverUnit()
+  const { enqueuePhoto } = usePhotoQueue()
+  const email = useAuthStore((s) => s.user?.email)
+  const { toast } = useToast()
+
+  function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000
+    const toRad = (d: number) => (d * Math.PI) / 180
+    const dLat = toRad(lat2 - lat1)
+    const dLng = toRad(lng2 - lng1)
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }
 
   useEffect(() => {
-    if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current)
-    photoUrlRef.current = null
-    setPhoto(null)
-    setPhotoFile(null)
-    setDelivering(false)
-    setDelivered(false)
+    setDeliveryStatus('idle')
+    setIsDelivering(false)
+    setDeliveryDistance(null)
+    setDeliveryGpsLat(null)
+    setDeliveryGpsLng(null)
   }, [unit?.psid])
+
+  // Live GPS tracking — watch position while sheet is idle
+  useEffect(() => {
+    if (!unit?.lat || !unit?.lng || deliveryStatus !== 'idle' || !navigator.geolocation) {
+      setLiveDistance(null)
+      setLiveGpsStatus('idle')
+      return
+    }
+
+    setLiveGpsStatus('locating')
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const d = Math.round(haversine(pos.coords.latitude, pos.coords.longitude, unit.lat!, unit.lng!))
+        setLiveDistance(d)
+        setLiveGpsStatus('ready')
+      },
+      () => {
+        setLiveGpsStatus('unavailable')
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    )
+    watchIdRef.current = id
+    return () => {
+      navigator.geolocation.clearWatch(id)
+      watchIdRef.current = null
+    }
+  }, [unit?.lat, unit?.lng, unit?.psid, deliveryStatus])
+
+  // Cleanup watch on unmount
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current != null) {
+        navigator.geolocation.clearWatch(watchIdRef.current)
+      }
+    }
+  }, [])
+
+  // Auto-advance after successful delivery
+  useEffect(() => {
+    if (deliveryStatus === 'delivered' || deliveryStatus === 'processing') {
+      const timer = setTimeout(() => onNext?.(), 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [deliveryStatus, onNext])
 
   const openCamera = useCallback(() => {
     if (!inputRef.current) return
@@ -54,44 +117,57 @@ export default function UnitDeliverySheet({
 
   const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !file.type.startsWith('image/')) return
+    if (!file || !file.type.startsWith('image/') || !assignmentItemId || !unit?.psid) return
 
-    if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current)
-    const previewUrl = URL.createObjectURL(file)
-    photoUrlRef.current = previewUrl
-    setPhoto(previewUrl)
-    setPhotoFile(file)
-  }, [])
+    setIsDelivering(true)
 
-  const handleDeliver = useCallback(async () => {
-    if (!photoFile || !assignmentItemId || delivering) return
+    // 1. Try online delivery (GPS + compress + POST)
+    const result = await deliver(
+      assignmentItemId,
+      unit.psid,
+      file,
+      unit.lat,
+      unit.lng,
+      email,
+    )
 
-    setDelivering(true)
+    if (result) {
+      setDeliveryStatus(result.status)
+      setDeliveryDistance(result.distance)
+      setDeliveryGpsLat(result.gps_lat)
+      setDeliveryGpsLng(result.gps_lng)
+      setIsDelivering(false)
+      return
+    }
+
+    // 2. Offline fallback — compress + enqueue to IndexedDB
     try {
-      const compressed = await compressImage(photoFile, 1024, 0.8)
+      const compressed = await compressImage(file)
       const reader = new FileReader()
-      reader.onloadend = () => {
-        const dataUrl = reader.result as string
-        onDeliver?.(assignmentItemId, dataUrl)
-        setDelivered(true)
+      reader.onloadend = async () => {
+        await enqueuePhoto({
+          assignmentItemId,
+          psid: unit.psid,
+          dataUrl: reader.result as string,
+          email: email || '',
+        })
+        setDeliveryStatus('processing')
+        setIsDelivering(false)
       }
       reader.readAsDataURL(compressed)
     } catch {
-      setDelivering(false)
+      toast('Failed to save photo offline', 'error')
+      setIsDelivering(false)
     }
-  }, [photoFile, assignmentItemId, delivering, onDeliver])
+  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, toast])
 
-  // DEBUG: show a red dot even if returning null
-  if (!unit || !assignmentItemId) {
-    return <div className="fixed bottom-0 left-0 right-0 z-[9998] bg-red-500 text-white p-4 text-xs">SHEET NULL: unit={!!unit} assignmentItemId={!!assignmentItemId}</div>
-  }
+  if (!unit) return null
 
-  const hasPortalImage = (unit.image_urls?.length ?? 0) > 0
   const totalDue = (unit.monthly_fee ?? 0) + (unit.arrears ?? 0)
-  const displayImage = photo || unit.image_urls?.[0] || null
+  const displayImage = unit.image_urls?.[0] || null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[1001] flex flex-col rounded-t-2xl overflow-hidden shadow-2xl bg-background max-h-[80vh] lg:left-1/2 lg:-translate-x-1/2 lg:max-w-md lg:right-auto" style={{ border: '4px solid red', minWidth: '400px', minHeight: '200px' }}>
+    <div className="fixed bottom-0 inset-x-0 z-[1001] flex flex-col rounded-t-2xl overflow-hidden shadow-2xl bg-background max-h-[80vh] min-h-[300px] mx-auto w-full max-w-md">
       {/* Full-bleed hero image with everything overlaid */}
       <div
         className="relative flex-1 min-h-[300px]"
@@ -121,21 +197,18 @@ export default function UnitDeliverySheet({
         {/* Gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
 
-        {/* Previous photos badge */}
-        {!photo && !delivered && previousPhotos.length > 0 && (
-          <div className="absolute top-3 right-3 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm z-10">
-            <Image className="h-3 w-3" /> {previousPhotos.length}
+        {/* Survey ID badge — top right */}
+        {unit.survey_id && (
+          <div className="absolute top-3 right-3 z-20 bg-black/50 text-white/80 text-[10px] px-2 py-0.5 rounded font-mono backdrop-blur-sm">
+            #{unit.survey_id}
           </div>
         )}
 
-        {/* Photo preview dismiss button */}
-        {photo && (
-          <button
-            onClick={() => { setPhoto(null); setPhotoFile(null) }}
-            className="absolute top-3 right-3 z-10 h-7 w-7 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 backdrop-blur-sm cursor-pointer"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+        {/* Previous photos badge */}
+        {deliveryStatus === 'idle' && previousPhotos.length > 0 && (
+          <div className="absolute top-3 right-3 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm z-10">
+            <Image className="h-3 w-3" /> {previousPhotos.length}
+          </div>
         )}
 
         {/* Close button */}
@@ -167,13 +240,24 @@ export default function UnitDeliverySheet({
         )}
 
         {/* Delivered overlay */}
-        {delivered && (
+        {deliveryStatus !== 'idle' && (
           <div className="absolute inset-0 z-10 flex items-center justify-center">
             <div className="flex flex-col items-center gap-1.5 text-white">
-              <div className="h-14 w-14 rounded-full bg-green-500/80 flex items-center justify-center backdrop-blur-sm">
+              <div className={`h-14 w-14 rounded-full flex items-center justify-center backdrop-blur-sm ${deliveryStatus === 'processing' ? 'bg-amber-500/80' : 'bg-green-500/80'}`}>
                 <CheckCircle2 className="h-7 w-7" />
               </div>
-              <span className="text-sm font-bold">Delivered</span>
+              <span className="text-sm font-bold">{deliveryStatus === 'processing' ? 'Processing' : 'Delivered'}</span>
+              {deliveryStatus === 'processing' && (
+                <span className="text-[10px] text-white/70">Photos pending sync</span>
+              )}
+              {deliveryDistance != null && (
+                <span className="text-[10px] text-white/70">{deliveryDistance}m from target</span>
+              )}
+              {deliveryGpsLat != null && deliveryGpsLng != null && (
+                <span className="text-[10px] text-white/50 font-mono">
+                  📍 {deliveryGpsLat.toFixed(4)}, {deliveryGpsLng.toFixed(4)}
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -201,34 +285,52 @@ export default function UnitDeliverySheet({
             )}
           </div>
 
+          {/* Live GPS distance indicator */}
+          {deliveryStatus === 'idle' && liveGpsStatus !== 'idle' && unit?.lat && unit?.lng && (
+            <div className={cn(
+              'flex items-center gap-1.5 text-[11px] font-medium',
+              liveGpsStatus === 'locating' && 'text-white/50',
+              liveGpsStatus === 'unavailable' && 'text-white/40',
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance <= 50 && 'text-green-400',
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 50 && liveDistance <= 200 && 'text-amber-400',
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 200 && 'text-white/70',
+            )}>
+              <Crosshair className="h-3 w-3" />
+              {liveGpsStatus === 'locating' && <span>Locating your position...</span>}
+              {liveGpsStatus === 'unavailable' && <span>GPS unavailable — proceed manually</span>}
+              {liveGpsStatus === 'ready' && liveDistance != null && (
+                <span>{liveDistance >= 1000 ? `${(liveDistance / 1000).toFixed(1)} km` : `${liveDistance} m`} away</span>
+              )}
+            </div>
+          )}
+
           {/* Action buttons */}
-          {!delivered && (
+          {deliveryStatus === 'idle' && (
             <div className="flex items-stretch gap-2">
-              {!photo ? (
+              {assignmentItemId ? (
                 <button
                   onClick={openCamera}
-                  disabled={isMarking}
+                  disabled={isDelivering}
                   className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
                 >
-                  <Camera className="h-4 w-4" />
-                  Take Picture & Deliver
+                  {isDelivering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                  {isDelivering ? 'Processing...' : 'Take Picture & Deliver'}
                 </button>
-              ) : (
-                <button
-                  onClick={handleDeliver}
-                  disabled={delivering}
-                  className="flex-1 h-11 text-sm font-bold rounded-xl bg-green-500 text-white flex items-center justify-center gap-2 hover:bg-green-600 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
-                >
-                  {delivering ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Confirm Delivery
-                </button>
-              )}
+              ) : null}
               {onViewDetails && (
                 <button
                   onClick={() => onViewDetails()}
-                  className="h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm"
+                  className={
+                    assignmentItemId
+                      ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm"
+                      : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md"
+                  }
                 >
-                  Details <ChevronRight className="h-3.5 w-3.5" />
+                  {assignmentItemId ? (
+                    <>Details <ChevronRight className="h-3.5 w-3.5" /></>
+                  ) : (
+                    <>View Details <ChevronRight className="h-4 w-4" /></>
+                  )}
                 </button>
               )}
             </div>
@@ -241,27 +343,4 @@ export default function UnitDeliverySheet({
   )
 }
 
-function compressImage(file: File, maxWidth: number, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const img = document.createElement('img')
-    img.onload = () => {
-      const canvas = document.createElement('canvas')
-      let { width, height } = img
-      if (width > maxWidth) {
-        height = (height * maxWidth) / width
-        width = maxWidth
-      }
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-      if (!ctx) { reject(new Error('No canvas context')); return }
-      ctx.drawImage(img, 0, 0, width, height)
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob)
-        else reject(new Error('Compression failed'))
-      }, 'image/webp', quality)
-    }
-    img.onerror = reject
-    img.src = URL.createObjectURL(file)
-  })
-}
+

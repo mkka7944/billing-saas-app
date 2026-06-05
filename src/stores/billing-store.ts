@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { FilterState, SurveyUnit, SortConfig } from '@/types'
+import type { FilterState, SurveyUnit, SortConfig, AssignmentItemUnit } from '@/types'
 import { currentMonth } from '@/lib/constants'
 import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 
@@ -12,6 +12,9 @@ interface BillingState {
   pendingFilters: FilterState
   selectedHouseId: string | null
   deliverTargetId: string | null
+  deliverTargetUnit: AssignmentItemUnit | null
+  deliverableList: AssignmentItemUnit[]
+  deliverableIndex: number
   mapCenter: [number, number]
   mapZoom: number
   mapType: 'streets' | 'satellite'
@@ -20,7 +23,8 @@ interface BillingState {
   houseListTotal: number
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
-  setDeliverTarget: (id: string | null) => void
+  setDeliverTarget: (id: string | null, unit?: AssignmentItemUnit | null) => void
+  setDeliverableList: (list: AssignmentItemUnit[]) => void
   setFilters: (partial: Partial<FilterState>) => void
   setSortConfig: (config: SortConfig) => void
   resetFilters: () => void
@@ -32,6 +36,8 @@ interface BillingState {
   prevHouse: () => void
   firstHouse: () => void
   lastHouse: () => void
+  nextDeliverable: () => void
+  prevDeliverable: () => void
   setMapCenter: (center: [number, number]) => void
   setMapZoom: (zoom: number) => void
   setMapType: (type: 'streets' | 'satellite') => void
@@ -65,6 +71,9 @@ export const useBillingStore = create<BillingState>()(
       pendingFilters: { ...defaultFilters },
       selectedHouseId: null,
       deliverTargetId: null,
+      deliverTargetUnit: null,
+      deliverableList: [],
+      deliverableIndex: 0,
       houseList: [],
       houseListIndex: 0,
       houseListTotal: 0,
@@ -103,7 +112,36 @@ export const useBillingStore = create<BillingState>()(
       setPendingFilter: (partial) => set((s) => ({ pendingFilters: { ...s.pendingFilters, ...partial } })),
       applyFilters: () => set((s) => ({ filters: { ...s.pendingFilters } })),
       cancelFilters: () => set((s) => ({ pendingFilters: { ...s.filters } })),
-      setDeliverTarget: (id) => set({ deliverTargetId: id, activeView: id ? 'map' : (get().activeView === 'map' ? 'map' : get().activeView) }),
+      setDeliverTarget: (id, unit) => set((s) => {
+        if (id == null) {
+          return { deliverTargetId: null, deliverTargetUnit: null, activeView: s.activeView === 'map' ? 'map' : s.activeView }
+        }
+        const idx = s.deliverableList.findIndex((d) => d.psid === id)
+        return {
+          deliverTargetId: id,
+          deliverTargetUnit: unit ?? s.deliverTargetUnit,
+          deliverableIndex: idx >= 0 ? idx : s.deliverableIndex,
+          activeView: 'map',
+        }
+      }),
+      setDeliverableList: (list) => set((s) => {
+        const idx = s.deliverTargetId ? list.findIndex((d) => d.psid === s.deliverTargetId) : -1
+        return { deliverableList: list, deliverableIndex: idx >= 0 ? idx : 0 }
+      }),
+      nextDeliverable: () => {
+        const { deliverableList, deliverableIndex } = get()
+        if (deliverableIndex < deliverableList.length - 1) {
+          const next = deliverableList[deliverableIndex + 1]
+          set({ deliverableIndex: deliverableIndex + 1, deliverTargetId: next.psid, deliverTargetUnit: next })
+        }
+      },
+      prevDeliverable: () => {
+        const { deliverableList, deliverableIndex } = get()
+        if (deliverableIndex > 0) {
+          const prev = deliverableList[deliverableIndex - 1]
+          set({ deliverableIndex: deliverableIndex - 1, deliverTargetId: prev.psid, deliverTargetUnit: prev })
+        }
+      },
 
       selectHouse: (id, list, total) => {
         if (!id) {
