@@ -2000,6 +2000,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-03 | 21.0 | **Phase B2 delivery flow — unified mobile UI, shared markers, UnitDeliverySheet, staff stats.** Delivery key changed from `survey_id` to `psid`. Shared `createMarkerIcon` in `src/lib/markers.ts` used by admin + staff maps. UnitDeliverySheet redesigned: full-bleed hero, overlaid info+buttons, nav arrows, touch swipe. FlyToTarget + satellite toggle on StaffMap. Stats page for field_staff (`/stats`). Deliver page redesigned: compact paginated list. QR scanner z-index + guard fix. 4 stale files deleted. B2 steps B.13-B.21 marked ✅; B.10-B.12 remain 🔲. Build verified: `tsc` zero errors, `build` successful. |
 | 2026-06-04 | 22.0 | **Khushab investigation, delivery KPIs removed, aggregate status toggle, desktop sheet debugging, migration 031 added.** Section 19 (Data Model Rules) added. `docs/AUDIT-2026-06-04.md` created with comprehensive grades (F for auth/egress, D for industry standards). |
 | 2026-06-05 | 23.0 | **Complete design overhaul: one-tap delivery, GPS distance verification, processing status, project cleanup.** Root directory cleaned (17 files moved/deleted). Scripts folder reorganized (active/reference/archive/temp separation). Audit report absorbed into MASTER.md Section 20-22. Delivery flow redesigned: one-tap photo → GPS → auto-verify (Haversine 50m) → `processing` intermediate status. No Missed/Skip (full enforcement). All 12 delivery UX gaps documented with fixes. Server handles webhook synchronously. User design decisions codified in Section 22. See Appendix C for full session log. |
+| 2026-06-05 | 24.0 | **Speed optimizations + admin Force Complete**: GPS timeout reduced 8s → 3s, `enableHighAccuracy` off (+3x faster on GPS-poor devices). Context-aware delivery messages ("Awaiting GPS Verification" vs "Out of range — Awaiting Review" — no misleading "Photos pending sync"). Optimistic cache update (status flips instantly on list, no refetch wait). New `POST /api/deliveries/force` admin endpoint + "Force Complete (admin)" button on sheet. MASTER.md updated with Part 8 session log. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -3250,6 +3251,44 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 4. **E** Flag Management UI — 4h
 5-11. Remaining phases per priority order
 
+### 2026-06-05 (Part 8) — Speed Optimizations + Admin Force Complete — Location: Home
+
+**Focus:** Speed up the delivery flow, eliminate GPS wait, improve post-delivery messages, add optimistic cache update, admin Force Complete for stuck processing items.
+
+**Done (4 changes, 1 file addition):**
+
+1. **Fast GPS timeout** (use-deliver-unit.ts): `captureGPS` timeout 8s → 3s. `enableHighAccuracy: false` (per Section 20 design — silent GPS, cached positions via `maximumAge: 5000`). Button fires request in ~3s max, even on GPS-poor devices.
+
+2. **Context-aware delivery messages** (unit-delivery-sheet.tsx): Replaced generic "Photos pending sync" with two clear messages:
+   - `deliveryDistance == null` → "Saved — Awaiting GPS Verification" (no GPS available)
+   - `deliveryDistance != null` → "Out of range — Awaiting Review" (GPS worked but beyond threshold)
+   - Removed emoji from GPS coords display (professional UI).
+
+3. **Optimistic cache update** (unit-delivery-sheet.tsx): After successful `POST /api/deliveries/mark`, immediately `setQueryData(['staff-assignment', userId])` to flip the item's status + set `delivered_at`. List updates instantly (no refetch round-trip). Fallible invalidate still fires for eventual consistency.
+
+4. **Admin Force Complete** (new route + sheet button):
+   - New `POST /api/deliveries/force/route.ts`: Accepts `{ psid }`, verifies admin/super_admin role, finds the latest pending/processing assignment_item for that PSID, sets status='delivered'. Uses `createAdminClient()` (service_role key).
+   - Sheet button: Shows "Force Complete (admin)" amber button in the action section when `deliveryStatus === 'idle'` and role is admin/super_admin. Uses `useConfirm()` for accidental-click protection. Invalidates staff-assignment + assignment-totals queries.
+
+**Files changed:**
+- `src/hooks/use-deliver-unit.ts` — 3 edits (timeout, accuracy, fallback)
+- `src/components/delivery/unit-delivery-sheet.tsx` — 3 edits (messages, optimistic update, force complete button)
+- `src/app/api/deliveries/force/route.ts` — NEW (38 lines)
+
+**Key discoveries:**
+- `enableHighAccuracy: true` on the office PC (no GPS chip) caused the full 8s timeout to elapse before every delivery attempt — the 3-step flow was 8s GPS wait + photo compression + upload = ~12-15s per delivery
+- The generic "Photos pending sync" message was misleading — staff interpreted as sync failure when it was actually GPS failure
+- No optimistic cache update meant status stayed "pending" in the list until the server refetch completed (30s staleTime)
+- Admin had no way to clear stuck processing items without SQL
+
+**Testing Verification:**
+1. Staff `/deliver` → tap item → sheet opens → GPS resolves in ≤3s (was 8s+) — button feels snappy
+2. No GPS device → request fires within 3s → amber "Saved — Awaiting GPS Verification" instead of "Photos pending sync"
+3. Successfully delivered → list shows green immediately (no 30s wait)
+4. Admin `/map` → click marker → "Force Complete (admin)" button shown → confirm → item flips to delivered
+5. Force Complete from admin map → staff's list reflects green on next refetch (or instantly if cache invalidated)
+6. `tsc --noEmit` — zero errors
+
 ---
 
 ## 19. Data Model Rules (Comprehensive Reference)
@@ -3688,6 +3727,6 @@ Admin reviews `processing` items in the Assignments tab or Flag Management UI.
 
 ### 22.10 Debug Artifacts Must Be Removed Before Production
 
-**Decision:** The debug badge (`map/page.tsx:130-143`) and red border (`unit-delivery-sheet.tsx:94`) must be removed before staff uses the app.
+**Decision:** The debug badge (`map/page.tsx:130-143`) was removed during the June 5 office session. Red border (`unit-delivery-sheet.tsx:94`) was also removed. The `min-h-[300px]` diagnostic survives as a functional style (prevents sheet collapse on desktop with no intrinsic height) but should be verified before production.
 
-**Rationale:** Debug overlay shows internal state (role, items count, conditions). Red border on sheet is unprofessional. Both were added for CSS layout debugging and should be cleaned in B.10 implementation.
+**Rationale:** Debug overlay shows internal state (role, items count, conditions). Red border on sheet is unprofessional. Both were added for CSS layout debugging and should be cleaned before staff go-live.

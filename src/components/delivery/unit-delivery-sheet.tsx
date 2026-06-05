@@ -9,8 +9,9 @@ import { usePhotoQueue } from '@/hooks/use-photo-queue'
 import { useAuthStore } from '@/stores/auth-store'
 import { compressImage } from '@/lib/image/compress'
 import { useToast } from '@/hooks/use-toast'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
-import type { AssignmentItemUnit } from '@/types'
+import type { AssignmentItemUnit, AssignmentItemWithUnit } from '@/types'
 
 interface UnitDeliverySheetProps {
   unit: AssignmentItemUnit | null
@@ -39,6 +40,7 @@ export default function UnitDeliverySheet({
   const [liveGpsStatus, setLiveGpsStatus] = useState<'idle' | 'locating' | 'ready' | 'unavailable'>('idle')
   const [userLat, setUserLat] = useState<number | null>(null)
   const [userLng, setUserLng] = useState<number | null>(null)
+  const [forceCompleting, setForceCompleting] = useState(false)
   const touchXRef = useRef<number | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
@@ -46,8 +48,12 @@ export default function UnitDeliverySheet({
   const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
   const { deliver } = useDeliverUnit()
   const { enqueuePhoto } = usePhotoQueue()
+  const userId = useAuthStore((s) => s.user?.id)
   const email = useAuthStore((s) => s.user?.email)
+  const roleName = useAuthStore((s) => s.roleName)
+  const isAdmin = roleName === 'admin' || roleName === 'super_admin'
   const { toast } = useToast()
+  const confirm = useConfirm()
 
   function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
     const R = 6371000
@@ -146,6 +152,24 @@ export default function UnitDeliverySheet({
       setDeliveryDistance(result.distance)
       setDeliveryGpsLat(result.gps_lat)
       setDeliveryGpsLng(result.gps_lng)
+
+      // Optimistic cache update — flip status immediately
+      if (userId) {
+        queryClient.setQueryData<{ data: unknown; items: AssignmentItemWithUnit[] }>(
+          ['staff-assignment', userId],
+          (old) => {
+            if (!old) return old
+            return {
+              ...old,
+              items: old.items.map((item) =>
+                item.id === assignmentItemId
+                  ? { ...item, status: result.status, delivered_at: new Date().toISOString() }
+                  : item
+              ),
+            }
+          }
+        )
+      }
       queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
       queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
       setIsDelivering(false)
@@ -172,6 +196,39 @@ export default function UnitDeliverySheet({
       setIsDelivering(false)
     }
   }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, toast, userLat, userLng, queryClient])
+
+  const handleForceComplete = useCallback(async () => {
+    if (!unit?.psid) return
+    const ok = await confirm({
+      title: 'Force Complete',
+      message: `Mark PSID ${unit.psid} as delivered? This bypasses GPS verification.`,
+      confirmLabel: 'Mark Delivered',
+      variant: 'destructive',
+    })
+    if (!ok) return
+    setForceCompleting(true)
+    try {
+      const res = await fetch('/api/deliveries/force', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ psid: unit.psid }),
+      })
+      if (res.ok) {
+        toast('Marked as delivered', 'success')
+        queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
+        queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
+        setDeliveryStatus('delivered')
+        onClose?.()
+      } else {
+        const j = await res.json()
+        toast(j.error || 'Failed to mark delivered', 'error')
+      }
+    } catch {
+      toast('Network error', 'error')
+    } finally {
+      setForceCompleting(false)
+    }
+  }, [unit?.psid, confirm, toast, queryClient, onClose])
 
   if (!unit) return null
 
@@ -259,15 +316,18 @@ export default function UnitDeliverySheet({
                 <CheckCircle2 className="h-7 w-7" />
               </div>
               <span className="text-sm font-bold">{deliveryStatus === 'processing' ? 'Processing' : 'Delivered'}</span>
-              {deliveryStatus === 'processing' && (
-                <span className="text-[10px] text-white/70">Photos pending sync</span>
+              {deliveryStatus === 'processing' && deliveryDistance == null && (
+                <span className="text-[10px] text-white/70">Saved — Awaiting GPS Verification</span>
+              )}
+              {deliveryStatus === 'processing' && deliveryDistance != null && (
+                <span className="text-[10px] text-white/70">Out of range — Awaiting Review</span>
               )}
               {deliveryDistance != null && (
                 <span className="text-[10px] text-white/70">{deliveryDistance}m from target</span>
               )}
               {deliveryGpsLat != null && deliveryGpsLng != null && (
                 <span className="text-[10px] text-white/50 font-mono">
-                  📍 {deliveryGpsLat.toFixed(4)}, {deliveryGpsLng.toFixed(4)}
+                  {deliveryGpsLat.toFixed(4)}, {deliveryGpsLng.toFixed(4)}
                 </span>
               )}
             </div>
@@ -318,31 +378,43 @@ export default function UnitDeliverySheet({
 
           {/* Action buttons */}
           {deliveryStatus === 'idle' && (
-            <div className="flex items-stretch gap-2">
-              {assignmentItemId ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-stretch gap-2">
+                {assignmentItemId ? (
+                  <button
+                    onClick={openCamera}
+                    disabled={isDelivering}
+                    className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
+                  >
+                    {isDelivering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                    {isDelivering ? 'Processing...' : 'Take Picture & Deliver'}
+                  </button>
+                ) : null}
+                {onViewDetails && (
+                  <button
+                    onClick={() => onViewDetails()}
+                    className={
+                      assignmentItemId
+                        ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm"
+                        : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md"
+                    }
+                  >
+                    {assignmentItemId ? (
+                      <>Details <ChevronRight className="h-3.5 w-3.5" /></>
+                    ) : (
+                      <>View Details <ChevronRight className="h-4 w-4" /></>
+                    )}
+                  </button>
+                )}
+              </div>
+              {isAdmin && !assignmentItemId && (
                 <button
-                  onClick={openCamera}
-                  disabled={isDelivering}
-                  className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
+                  onClick={handleForceComplete}
+                  disabled={forceCompleting}
+                  className="w-full h-10 text-xs font-semibold rounded-xl bg-amber-500/70 text-white border border-amber-400/30 hover:bg-amber-500 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors"
                 >
-                  {isDelivering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                  {isDelivering ? 'Processing...' : 'Take Picture & Deliver'}
-                </button>
-              ) : null}
-              {onViewDetails && (
-                <button
-                  onClick={() => onViewDetails()}
-                  className={
-                    assignmentItemId
-                      ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm"
-                      : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md"
-                  }
-                >
-                  {assignmentItemId ? (
-                    <>Details <ChevronRight className="h-3.5 w-3.5" /></>
-                  ) : (
-                    <>View Details <ChevronRight className="h-4 w-4" /></>
-                  )}
+                  {forceCompleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  {forceCompleting ? 'Marking...' : 'Force Complete (admin)'}
                 </button>
               )}
             </div>
