@@ -59,6 +59,10 @@
 16. [Database Gaps Report](#16-database-gaps-report-2026-05-31)
 17. [Architecture Improvement Plan](#17-architecture-improvement-plan)
 18. [Delivery Workflow Detail](#18-delivery-workflow-detail)
+19. [Data Model Rules](#19-data-model-rules-comprehensive-reference)
+20. [Delivery Verification System](#20-delivery-verification-system)
+21. [Audit Findings Summary](#21-audit-findings-summary-2026-06-04)
+22. [User Design Decisions](#22-user-design-decisions)
 ---
 ## App Vision — Daily Reference
 
@@ -76,7 +80,7 @@ A digital system that forces accountability across the entire billing lifecycle:
 
 #### For Staff (Field Operations)
 1. **QR scan from physical bill** — Every printed bill has a QR code containing `sid={survey_id}`. Staff opens the app, taps a floating QR scan button (available on both the Map view and the `/deliver` page), scans the physical bill → HouseDetailSheet opens for that exact unit.
-2. **One-button "Take Picture" in HouseDetailSheet** — Staff taps "Take Picture" → native camera opens → photo captured → on confirm, GPS coordinates and timestamp are captured silently (staff does not know) → unit marked as delivered → assignment list updates in real-time.
+2. **One-tap "Take Picture" in UnitDeliverySheet** — Staff taps "Take Picture" → native camera opens → photo captured → GPS coordinates + timestamp captured silently (staff does not know) → WebP compressed (q0.6, 1024px, 30-70KB) → server uploads to Drive via GAS webhook → distance verified against survey marker GPS → unit auto-marked as `delivered` (within 50m) or `processing` (outside threshold). Assignment list updates in real-time.
 3. **No sequential binding in the first 1-2 months** — Staff walks their natural route. GPS timestamps capture the actual walking order. After 2 months, the delivery sequence is sorted by timestamp → becomes the permanent route.
 4. **"Navigate" button** — Shows staff their current GPS location vs the house marker on the map. Helps locate houses in congested areas. Manual pin drop option for correcting house coordinates.
 5. **Flag option** — Staff can mark issues (wrong address, duplicate PSID, no such house) with notes. These feed into the admin Flag Management UI.
@@ -856,22 +860,22 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | B.7 | 30 min | Offline support: cached assignment + IndexedDB photo queue + sync indicator | ✅ |
 | B.8 | 30 min | Advance to next pending | ✅ |
 
-**B2 — Map-Based Delivery Flow (QR + HouseDetailSheet) ⏳ (In Progress)**
-| Step | Time | Task |
-|------|------|------|
+**B2 — Map-Based Delivery Flow (QR + UnitDeliverySheet) ⏳ (In Progress)**
+| Step | Time | Task | Status |
+|------|------|------|--------|
 | B.13 | 15 min | **Add `survey_id` to `assignment_items`**: ALTER TABLE migration. Update assignment creation to write `survey_id`. Enables QR→assignment matching. | ✅ |
 | B.14 | 30 min | **Fix delivery target key**: Changed from `survey_id` to `psid` — always populated, no backfill needed. Fixes null-equality bug. | ✅ |
-| B.9 | 60 min | **QR Scanner**: Floating button on Map view + Deliver page. Install `html5-qrcode`, scan `sid={survey_id}` from physical bill. Match to staff's active `assignment_items` by `survey_id`. Open HouseDetailSheet. Fallback manual input. | ✅ |
-| B.15 | 30 min | **Shared marker module**: `src/lib/markers.ts` — `createMarkerIcon(color, opts?)` with CSS pulse animation. Used by both admin (`survey-markers.tsx`) and staff (`staff-map-markers.tsx`). 10px default, 12px staff, selected ring. | ✅ |
-| B.16 | 30 min | **UnitDeliverySheet redesign**: Full-bleed hero image with gradient overlay, overlaid info + action buttons, close button top-left, delivered green checkmark overlay, nav arrows (`top-1/3`), touch swipe (50px threshold). | ✅ |
-| B.17 | 30 min | **FlyToTarget + Satellite toggle on StaffMap**: Auto-flies to selected marker (zoom 18, 1s). Reads `mapType` from billing store same as admin MapView. | ✅ |
-| B.18 | 45 min | **Stats page for field_staff**: Bottom tab `/stats` route. `StaffPersonalStats` — today's progress cards + progress bar + 7/30/90 day historical KPIs. Uses `useStaffAssignment` + `useStaffStats` hooks. | ✅ |
-| B.19 | 30 min | **Deliver page redesigned**: Compact mobile list — progress header bar, pagination (50/page), route seq circles, consumer name + status dot, delivered timestamp, amount right-aligned. Removed per-row camera icons. | ✅ |
-| B.20 | 15 min | **Stale files deleted**: `deliver-map.tsx`, `deliver-bottom-sheet.tsx`, `deliver-action.tsx`, `deliver-card-list.tsx`. | ✅ |
-| B.21 | 15 min | **QR scanner guard + z-index fix**: Added `activeView === 'map'` guard; z-index `z-[100]` → `z-[1000]`; overlay also `z-[1000]`. | ✅ |
-| B.10 | 60 min | **HouseDetailSheet Deliver Button**: "Take Picture" button in HDS → native camera → photo confirm → GPS + timestamp captured silently → mark `assignment_items.status='delivered'` → create `delivery_photos` row. Use shared `useDeliverUnit()` hook (also used by DeliverBottomSheet). | 🔲 |
-| B.11 | 30 min | **HouseDetailSheet Navigate + Flag + Missed**: "Navigate" button → staff GPS vs house marker on map, distance. "Flag" → text notes → POST to `flagged_psids`. "Missed" → reason input + GPS → mark status. | 🔲 |
-| B.12 | 15 min | **Auto-advance from HDS**: After marking delivered in HDS, keep view open for next QR scan. Deliver page progress updates in real-time via query invalidation. | 🔲 |
+| B.9 | 60 min | **QR Scanner**: Floating button on Map view. Install `html5-qrcode`, scan `sid={survey_id}` from physical bill. Match to staff's active `assignment_items` by `survey_id`. Open UnitDeliverySheet. Fallback manual input. | ✅ |
+| B.15 | 30 min | **Shared marker module**: `src/lib/markers.ts` — `createMarkerIcon(color, opts?)` with CSS pulse animation. Used by both admin and staff. 10px default, 12px staff, selected ring. | ✅ |
+| B.16 | 30 min | **UnitDeliverySheet redesign**: Full-bleed hero image with gradient overlay, overlaid info + action buttons, close button top-left, delivered green checkmark overlay, nav arrows, touch swipe. | ✅ |
+| B.17 | 30 min | **FlyToTarget + Satellite toggle on StaffMap**: Auto-flies to selected marker (zoom 18, 1s). Reads `mapType` from billing store. | ✅ |
+| B.18 | 45 min | **Stats page for field_staff**: Bottom tab `/stats` route. StaffPersonalStats with today's progress + 7/30/90 day historical KPIs. | ✅ |
+| B.19 | 30 min | **Deliver page redesigned**: Compact mobile list — progress header bar, pagination (50/page), route seq circles, consumer name + status dot, delivered timestamp, amount right-aligned. | ✅ |
+| B.20 | 15 min | **Stale files deleted**: Removed old deliver-map, deliver-bottom-sheet, deliver-action, deliver-card-list. | ✅ |
+| B.21 | 15 min | **QR scanner guard + z-index fix**: activeView guard, z-index bump to z-[1000]. | ✅ |
+| B.10 | 90 min | **One-tap delivery with GPS verification**: Create `useDeliverUnit()` hook + `POST /api/deliveries/mark`. One-tap flow: Take Picture → compress WebP (q0.6, 1024px, 30-70KB) → capture GPS (silent, 3s timeout) → POST FormData to server → server uploads to GAS webhook → saves to Drive + staff_sync_logs + delivery_photos → calculates Haversine distance from survey marker → if ≤50m: status='delivered', else: status='processing'. No manual "Confirm Delivery" step. UnitDeliverySheet button auto-advances after photo. | 🔲 |
+| B.11 | 30 min | **Auto-advance + distance indicator**: After one-tap delivery, auto-advance to next pending item (B.12 merged). Show green checkmark if auto-verified, yellow "processing" badge if pending review. Staff map shows current GPS dot vs target marker. | 🔲 |
+| B.12 | — | _(merged into B.10-B.11)_ | — |
 
 ### Phase C — Admin Dashboard (~3 hrs)
 | Step | Time | Task |
@@ -1037,15 +1041,21 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 2 | **2b** Drop `amount_due` | 30 min | Remove column — deferred cleanup | ✅ Done |
 | 3 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks with approval chain support | ✅ Done |
 | 4 | **B1** Field Staff Delivery Basics | 7 hrs | /deliver page, photo capture, offline queue, map, card list, bottom sheet | ✅ Done |
-| 5 | **B2** QR + HDS Delivery Flow | 3 hrs | QR scanner, HouseDetailSheet deliver/navigate/missed buttons, auto-advance | ⏳ In Progress |
-| 6 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs | 🔲 |
-| 7 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions | 🔲 |
-| 8 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → write to survey_units → printer integration | 🔲 |
-| 9 | **G** Live Admin Monitoring | 3 hrs | Staff mode on map, breadcrumbs, near-real-time polling | 🔲 |
+| 5 | **B2** QR + One-Tap Delivery | 2 hrs | QR scanner, UnitDeliverySheet, one-tap photo+GPS+auto-verify, auto-advance | ⏳ In Progress |
+| 6 | **P1** Egress & Stability (H1-H3) | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | 🔲 |
+| 7 | **P2** Authorization Hardening | 4 hrs | `requireRole()`, RLS policies, ownership checks | 🔲 |
+| 8 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs | 🔲 |
+| 9 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions | 🔲 |
 | 10 | **RBAC** Approval Chain | 3 hrs | User management + assignment approval chain (draft→pending→approved→active) | 🔲 |
-| 11 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
-| 12 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 | 🔲 |
-| 13 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test | 🔲 |
+| 11 | **P3** Input Validation Completion | 2 hrs | Migrate remaining 18 routes to Zod | 🔲 |
+| 12 | **P4** Debugging Velocity | 6 hrs | API docs, owners file, barrel exports, structured logging, ESLint | 🔲 |
+| 13 | **P6** Egress Optimization | 3 hrs | HTTP cache headers, service worker, SWR/IndexedDB caching | 🔲 |
+| 14 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → write to survey_units → printer integration | 🔲 |
+| 15 | **G** Live Admin Monitoring | 3 hrs | Staff mode on map, breadcrumbs, near-real-time polling | 🔲 |
+| 16 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
+| 17 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 | 🔲 |
+| 18 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test | 🔲 |
+| — | **P5** Industry Standards (CI/tests/Sentry) | 10 hrs | Deferred — after staff feedback cycle | ⏸️ 
 
 ---
 ## 11. Implementation Workflow (Permanent Rule)
@@ -1968,6 +1978,8 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-02 | 19.0 | **MASTER.md overhaul — Vision section, comprehensive data model, edge cases, stale reference cleanup.** Added detailed Vision section (S1) with app overview, UX modes, monthly workflow, pipeline, DQ strategy. Expanded Data Model (S3, S6) with complete survey_units columns, payment_history, house_corrections, delivery tables, pipeline tables, `updated_at` columns. Replaced stale bill_items references throughout. Added 5 new edge cases (#18-#22): QR mismatch, silent GPS failure, offline photo sync, mid-cycle staff replacement, route conflict. Updated DB triggers, bill_months source, survey_units column listing. Changelog updated to v19.0. |
 | 2026-06-03 | 20.0 | **Architecture Improvement Plan (R.1–R.5) complete.** Security guard (`server-only`), Zod validation layer (9 schemas, 5 routes), repository layer (4 repos, 6 routes slimmed 80%), Supabase SSR middleware (7 protected routes), stats server component split. Phase B1 marked done. Phase B2 (QR + HDS delivery) is next. Build verified: `tsc` zero errors, `build` successful. |
 | 2026-06-03 | 21.0 | **Phase B2 delivery flow — unified mobile UI, shared markers, UnitDeliverySheet, staff stats.** Delivery key changed from `survey_id` to `psid`. Shared `createMarkerIcon` in `src/lib/markers.ts` used by admin + staff maps. UnitDeliverySheet redesigned: full-bleed hero, overlaid info+buttons, nav arrows, touch swipe. FlyToTarget + satellite toggle on StaffMap. Stats page for field_staff (`/stats`). Deliver page redesigned: compact paginated list. QR scanner z-index + guard fix. 4 stale files deleted. B2 steps B.13-B.21 marked ✅; B.10-B.12 remain 🔲. Build verified: `tsc` zero errors, `build` successful. |
+| 2026-06-04 | 22.0 | **Khushab investigation, delivery KPIs removed, aggregate status toggle, desktop sheet debugging, migration 031 added.** Section 19 (Data Model Rules) added. `docs/AUDIT-2026-06-04.md` created with comprehensive grades (F for auth/egress, D for industry standards). |
+| 2026-06-05 | 23.0 | **Complete design overhaul: one-tap delivery, GPS distance verification, processing status, project cleanup.** Root directory cleaned (17 files moved/deleted). Scripts folder reorganized (active/reference/archive/temp separation). Audit report absorbed into MASTER.md Section 20-22. Delivery flow redesigned: one-tap photo → GPS → auto-verify (Haversine 50m) → `processing` intermediate status. No Missed/Skip (full enforcement). All 12 delivery UX gaps documented with fixes. Server handles webhook synchronously. User design decisions codified in Section 22. See Appendix C for full session log. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -2928,6 +2940,53 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 - The CSS fix (minWidth/minHeight) is a diagnostic aid, not a permanent fix. The actual `UnitDeliverySheet` needs proper responsive layout.
 - Phase B2: B.10, B.11, B.12 still 🔲
 
+### 2026-06-05 — Design Overhaul + File Cleanup + Audit Absorption — Location: Home
+
+**Focus:** Redesign delivery verification system, clean up project structure, absorb audit report into MASTER.md.
+
+**Done:**
+1. **Root directory cleanup** (17 files):
+   - Moved 9 Python test scripts + 3 diagnostic files → `scripts/`
+   - Moved 5 test JSON fixtures → `scripts/data/`
+2. **Scripts folder reorganization**:
+   - Moved 6 reference files (routingstation, config, geography, etc.) → `scripts/ref/`
+   - Moved 8 one-time migration scripts → `scripts/archive/`
+   - Deleted 12 temp debug files (check_*.py, diagnostic.*, test_batch.py)
+   - Removed duplicate `config.py` (already existed in ref/)
+3. **Delivery flow redesign** (new design, not yet implemented):
+   - **One-tap flow**: Take Picture → auto-saves → no "Confirm Delivery" button
+   - **New status**: `pending` → `processing` → `delivered`
+   - **GPS distance verification**: Haversine distance ≤ 50m = auto-verify
+   - **Full enforcement**: No Missed/Skip statuses
+   - **Missing GPS/distance >50m** → `processing` (admin review)
+   - **Server handles webhook synchronously** — response includes verification result
+   - **Photo target**: WebP q0.6, 1024px, 30-70KB (same as legacy app)
+4. **Audit report absorbed**:
+   - Created Section 20 (Delivery Verification System) — full design doc
+   - Created Section 21 (Audit Findings Summary) — grades, risks, phased plan from `AUDIT-2026-06-04.md`
+   - Created Section 22 (User Design Decisions) — 10 design decisions with rationale
+   - Updated B.10-B.12 to reflect new one-tap design
+   - Updated Execution Order with audit-based phases (P1-P6)
+   - Updated Changelog to v23.0
+   - Updated Table of Contents with new sections
+
+**Key decisions (see Section 22 for full detail):**
+- Map-centric delivery is correct by design (staff needs spatial awareness + house photo)
+- One-tap flow eliminates staff complaint #1 ("too slow")
+- Silent GPS prevents gaming — staff never knows GPS is captured or verified
+- 50m distance threshold accounts for survey + delivery GPS imprecision
+- No Missed/Skip — full enforcement with processing status for edge cases
+- Two Drive accounts should be consolidated to one webhook
+- Debug artifacts (badge + red border) must be removed before production use
+
+**Remaining work (in order):**
+1. B.10 — Implement `useDeliverUnit()` hook + `POST /api/deliveries/mark` + one-tap flow
+2. B.11 — Auto-advance + distance badge + current-location dot on StaffMap
+3. P1 — Fix H1-H3 egress bugs (PSID loop, unbounded fetches, staff stats)
+4. P2 — Authorization hardening (requireRole, RLS, ownership checks)
+5. C — Admin Dashboard (staff performance, delivery KPIs)
+6. Continue with remaining phases per execution order
+
 ---
 ## 19. Data Model Rules (Comprehensive Reference)
 
@@ -3130,3 +3189,241 @@ All other aggregation must happen in TypeScript (repository layer).
 | Lifecycle enrichment overwrites current month | Upsert on survey_id | Old enrichment remains until overwritten |
 | City validation on assignment creation | Server-side in `createAssignment` | Rejects cross-city with 400 |
 | Staff-city auto-restriction | CitySwitcher + AppShell | Single-option for assigned staff, chevron hidden
+
+---
+
+## 20. Delivery Verification System
+
+### 20.1 Design Principle: Silent Verification
+
+Staff does NOT know GPS is being captured or verified. The UI shows only "Take Picture" → green checkmark or yellow "Processing" badge. GPS + timestamp + distance check all happen server-side.
+
+This prevents gaming: staff cannot fake deliveries because every photo is geotagged and verified against the survey marker coordinates. Over months, GPS drift reveals systematic cheating.
+
+### 20.2 Status Flow
+
+```
+pending → [Take Picture + GPS + Upload] → DELIVERED (if distance ≤ 50m)
+                                         → PROCESSING (if distance > 50m or GPS null)
+                                              → admin review → delivered OR flagged
+```
+
+| Status | Meaning | Staff sees | Admin sees |
+|--------|---------|-----------|------------|
+| `pending` | Assigned, not acted | Blue dot | Blue dot |
+| `processing` | Photo taken, awaiting verification | Yellow badge "Under Review" | Yellow dot, click to verify |
+| `delivered` | Photo + GPS verified within threshold | Green checkmark | Green checkmark |
+| `missed` | _(not used — full enforcement)_ | — | — |
+| `skipped` | _(not used — full enforcement)_ | — | — |
+
+### 20.3 One-Tap Delivery Flow
+
+```
+1. Staff taps "📷 Take Picture" in UnitDeliverySheet
+2. Native camera opens (capture="environment")
+3. Staff takes photo → sheet shows brief preview → auto-dismisses
+4. Background (non-blocking for staff):
+   a. Compress to WebP (OffscreenCanvas, q0.6, 1024px → 30-70KB)
+   b. Capture GPS (navigator.geolocation, 3s timeout, enableHighAccuracy: false)
+   c. POST FormData to /api/deliveries/mark
+5. Server processes:
+   a. Upload photo to GAS webhook (staff_sync_logs table)
+   b. Save Drive URL to delivery_photos
+   c. Calculate Haversine distance(delivery_gps, survey_marker_gps)
+   d. If ≤50m → status='delivered' ELSE → status='processing'
+6. Sheet shows result → auto-advance to next pending item
+```
+
+**Total staff time per delivery:** ~2-3 seconds (photo → snap → done)
+**No "Confirm Delivery" button** — one tap, auto-saves.
+
+### 20.4 Distance Verification
+
+**Formula:** Haversine distance between `delivery_photos.gps_lat/lng` and `survey_units.lat/lng`
+
+**Default threshold:** 50 meters (street-level precision in Pakistani urban areas)
+
+**Configurable:** Per-city threshold via admin settings (future)
+
+**Edge cases:**
+| Condition | Result |
+|-----------|--------|
+| GPS null (timeout/denied/unavailable) | status = `processing` — admin review |
+| Survey marker lat/lng null | status = `processing` — admin review |
+| Distance ≤ 50m | status = `delivered` — auto-verified |
+| Distance > 50m | status = `processing` — admin reviews, may adjust marker or accept |
+| Staff corrects marker (long-press map) | New coordinates saved to `house_corrections`, delivery re-verified |
+
+### 20.5 Photo Pipeline
+
+```
+Camera → OffscreenCanvas compress → WebP blob (q0.6, 1024px)
+  → FormData → POST /api/deliveries/mark
+    → Server: POST to GAS webhook → Drive URL
+    → Server: INSERT INTO delivery_photos (photo_url, gps_lat/lng, captured_at)
+    → Server: INSERT INTO staff_sync_logs (email, survey_id, file_id, synced_at)
+    → Server: UPDATE assignment_items SET status = [delivered|processing]
+    → Response: { status, verified, distance }
+```
+
+**Key properties:**
+- Photos stored in Google Drive (not Supabase Storage) — zero egress cost
+- WebP format, 30-70KB per photo (existing legacy app achieves this)
+- Https://drive.google.com/thumbnail?id={fileId}&sz=w200 for display
+- Two GAS webhook URLs exist (legacy + current) — consolidate to one
+
+### 20.6 Staff Speed Optimization
+
+| Bottleneck | Fix | Impact |
+|------------|-----|--------|
+| Two-step confirm (Take Picture → Confirm) | One-tap: photo taken → auto-saves | -1 tap, -2s per delivery |
+| Canvas compression on main thread | OffscreenCanvas or WebP capture natively | No UI freeze |
+| Base64 encoding | FormData with raw Blob | -30% CPU, -200ms |
+| GPS timeout 5s | Reduce to 3s, enableHighAccuracy: false | -2s per delivery |
+| Webhook blocking UI | Handle webhook server-side synchronously | Staff not blocked |
+| All map markers rendered | Cluster at low zoom, cull out-of-viewport | Smoother map |
+| Battery drain from constant GPS | GPS only when sheet opens, release on close | Less background drain |
+
+---
+
+## 21. Audit Findings Summary (2026-06-04)
+
+### 21.1 Grades
+
+| Area | Grade | Verdict |
+|------|-------|---------|
+| Code architecture | B | Backend-only data access ✅, shared query modules ✅, Zod validation started ✅ |
+| Debugging velocity | C- | No tests, no API docs, no structured logging, partial repositories |
+| Industry standard compliance | D | No CI, no observability, no rate limiting, no security headers |
+| Egress budget (70 staff) | F | ~12 GB/month projected — 2.4× over free tier. After fixes: ~3-4 GB/mo |
+| Security / Authorization | F | Any logged-in user can create admin accounts, mark any delivery. RLS is `USING (true)` everywhere |
+| Data integrity | C | Race condition in createAssignment, no FK on assignment_items.survey_id |
+| Input validation | C- | 18 of 23 routes lack Zod validation |
+
+### 21.2 Top 3 Immediate Risks
+
+1. **Authorization gap** — field staff can manipulate each other's data, create admin accounts
+2. **Egress budget blow-up** — 2.4× over free tier under realistic 70-staff load
+3. **No tests** — every change risks regressions
+
+### 21.3 Phased Mitigation Plan
+
+| Phase | Time | What | When |
+|-------|------|------|------|
+| **P1** Egress & Stability (H1-H3) | ~6 hrs | Fix PSID pagination loop (survey-repository.ts), unbounded assignment_items fetch (data-insight-repository.ts), staff/stats fallback (route.ts) | **Next after B2** |
+| **P2** Authorization Hardening | ~4 hrs | `requireRole()` helper on all 23 routes, RLS policies, ownership checks on assignment_items/delivery_photos | **Before 10+ staff** |
+| **P3** Input Validation | ~2 hrs | Migrate 18 routes to Zod, GPS range checks, text length caps, ILIKE wildcard sanitization | After P1-P2 |
+| **P4** Debugging Velocity | ~6 hrs | API docs/OWNERS file, barrel exports, structured logger, ESLint rules, consolidate 3 sheets→1 | After P1-P2 |
+| **P5** Industry Standards | ~10 hrs | Vitest + tests, Playwright E2E, CI (GitHub Actions), Sentry, rate limiting | **Deferred** |
+| **P6** Egress Optimization | ~3 hrs | HTTP cache headers, Vercel Edge Cache, React Query → IndexedDB persistence, service worker | After P1 |
+
+### 21.4 Key Known Issues (Unfixed)
+
+| ID | File | Issue | Severity |
+|----|------|-------|----------|
+| H1 | `survey-repository.ts:48-63` | PSID pagination loop fetches ALL 200K+ PSIDs | 🔴 Egress |
+| H2 | `data-insight-repository.ts:15-19` | Fetches ALL assignment_items for 90 days with no .limit() | 🔴 Egress |
+| H3 | `staff/stats/route.ts:23-91` | Fallback path fetches ALL assignments + items + staff for date range | 🔴 Egress |
+| H4 | `use-data-insight.ts:52` | Query key uses object reference, re-fetches on every render | 🟡 Cache |
+| H5 | `use-survey-data.ts:8` | Same object-reference query key issue | 🟡 Cache |
+| M6 | `use-assignments.ts` | staleTime: 30s too aggressive for mobile data | 🟡 Data |
+| M12 | `survey-markers.tsx:53-71` | New L.divIcon created every render — marker flicker | 🟢 Perf |
+| — | `map/page.tsx:130-143` | Debug badge visible in production | 🟢 UX |
+| — | `unit-delivery-sheet.tsx:94` | Red border (debug CSS) in production | 🟢 UX |
+
+### 21.5 Staff Counting & Egress Reality
+
+| Scenario | Monthly Egress | Free Tier (5GB) |
+|----------|---------------|-----------------|
+| Staff-only (70), no admins | ~480 MB | ✅ Safe |
+| + 5 admins browsing daily with H1-H3 bugs | ~12 GB | ❌ 2.4× over |
+| After P1 fixes (H1-H3 done) | ~3-4 GB | ✅ Near limit |
+| After P6 (caching + SW) | ~1.5 GB | ✅ Comfortable |
+| **Recommendation** | Plan Supabase Pro ($25/mo) after crossing ~1 GB/mo | |
+
+---
+
+## 22. User Design Decisions
+
+_This section captures the developer's explicit design decisions and prompts. Read before changing any delivery-related behavior._
+
+### 22.1 Delivery is Map-Centric (Not List-Centric)
+
+**Decision:** Staff navigates from `/deliver` list → `/map?target=PSID`. The map is the primary delivery tool, not an intermediate page.
+
+**Rationale:** Staff needs spatial awareness — where they are vs where the delivery marker is. Pakistani urban areas are congested; street-level navigation requires map context. The portal photo in UnitDeliverySheet helps identify the house.
+
+**Original GPS accuracy context:** Survey GPS coordinates may be imprecise (some are portal-placed, some field-collected). The 50m distance threshold accounts for this. Staff can long-press map to correct coordinates → saved to `house_corrections`.
+
+### 22.2 Photo is the Only Required Proof
+
+**Decision:** No Missed/Skip statuses. Full enforcement — every assigned bill must have a photo taken. If the house is genuinely unreachable, admin handles it via Flag Management.
+
+**Rationale:** "Missed" and "Skipped" create loopholes staff exploit. The photo is the atomic unit of proof. GPS coordinates are captured silently for verification but never displayed to staff (prevents gaming).
+
+**What happens if house is demolished / no such house:** Staff flags it via the "Flag" button → admin resolves in Flag Management UI → removed from future assignments.
+
+### 22.3 One-Tap Flow (No Confirm Step)
+
+**Decision:** Take Picture → auto-saves → done. No "Confirm Delivery" button.
+
+**Rationale:** Two-step flow ("Take Picture" → preview → "Confirm Delivery") hinders delivery speed — staff complaint #1. Auto-saving after photo capture eliminates one tap and ~2 seconds per delivery. The photo is always saved; poor quality photos are audited via processing queue, not blocked at capture.
+
+**Trade-off accepted:** Some photos may be blurry or dark. These go to `processing` status. Admin reviews and can request retake.
+
+### 22.4 Silent GPS (Staff Does Not Know)
+
+**Decision:** GPS is captured silently on photo confirm. No UI indicator. No "GPS failed" message.
+
+**Rationale:** If staff knows GPS is being captured, they may try to game it (stand at a different location). Silent capture produces genuine walking patterns. GPS failure silently produces NULL (edge case #19) — photo timestamp alone is sufficient proof, but failure rate is tracked as a staff performance metric.
+
+**Implementation:** `navigator.geolocation.getCurrentPosition()` with `enableHighAccuracy: false` (faster, less battery) and 3s timeout. Null GPS = `processing` status (admin review required).
+
+### 22.5 Processing Status (New Intermediate State)
+
+**Decision:** New `processing` status between `pending` and `delivered`. Represents "photo taken, awaiting verification."
+
+**Rationale:** Without an intermediate status, there's no way to distinguish "auto-verified delivered" from "needs admin review." The `processing` status flags items that either:
+- GPS was null (timeout/denied)
+- Distance > 50m from survey marker
+- Survey marker coordinates are missing
+
+Admin reviews `processing` items in the Assignments tab or Flag Management UI.
+
+### 22.6 Distance Threshold (50m Default)
+
+**Decision:** Haversine distance ≤ 50m = auto-verify. Configurable per city.
+
+**Rationale:** Urban Pakistani streets are narrow; houses are close together. 50m accounts for:
+- Survey GPS imprecision (portal-placed vs field-collected)
+- Delivery GPS imprecision (enableHighAccuracy: false)
+- Street-level navigation accuracy
+- Staff standing at the gate vs at the house front
+
+**Future enhancement:** After 2-3 months of verified deliveries, the threshold can be tuned per UC based on historical distance distributions.
+
+### 22.7 Server Handles Webhook Synchronously
+
+**Decision:** `POST /api/deliveries/mark` uploads to GAS webhook → saves to Drive → calculates distance → returns result — all synchronously before responding.
+
+**Rationale:** Staff won't notice the ~1-2s extra latency because they're viewing the success overlay. The benefit is instant `delivered` status if distance is valid. No need for a separate async queue for this path (the IndexedDB queue is only for offline fallback).
+
+### 22.8 Two Google Drive Accounts (Consolidate)
+
+**Decision:** Legacy routing station has its own GAS webhook URL (hardcoded in `12_drive_sync.js`). Current app has `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` in `.env.local`. These should be consolidated to one.
+
+**Rationale:** Two webhooks = two Drive folders = fragmented photo storage. `staff_sync_logs` table already stores the file_id; the Drive folder it goes to depends on which webhook processes it. Consolidate to one webhook URL (the current app's) and migrate legacy photos.
+
+### 22.9 Photo Size Target (30-70KB WebP)
+
+**Decision:** Compress to WebP, q0.6, 1024px max width → 30-70KB per photo. Same as legacy routing station.
+
+**Rationale:** Larger photos increase upload time (staff complaints about speed) and consume Drive storage. 30-70KB is sufficient for house identification on mobile. Quality 0.6 is visually acceptable for door/gate/facade identification.
+
+**Implementation:** `OffscreenCanvas.toBlob('image/webp', 0.6)` — non-blocking, background thread.
+
+### 22.10 Debug Artifacts Must Be Removed Before Production
+
+**Decision:** The debug badge (`map/page.tsx:130-143`) and red border (`unit-delivery-sheet.tsx:94`) must be removed before staff uses the app.
+
+**Rationale:** Debug overlay shows internal state (role, items count, conditions). Red border on sheet is unprofessional. Both were added for CSS layout debugging and should be cleaned in B.10 implementation.
