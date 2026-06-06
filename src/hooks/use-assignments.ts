@@ -101,6 +101,8 @@ export function useCreateAssignment() {
       qc.invalidateQueries({ queryKey: ['uc-stats'] })
       qc.invalidateQueries({ queryKey: ['unassigned-bills', vars.uc_name] })
       qc.invalidateQueries({ queryKey: ['staff-assignment'] })
+      qc.invalidateQueries({ queryKey: ['staff-stats'] })
+      qc.invalidateQueries({ queryKey: ['staff-performance'] })
     },
   })
 }
@@ -245,6 +247,7 @@ export function useMarkItem() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-assignment'] })
+      qc.invalidateQueries({ queryKey: ['staff-stats'] })
     },
   })
 }

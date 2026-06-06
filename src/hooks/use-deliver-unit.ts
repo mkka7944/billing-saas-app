@@ -44,7 +44,6 @@ export function useDeliverUnit() {
     photoFile: File,
     targetLat: number | null,
     targetLng: number | null,
-    email?: string | null,
     gpsOverride?: { lat: number; lng: number } | null,
   ): Promise<DeliveryResult | null> => {
     setIsDelivering(true)
@@ -68,7 +67,6 @@ export function useDeliverUnit() {
       }
       if (targetLat != null) form.append('target_lat', String(targetLat))
       if (targetLng != null) form.append('target_lng', String(targetLng))
-      if (email) form.append('email', email)
 
       const res = await fetch('/api/deliveries/mark', { method: 'POST', body: form })
 
@@ -80,9 +78,13 @@ export function useDeliverUnit() {
       const result: DeliveryResult = await res.json()
       setLastResult(result)
       return result
-    } catch {
-      // Network failure — nothing to return, caller handles fallback
-      return null
+    } catch (e) {
+      if (e instanceof TypeError) {
+        // Network failure (fetch couldn't reach server) — caller queues offline
+        return null
+      }
+      // Server error (4xx/5xx with parsed message) — re-throw for caller to toast
+      throw e
     } finally {
       setIsDelivering(false)
     }

@@ -37,7 +37,6 @@ export async function POST(request: Request) {
   const gpsLngStr = form.get('gps_lng') as string | null
   const assignmentItemId = form.get('assignment_item_id') as string | null
   const psid = form.get('psid') as string | null
-  const email = form.get('email') as string | null
   const targetLatStr = form.get('target_lat') as string | null
   const targetLngStr = form.get('target_lng') as string | null
 
@@ -50,6 +49,38 @@ export async function POST(request: Request) {
   const target_lat = targetLatStr ? parseFloat(targetLatStr) : null
   const target_lng = targetLngStr ? parseFloat(targetLngStr) : null
 
+  // Auth: verify user is authenticated, is field_staff, and owns this item
+  const sup = await createClient()
+
+  const { data: { user }, error: authError } = await sup.auth.getUser()
+  if (!user || authError) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: profile } = await sup
+    .from('profiles')
+    .select('roles!inner(name)')
+    .eq('id', user.id)
+    .single()
+
+  const role = profile?.roles as { name: string } | undefined
+  if (!role || role.name !== 'field_staff') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const { data: ownership } = await sup
+    .from('assignment_items')
+    .select('id, daily_assignments!inner(staff_id)')
+    .eq('id', assignmentItemId)
+    .eq('daily_assignments.staff_id', user.id)
+    .maybeSingle()
+
+  if (!ownership) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const email = user.email
+
   try {
     // 1. Upload photo to GAS webhook
     const buffer = Buffer.from(await photo.arrayBuffer())
@@ -58,25 +89,34 @@ export async function POST(request: Request) {
 
     let gdrive_file_id: string | null = null
     if (WEBHOOK_URL) {
-      const webhookRes = await fetch(WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          action: 'upload',
-          name: filename,
-          data: stripDataPrefix(base64),
-          surveyId: psid,
-          survey_id: psid,
-          email: email || 'staff@billing.local',
-          timestamp: new Date().toISOString(),
-        }),
-      })
+      const ac = new AbortController()
+      const timeout = setTimeout(() => ac.abort(), 8000)
+      try {
+        const webhookRes = await fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          signal: ac.signal,
+          body: JSON.stringify({
+            action: 'upload',
+            name: filename,
+            data: stripDataPrefix(base64),
+            surveyId: psid,
+            survey_id: psid,
+            email: email || 'staff@billing.local',
+            timestamp: new Date().toISOString(),
+          }),
+        })
 
-      if (webhookRes.ok) {
-        const result: Record<string, unknown> = await webhookRes.json()
-        if (result.status === 'success') {
-          gdrive_file_id = extractFileId(result)
+        if (webhookRes.ok) {
+          const result: Record<string, unknown> = await webhookRes.json()
+          if (result.status === 'success') {
+            gdrive_file_id = extractFileId(result)
+          }
         }
+      } catch {
+        // Timeout or network error — continue without Drive file, queue retries later
+      } finally {
+        clearTimeout(timeout)
       }
     }
 
@@ -85,7 +125,6 @@ export async function POST(request: Request) {
       : null
 
     // 2. Save delivery_photos record
-    const sup = await createClient()
     const { error: photoErr } = await sup.from('delivery_photos').insert({
       assignment_item_id: assignmentItemId,
       photo_url,

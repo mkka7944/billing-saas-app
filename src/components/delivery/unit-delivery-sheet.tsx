@@ -133,19 +133,25 @@ export default function UnitDeliverySheet({
     const file = e.target.files?.[0]
     if (!file || !file.type.startsWith('image/') || !assignmentItemId || !unit?.psid) return
 
-    setIsDelivering(true)
+    const gpsOverride = userLat != null && userLng != null ? { lat: userLat, lng: userLng } : null
 
     // 1. Try online delivery (uses pre-warmed GPS from live tracking if available)
-    const gpsOverride = userLat != null && userLng != null ? { lat: userLat, lng: userLng } : null
-    const result = await deliver(
-      assignmentItemId,
-      unit.psid,
-      file,
-      unit.lat,
-      unit.lng,
-      email,
-      gpsOverride,
-    )
+    let result: Awaited<ReturnType<typeof deliver>> = null
+    try {
+      result = await deliver(
+        assignmentItemId,
+        unit.psid,
+        file,
+        unit.lat,
+        unit.lng,
+        gpsOverride,
+      )
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Server error'
+      toast(msg, 'error')
+      setIsDelivering(false)
+      return
+    }
 
     if (result) {
       setDeliveryStatus(result.status)
@@ -172,7 +178,14 @@ export default function UnitDeliverySheet({
       }
       queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
       queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
-      setIsDelivering(false)
+      queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
+
+      // Auto-advance: 2s for delivered, 3.5s for processing
+      const delay = result.status === 'delivered' ? 2000 : 3500
+      setTimeout(() => {
+        setIsDelivering(false)
+        onClose?.()
+      }, delay)
       return
     }
 
@@ -217,6 +230,7 @@ export default function UnitDeliverySheet({
         toast('Marked as delivered', 'success')
         queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
         queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
+        queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
         setDeliveryStatus('delivered')
         onClose?.()
       } else {

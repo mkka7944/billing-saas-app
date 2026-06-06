@@ -877,6 +877,48 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | B.11 | 30 min | **Auto-advance + distance indicator**: After one-tap delivery, auto-advance to next pending item (B.12 merged). Show green checkmark if auto-verified, yellow "processing" badge if pending review. Distance badge on delivered overlay. Drive photos in HDS gallery via `GET /api/delivery/photos/drive` + `useDrivePhotos` hook. | ✅ |
 | B.12 | — | _(merged into B.10-B.11)_ | — |
 
+### Phase B3 — Delivery Stability & Hardening (~8 hrs)
+
+**B3a — Critical Fixes for Testing (~1.5 hr)**
+| Step | Time | Task |
+|------|------|------|
+| B3a.1 | 5 min | **DB CHECK constraint fix**: Migration 035 — drop old `assignment_items_status_check`, add new one allowing `'processing'`. Update `refresh_staff_daily_stats` trigger to count `processing` items. **Blocks every out-of-range delivery (orphan photo + 500).** |
+| B3a.2 | 15 min | **Auth on mark route**: Add `sup.auth.getUser()` + ownership check on `POST /api/deliveries/mark`. Verify `assignment_item` belongs to caller's `daily_assignments.staff_id`. Remove `email` form field, derive from `user.email`. **Prevents cross-user delivery marking.** |
+| B3a.3 | 10 min | **Webhook AbortController**: Add 8s timeout on GAS webhook `fetch` in mark route via `AbortController`. On abort: set `gdrive_file_id = null`, `synced_to_drive = false`, continue with status update. **Prevents 30-60s frozen UI on slow GAS.** |
+| B3a.4 | 15 min | **Error classification in `useDeliverUnit`**: Distinguish `TypeError` (network failure → offline queue) from `res.ok === false` (server error → toast, no queue). Fixes silent offline-queue on 500s. |
+| B3a.5 | 15 min | **Query invalidation gaps**: `useMarkItem` → invalidate `['staff-stats']`. `useCreateAssignment` → invalidate `['staff-stats']` + `['staff-performance']`. `useCreateUser` → invalidate `['staff-list']`. **Stats stay stale after delivery/creation.** |
+| B3a.6 | 5 min | **Auto-advance timing**: 2s for `'delivered'`, 3.5s for `'processing'` (more time to read "Saved" message). |
+
+**B3b — GPS & Photo Reliability (~2 hr)**
+| Step | Time | Task |
+|------|------|------|
+| B3b.1 | 15 min | **GPS retry on error**: `useUserLocation` stops after first error. Add exponential backoff (1s, 3s, 10s). |
+| B3b.2 | 30 min | **Single GPS watcher**: Sheet + StaffMap each call `watchPosition` — double battery drain. Read `useUserLocation` from shared store/context, remove duplicate watcher in sheet. |
+| B3b.3 | 15 min | **Mark endpoint idempotency**: Reject status update if `assignment_item` is already `delivered`/`missed`. Return existing `photo_url`. Prevents duplicate photos from double-tap / offline replay. |
+| B3b.4 | 30 min | **Photo queue robustness**: Store photo as `Blob` in IndexedDB (not base64 — UI freeze). `navigator.sendBeacon` for fire-and-forget on tab close. Surface `lastError` per photo in admin UI. |
+| B3b.5 | 30 min | **Offline cache to IndexedDB**: `offline-cache.ts` uses `localStorage` (5MB cap). Move to IndexedDB. Prevents silent cache loss on large assignments. |
+| B3b.6 | 15 min | **Cache fallback on ANY error**: `deliver/page.tsx` only caches on `!data`. Add `isError` fallback — use cache on fetch failure too. |
+
+**B3c — State Machine Completeness & Production Auth (~3 hr)**
+| Step | Time | Task |
+|------|------|------|
+| B3c.1 | 15 min | **Processing counts in assignment views**: Fix `getAssignmentList` and `getUcTotals` to include `'processing'` in item count queries. |
+| B3c.2 | 15 min | **Staff daily stats trigger**: Update `refresh_staff_daily_stats()` to count `processing` items in the rollup. |
+| B3c.3 | 15 min | **Dead code cleanup**: Remove duplicate `useEffect` (GPS cleanup), duplicate `isDelivering` state, unused `totalDue` variable, orphaned `photo-upload.tsx` file. |
+| B3c.4 | 15 min | **Server-side target GPS lookup**: Derive `psid` and `survey_units.lat/lng` from `assignment_item_id` server-side. Drop form fields `psid`, `target_lat`, `target_lng`. Prevents target-swap attack. |
+| B3c.5 | 45 min | **Auth on remaining 7 routes**: Add `sup.auth.getUser()` + role check to `PATCH /api/assignments/items`, `GET/POST /api/staff/performance`, `GET /api/staff/stats`, `GET/POST /api/delivery/photos`, `GET /api/delivery/photos/drive`, `GET /api/settings`, `GET /api/staff`. |
+| B3c.6 | 30 min | **Extract shared constants**: `src/lib/delivery-status.ts` (STATUS_LABEL, STATUS_COLORS), `src/lib/geo.ts` (haversine), `src/lib/drive-webhook.ts` (extractFileId, WEBHOOK_URL). Eliminates 3-way duplication. |
+| B3c.7 | 15 min | **STALE_TIMES consistency**: Replace raw `1000 * 30` with `STALE_TIMES.DELIVERY` / `STALE_TIMES.PERFORMANCE` constants across all delivery hooks. |
+
+**B3d — Production Hardening (~1.5 hr)**
+| Step | Time | Task |
+|------|------|------|
+| B3d.1 | 30 min | **RLS on delivery tables**: Migration 036 — ENABLE ROW LEVEL SECURITY + policies for `daily_assignments`, `assignment_items`, `delivery_photos`, `staff_daily_stats`, `app_settings`. Staff sees own data, admin sees all. |
+| B3d.2 | 30 min | **Multi-assignment fix**: Currently silently picks `[0]`. Add picker UI for staff with multiple active assignments, or sum across all. |
+| B3d.3 | 5 min | **Force Complete button**: Currently `!assignmentItemId` hides it for the real use case. Show for admins when `deliveryStatus === 'processing'`. |
+| B3d.4 | 15 min | **City validation bug**: `createAssignment` uses broken `bill_month` format for city check — silently bypassed. Query `survey_units.city_district/tehsil` directly. |
+| B3d.5 | 15 min | **Index on `created_at`**: `daily_assignments` sorted by `created_at DESC` with no index — full table scan as count grows. Migration: `CREATE INDEX idx_daily_assignments_created ON daily_assignments(created_at DESC)`. |
+
 ### Phase C — Admin Dashboard (~3 hrs)
 | Step | Time | Task |
 |------|------|------|
@@ -1033,6 +1075,7 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 2b (drop amount_due) | 0.5 hrs | 43.5 hrs |
 | **R.1-R.5 (Architecture)** | **6 hrs** | **49.5 hrs** |
 | **B2** (QR + HDS Delivery) | **3 hrs** | **52.5 hrs** |
+| **B3** (Delivery Stability & Hardening) | **8 hrs** | **60.5 hrs** |
 
 ### Execution Order (Remaining)
 | Order | Phase | Time | What | Status |
@@ -1042,19 +1085,20 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 3 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks with approval chain support | ✅ Done |
 | 4 | **B1** Field Staff Delivery Basics | 7 hrs | /deliver page, photo capture, offline queue, map, card list, bottom sheet | ✅ Done |
 | 5 | **B2** QR + One-Tap Delivery | 2 hrs | QR scanner, UnitDeliverySheet, one-tap photo+GPS+auto-verify, auto-advance, Drive images in HDS gallery | ✅ Done |
-| 6 | **P1** Egress & Stability (H1-H3) | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | 🔲 |
-| 7 | **P2** Authorization Hardening | 4 hrs | `requireRole()`, RLS policies, ownership checks | 🔲 |
-| 8 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs | 🔲 |
-| 9 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions | 🔲 |
-| 10 | **RBAC** Approval Chain | 3 hrs | User management + assignment approval chain (draft→pending→approved→active) | 🔲 |
-| 11 | **P3** Input Validation Completion | 2 hrs | Migrate remaining 18 routes to Zod | 🔲 |
-| 12 | **P4** Debugging Velocity | 6 hrs | API docs, owners file, barrel exports, structured logging, ESLint | 🔲 |
-| 13 | **P6** Egress Optimization | 3 hrs | HTTP cache headers, service worker, SWR/IndexedDB caching | 🔲 |
-| 14 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → write to survey_units → printer integration | 🔲 |
-| 15 | **G** Live Admin Monitoring | 3 hrs | Staff mode on map, breadcrumbs, near-real-time polling | 🔲 |
-| 16 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
-| 17 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 | 🔲 |
-| 18 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test | 🔲 |
+| 6 | **B3** Delivery Stability & Hardening | 8 hrs | DB CHECK fix, auth on mark route, webhook timeout, GPS reliability, photo queue, state machine, remaining auth, RLS | 🔲 |
+| 7 | **P1** Egress & Stability (H1-H3) | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | 🔲 |
+| 8 | **P2** Authorization Hardening | 4 hrs | `requireRole()`, RLS policies, ownership checks | 🔲 |
+| 9 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs | 🔲 |
+| 10 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions | 🔲 |
+| 11 | **RBAC** Approval Chain | 3 hrs | User management + assignment approval chain (draft→pending→approved→active) | 🔲 |
+| 12 | **P3** Input Validation Completion | 2 hrs | Migrate remaining 18 routes to Zod | 🔲 |
+| 13 | **P4** Debugging Velocity | 6 hrs | API docs, owners file, barrel exports, structured logging, ESLint | 🔲 |
+| 14 | **P6** Egress Optimization | 3 hrs | HTTP cache headers, service worker, SWR/IndexedDB caching | 🔲 |
+| 15 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → write to survey_units → printer integration | 🔲 |
+| 16 | **G** Live Admin Monitoring | 3 hrs | Staff mode on map, breadcrumbs, near-real-time polling | 🔲 |
+| 17 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
+| 18 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 | 🔲 |
+| 19 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test | 🔲 |
 | — | **P5** Industry Standards (CI/tests/Sentry) | 10 hrs | Deferred — after staff feedback cycle | ⏸️ 
 
 ---
@@ -3216,17 +3260,18 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 6. Staff map shows blue dot following their position
 
 **Remaining phases (priority order):**
-1. **P1** Egress & Stability (PSID pagination loop, unbounded fetches, staff stats fallback) — 6h
-2. **P2** Authorization Hardening (`requireRole()`, RLS policies, ownership checks) — 4h
-3. **C** Admin Dashboard (staff performance, delivery KPIs) — 3h
-4. **E** Flag Management UI — 4h
-5. **RBAC** Approval Chain (draft→pending→approved→active) — 3h
-6. P3-P6 Validation, logging, egress caching — 17h
-7. **F** Auto-Route Generation — 3h
-8. **G** Live Admin Monitoring — 3h
-9. **D** Visual Rehaul — 4h
-10. **Z** Audit Cleanup — 4h
-11. **Deploy** Office PC pipeline — 1h
+1. **B3** Delivery Stability & Hardening (CHECK fix, auth on mark, webhook timeout, GPS reliability, photo queue, state machine, remaining auth, RLS) — 8h ← **CURRENT FOCUS**
+2. **P1** Egress & Stability (PSID pagination loop, unbounded fetches, staff stats fallback) — 6h
+3. **P2** Authorization Hardening (`requireRole()`, RLS policies, ownership checks) — 4h
+4. **C** Admin Dashboard (staff performance, delivery KPIs) — 3h
+5. **E** Flag Management UI — 4h
+6. **RBAC** Approval Chain (draft→pending→approved→active) — 3h
+7. P3-P6 Validation, logging, egress caching — 17h
+8. **F** Auto-Route Generation — 3h
+9. **G** Live Admin Monitoring — 3h
+10. **D** Visual Rehaul — 4h
+11. **Z** Audit Cleanup — 4h
+12. **Deploy** Office PC pipeline — 1h
 
 ### 2026-06-05 (Part 7) — Fix Invisible "Processing" Status — Location: Remote
 
@@ -3244,12 +3289,13 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 
 **Build verification:** `npx tsc --noEmit` zero errors. `npm run build` successful.
 
-**Remaining phases (unchanged):**
-1. **P1** Egress & Stability — 6h
-2. **P2** Authorization Hardening — 4h
-3. **C** Admin Dashboard — 3h
-4. **E** Flag Management UI — 4h
-5-11. Remaining phases per priority order
+**Remaining phases (updated):**
+1. **B3** Delivery Stability & Hardening — 8h ← **CURRENT FOCUS**
+2. **P1** Egress & Stability — 6h
+3. **P2** Authorization Hardening — 4h
+4. **C** Admin Dashboard — 3h
+5. **E** Flag Management UI — 4h
+6-12. Remaining phases per priority order
 
 ### 2026-06-05 (Part 8) — Speed Optimizations + Admin Force Complete — Location: Home
 
