@@ -38,6 +38,7 @@ export default function DeliverPage() {
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
   const [useCache, setUseCache] = useState(false)
   const [page, setPage] = useState(0)
+  const [filterTab, setFilterTab] = useState<'pending' | 'issues' | 'delivered' | 'all'>('pending')
 
   const { data, isLoading, refetch } = useStaffAssignment(user?.id || null)
   const isOnline = useOnlineStatus()
@@ -70,7 +71,18 @@ export default function DeliverPage() {
   const deliveredCount = useMemo(() => items.filter((i) => i.status === 'delivered').length, [items])
   const progressPct = totalCount > 0 ? Math.round((deliveredCount / totalCount) * 100) : 0
 
-  const sorted = [...items].sort((a, b) => (a.route_seq || 0) - (b.route_seq || 0))
+  const pendingCount = useMemo(() => items.filter((i) => i.status === 'pending').length, [items])
+  const issuesCount = useMemo(() => items.filter((i) => i.status === 'processing' || i.status === 'missed').length, [items])
+  const deliveredCountPill = useMemo(() => items.filter((i) => i.status === 'delivered').length, [items])
+
+  const filtered = useMemo(() => {
+    if (filterTab === 'pending') return items.filter((i) => i.status === 'pending')
+    if (filterTab === 'issues') return items.filter((i) => i.status === 'processing' || i.status === 'missed')
+    if (filterTab === 'delivered') return items.filter((i) => i.status === 'delivered')
+    return items
+  }, [items, filterTab])
+
+  const sorted = [...filtered].sort((a, b) => (a.route_seq || 0) - (b.route_seq || 0))
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
   const pageItems = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
@@ -143,6 +155,54 @@ export default function DeliverPage() {
               </div>
             </div>
 
+            {/* Filter pills */}
+            <div className="flex gap-1.5 px-4 py-2 border-b shrink-0">
+              <button
+                onClick={() => { setFilterTab('pending'); setPage(0) }}
+                className={cn(
+                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  filterTab === 'pending'
+                    ? 'bg-blue-500/10 text-blue-600 border border-blue-200'
+                    : 'text-muted-foreground hover:text-foreground border border-transparent'
+                )}
+              >
+                Pending ({pendingCount})
+              </button>
+              <button
+                onClick={() => { setFilterTab('issues'); setPage(0) }}
+                className={cn(
+                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  filterTab === 'issues'
+                    ? 'bg-amber-500/10 text-amber-600 border border-amber-200'
+                    : 'text-muted-foreground hover:text-foreground border border-transparent'
+                )}
+              >
+                Issues ({issuesCount})
+              </button>
+              <button
+                onClick={() => { setFilterTab('delivered'); setPage(0) }}
+                className={cn(
+                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  filterTab === 'delivered'
+                    ? 'bg-green-500/10 text-green-600 border border-green-200'
+                    : 'text-muted-foreground hover:text-foreground border border-transparent'
+                )}
+              >
+                Delivered ({deliveredCountPill})
+              </button>
+              <button
+                onClick={() => { setFilterTab('all'); setPage(0) }}
+                className={cn(
+                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  filterTab === 'all'
+                    ? 'bg-muted text-foreground border border-border'
+                    : 'text-muted-foreground hover:text-foreground border border-transparent'
+                )}
+              >
+                All ({items.length})
+              </button>
+            </div>
+
             {/* List */}
             <div className="flex-1 overflow-y-auto">
               {pageItems.map((item) => {
@@ -200,7 +260,7 @@ export default function DeliverPage() {
 
               {sorted.length === 0 && (
                 <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                  No items in this assignment
+                  {filterTab === 'issues' ? 'No issues — all clear!' : 'No items in this view'}
                 </div>
               )}
             </div>

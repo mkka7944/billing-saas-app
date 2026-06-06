@@ -39,9 +39,10 @@ export async function POST(request: Request) {
   const psid = form.get('psid') as string | null
   const targetLatStr = form.get('target_lat') as string | null
   const targetLngStr = form.get('target_lng') as string | null
+  const skipPhoto = form.get('skip_photo') === 'true'
 
-  if (!photo || !assignmentItemId || !psid) {
-    return NextResponse.json({ error: 'photo, assignment_item_id, and psid required' }, { status: 400 })
+  if (!assignmentItemId || !psid) {
+    return NextResponse.json({ error: 'assignment_item_id and psid required' }, { status: 400 })
   }
 
   const gps_lat = gpsLatStr ? parseFloat(gpsLatStr) : null
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
   const target_lat = targetLatStr ? parseFloat(targetLatStr) : null
   const target_lng = targetLngStr ? parseFloat(targetLngStr) : null
 
-  // Auth: verify user is authenticated, is field_staff, and owns this item
+  // Auth
   const sup = await createClient()
 
   const { data: { user }, error: authError } = await sup.auth.getUser()
@@ -82,49 +83,66 @@ export async function POST(request: Request) {
   const email = user.email
 
   try {
-    // 1. Upload photo to GAS webhook
-    const buffer = Buffer.from(await photo.arrayBuffer())
-    const base64 = buffer.toString('base64')
-    const filename = `${psid}_${Date.now()}.webp`
+    // Check skip_photo permission
+    if (skipPhoto || !photo) {
+      const { data: noPhotoSetting } = await sup
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'allow_no_photo')
+        .maybeSingle()
 
-    let gdrive_file_id: string | null = null
-    if (WEBHOOK_URL) {
-      const ac = new AbortController()
-      const timeout = setTimeout(() => ac.abort(), 8000)
-      try {
-        const webhookRes = await fetch(WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          signal: ac.signal,
-          body: JSON.stringify({
-            action: 'upload',
-            name: filename,
-            data: stripDataPrefix(base64),
-            surveyId: psid,
-            survey_id: psid,
-            email: email || 'staff@billing.local',
-            timestamp: new Date().toISOString(),
-          }),
-        })
-
-        if (webhookRes.ok) {
-          const result: Record<string, unknown> = await webhookRes.json()
-          if (result.status === 'success') {
-            gdrive_file_id = extractFileId(result)
-          }
-        }
-      } catch {
-        // Timeout or network error — continue without Drive file, queue retries later
-      } finally {
-        clearTimeout(timeout)
+      if (!noPhotoSetting?.value) {
+        return NextResponse.json({ error: 'Photo required — no-photo delivery not enabled' }, { status: 400 })
       }
     }
 
-    const photo_url = gdrive_file_id
-      ? `https://drive.google.com/thumbnail?id=${gdrive_file_id}&sz=w200`
-      : `pending://delivery/${assignmentItemId}`
+    let gdrive_file_id: string | null = null
+    let photo_url: string | null = null
 
-    // 2. Save delivery_photos record
+    // 1. Upload photo to GAS webhook (only when photo provided)
+    if (photo && !skipPhoto) {
+      const buffer = Buffer.from(await photo.arrayBuffer())
+      const base64 = buffer.toString('base64')
+      const filename = `${psid}_${Date.now()}.webp`
+
+      if (WEBHOOK_URL) {
+        const ac = new AbortController()
+        const timeout = setTimeout(() => ac.abort(), 8000)
+        try {
+          const webhookRes = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            signal: ac.signal,
+            body: JSON.stringify({
+              action: 'upload',
+              name: filename,
+              data: stripDataPrefix(base64),
+              surveyId: psid,
+              survey_id: psid,
+              email: email || 'staff@billing.local',
+              timestamp: new Date().toISOString(),
+            }),
+          })
+
+          if (webhookRes.ok) {
+            const result: Record<string, unknown> = await webhookRes.json()
+            if (result.status === 'success') {
+              gdrive_file_id = extractFileId(result)
+            }
+          }
+        } catch {
+          // Timeout or network error — continue without Drive file
+        } finally {
+          clearTimeout(timeout)
+        }
+      }
+
+      photo_url = gdrive_file_id
+        ? `https://drive.google.com/thumbnail?id=${gdrive_file_id}&sz=w640`
+        : `pending://delivery/${assignmentItemId}`
+    }
+
+    // 2. Save delivery_photos record (always INSERT — preserve full history)
     const { error: photoErr } = await sup.from('delivery_photos').insert({
       assignment_item_id: assignmentItemId,
       photo_url,

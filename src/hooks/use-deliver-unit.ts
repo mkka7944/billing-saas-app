@@ -50,13 +50,10 @@ export function useDeliverUnit() {
     setLastResult(null)
 
     try {
-      // 1. Capture GPS — use pre-warmed position if available, else fallback
       const gps = gpsOverride ?? await captureGPS()
 
-      // 2. Compress photo
       const compressed = await compressImage(photoFile)
 
-      // 3. Build FormData and POST
       const form = new FormData()
       form.append('photo', compressed, `${psid}_delivery.webp`)
       form.append('assignment_item_id', assignmentItemId)
@@ -80,15 +77,57 @@ export function useDeliverUnit() {
       return result
     } catch (e) {
       if (e instanceof TypeError) {
-        // Network failure (fetch couldn't reach server) — caller queues offline
         return null
       }
-      // Server error (4xx/5xx with parsed message) — re-throw for caller to toast
       throw e
     } finally {
       setIsDelivering(false)
     }
   }, [])
 
-  return { deliver, isDelivering, lastResult }
+  const deliverNoPhoto = useCallback(async (
+    assignmentItemId: string,
+    psid: string,
+    targetLat: number | null,
+    targetLng: number | null,
+    gpsOverride?: { lat: number; lng: number } | null,
+  ): Promise<DeliveryResult | null> => {
+    setIsDelivering(true)
+    setLastResult(null)
+
+    try {
+      const gps = gpsOverride ?? await captureGPS()
+
+      const form = new FormData()
+      form.append('skip_photo', 'true')
+      form.append('assignment_item_id', assignmentItemId)
+      form.append('psid', psid)
+      if (gps) {
+        form.append('gps_lat', String(gps.lat))
+        form.append('gps_lng', String(gps.lng))
+      }
+      if (targetLat != null) form.append('target_lat', String(targetLat))
+      if (targetLng != null) form.append('target_lng', String(targetLng))
+
+      const res = await fetch('/api/deliveries/mark', { method: 'POST', body: form })
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error(errBody.error || `HTTP ${res.status}`)
+      }
+
+      const result: DeliveryResult = await res.json()
+      setLastResult(result)
+      return result
+    } catch (e) {
+      if (e instanceof TypeError) {
+        return null
+      }
+      throw e
+    } finally {
+      setIsDelivering(false)
+    }
+  }, [])
+
+  return { deliver, deliverNoPhoto, isDelivering, lastResult }
 }

@@ -13,7 +13,7 @@ export interface QueuedPhoto {
 
 const DB_NAME = 'billing-saas-photo-queue'
 const STORE_NAME = 'photo_queue'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

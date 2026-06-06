@@ -222,3 +222,14 @@ export interface OrphanPsidsData {
   total: number
   month_totals: { bill_month: string; psids: number; amount: number }[]
 }
+
+export interface Notification {
+  id: string
+  user_id: string
+  type: 'info' | 'warning' | 'admin_alert' | 'staff_message' | 'item_update'
+  title: string
+  body: string | null
+  link: string | null
+  read: boolean
+  created_at: string
+}

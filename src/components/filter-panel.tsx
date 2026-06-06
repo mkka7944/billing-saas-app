@@ -9,7 +9,8 @@ import { useBillMonths } from '@/hooks/use-bill-months'
 import { shortenMCName, compareMC } from '@/lib/mc-utils'
 import { currentMonth } from '@/lib/constants'
 import { cn } from '@/lib/utils'
-import { ChevronDown, X, SlidersHorizontal, Search, Check, RefreshCw } from 'lucide-react'
+import { ChevronDown, X, SlidersHorizontal, Search, Check, RefreshCw, Layers } from 'lucide-react'
+import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -519,6 +520,8 @@ function ActionButtons() {
   const cancelFilters = useBillingStore((s) => s.cancelFilters)
   const queryClient = useQueryClient()
   const isFetching = useIsFetching()
+  const mapType = useBillingStore((s) => s.mapType)
+  const setMapType = useBillingStore((s) => s.setMapType)
 
   const [showSuccess, setShowSuccess] = useState(false)
   const successTimer = useRef<number>(0)
@@ -547,6 +550,15 @@ function ActionButtons() {
 
   return (
     <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+      <NotificationsBell />
+      <button
+        onClick={() => setMapType(mapType === 'streets' ? 'satellite' : 'streets')}
+        className="h-8 w-8 flex items-center justify-center rounded-lg border border-border hover:bg-muted cursor-pointer shrink-0"
+        title={mapType === 'streets' ? 'Satellite' : 'Street'}
+      >
+        <Layers className="h-3.5 w-3.5" />
+      </button>
+      <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
       <div className="relative">
         <button
           onClick={handleUpdate}

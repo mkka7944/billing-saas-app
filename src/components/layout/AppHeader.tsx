@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { MobileFilterSheet } from '@/components/filter-panel'
+import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { Building2, Layers, LogOut, Menu, RefreshCw, Search, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -102,6 +103,7 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
                 </span>
               )}
             </div>
+            <NotificationsBell />
             {isRefreshing && (
               <span className="text-[10px] text-muted-foreground font-medium animate-pulse whitespace-nowrap">Syncing...</span>
             )}

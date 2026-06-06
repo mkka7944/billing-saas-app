@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 export interface DeliveryPhoto {
   id: string
   assignment_item_id: string
-  photo_url: string
+  photo_url: string | null
   gdrive_file_id: string | null
   gps_lat: number | null
   gps_lng: number | null

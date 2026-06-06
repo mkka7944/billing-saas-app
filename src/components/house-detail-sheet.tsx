@@ -85,11 +85,14 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
     thumb: p.thumbnail_url,
     source: 'drive' as const,
   }))
-  const deliveryImageList = (deliveryPhotos || []).map((p) => ({
-    src: p.photo_url,
-    thumb: p.photo_url,
-    source: 'delivery' as const,
-  }))
+  const deliveryImageList = (deliveryPhotos || [])
+    .filter((p) => p.photo_url)
+    .map((p) => ({
+      src: p.photo_url!,
+      thumb: p.photo_url!,
+      source: 'delivery' as const,
+    }))
+  const noPhotoDeliveries = (deliveryPhotos || []).filter((p) => !p.photo_url).length
 
   const allImages: GalleryImage[] = [
     ...surveyImages.map((url) => ({ src: url, thumb: url, source: 'portal' as const })),
@@ -256,9 +259,18 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
                   </div>
                 </>
               )}
-              {deliveryPhotos.length > 0 && (
-                <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <Camera className="h-3 w-3" /> {deliveryPhotos.length}
+              {(deliveryImageList.length > 0 || noPhotoDeliveries > 0) && (
+                <div className="absolute top-2 right-2 flex gap-1">
+                  {deliveryImageList.length > 0 && (
+                    <span className="bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Camera className="h-3 w-3" /> {deliveryImageList.length}
+                    </span>
+                  )}
+                  {noPhotoDeliveries > 0 && (
+                    <span className="bg-amber-600/70 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      📷 Photo Off {noPhotoDeliveries > 1 ? `(×${noPhotoDeliveries})` : ''}
+                    </span>
+                  )}
                 </div>
               )}
               <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">

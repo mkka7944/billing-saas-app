@@ -1018,14 +1018,8 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 3.4 | 15 min | Report: inserted/skipped/error counts with sample of bad rows |
 | 3.5 | 5 min | Add city/tehsil/uc_name upsert to payment_history (fixes "Unknown" chart cities) |
 
-### Phase 4 — Add `city`/`tehsil`/`uc_name` to `payment_history` (~30 min)
-| Step | Time | Task |
-|------|------|------|
-| 4.1 | 5 min | SQL migration `029-add-payment-history-city.sql`: `ALTER TABLE payment_history ADD COLUMN city_district text, ADD COLUMN tehsil text, ADD COLUMN uc_name text` |
-| 4.2 | 10 min | Update `get_charts_data` RPC to use `ph.city_district`/`ph.tehsil` instead of LATERAL join |
-| 4.3 | 5 min | Update `get_billing_stats` RPC to use `ph.city_district`/`ph.tehsil` |
-| 4.4 | 5 min | Backfill existing rows from lifecycle data via temporary mapping |
-| 4.5 | 5 min | Verify: "Unknown" entries in charts drop to zero |
+### Phase 4 — Add `city`/`tehsil`/`uc_name` to `payment_history` (~30 min) ✅ **(Done — Migration 023)**
+**Note:** `city_district`, `tehsil`, `uc_name` already exist on `payment_history` via migration `023-add-payment-geography.sql`. The RPCs already use `ph.city_district`/`ph.tehsil` directly. No work needed.
 
 ### Phase 5 — Create `ingest-all.py` Orchestrator (~1 hr) ✅ **(Done 2026-06-01)**
 | Step | Time | Task |
@@ -1036,14 +1030,14 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 5.4 | 10 min | Combined audit log entry with summary |
 | 5.5 | 10 min | Error handling: abort on failure, show partial results |
 
-### Phase 6 — Bill Metadata in HouseDetailSheet (~1.5 hrs)
-| Step | Time | Task |
-|------|------|------|
-| 6.1 | 15 min | `GET /api/survey/[survey_id]/bill-info` — returns bill number, route info, paid status from `survey_units` + `payment_history` |
-| 6.2 | 30 min | HouseDetailSheet: show "Bill #X/Y in UC" with route info, paid status badge |
-| 6.3 | 15 min | Compute `bill_count` per UC: sort by `route_seq ASC → survey_id DESC`, assign sequential number |
-| 6.4 | 15 min | Compute `paid_status`: count paid months from `payment_history` → "P-{n}" or "U-P" |
-| 6.5 | 15 min | Show all PSIDs per survey_id with payment history + ghost marking button |
+### Phase 6 — Bill Metadata in HouseDetailSheet (~1.5 hrs) ✅ **(Done 2026-06-01)**
+| Step | Time | Task | Status |
+|------|------|------|--------|
+| 6.1 | 15 min | `GET /api/survey/[survey_id]/bill-info` — returns bill number, route info, paid status from `survey_units` + `payment_history` | ✅ |
+| 6.2 | 30 min | HouseDetailSheet: show "Bill #X/Y in UC" with route info, paid status badge | ✅ |
+| 6.3 | 15 min | Compute `bill_count` per UC: sort by `route_seq ASC → survey_id DESC`, assign sequential number | ✅ |
+| 6.4 | 15 min | Compute `paid_status`: count paid months from `payment_history` → "P-{n}" or "U-P" | ✅ |
+| 6.5 | 15 min | Show all PSIDs per survey_id with payment history + ghost marking button | ✅ |
 
 ### Phase 2b — Drop `amount_due` (deferred, ~30 min)
 | Step | Time | Task |
@@ -1051,6 +1045,38 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 2b.1 | 10 min | Remove `amount_due` from all SELECTs, TypeScript types, RPC queries |
 | 2b.2 | 10 min | `ALTER TABLE survey_units DROP COLUMN amount_due` |
 | 2b.3 | 10 min | Update any remaining frontend references |
+
+### Phase P1 — In-App Notification System (~4 hrs) ✅ (Done 2026-06-05)
+| Step | Time | Task | Status |
+|------|------|------|--------|
+| P1a | 15 min | DB migration `037-notifications.sql` — table, indexes, RLS | ⏳ SQL written, not yet applied to Supabase |
+| P1b | 5 min | Types — `Notification` interface in `src/types/index.ts` | ✅ |
+| P1c | 30 min | `GET /api/notifications` — returns notifications + unread count + admin summary with auto-create `admin_alert` | ✅ |
+| P1d | 15 min | `POST /api/notifications/read` — mark single or all as read | ✅ |
+| P1e | 30 min | `POST /api/admin/notifications` — admin sends to user or all staff | ✅ |
+| P1f | 15 min | `use-notifications.ts` — 3 React Query hooks (fetch, mark read, mark all read) | ✅ |
+
+### Phase P2 — Notifications Bell UI (~2 hrs) ✅ (Done 2026-06-05)
+| Step | Time | Task | Status |
+|------|------|------|--------|
+| P2a | 60 min | NotificationsBell — bell icon + unread badge + bottom sheet (mobile) + dropdown (desktop) with admin summary, notification list, mark all read, empty state, deep links | ✅ |
+| P2b | 15 min | Bell on DesktopFilterBar — `NotificationsBell` + satellite toggle (`Layers` button) in `ActionButtons` | ✅ |
+| P2c | 15 min | Bell on AppHeader — `NotificationsBell` after refresh button in mobile header | ✅ |
+
+### Phase P3 — Staff Notification Form (~1 hr) ✅ (Done 2026-06-05)
+| Step | Time | Task | Status |
+|------|------|------|--------|
+| P3.1 | 30 min | Staff notification form — recipient dropdown (all staff + individual), subject, message, Send → `POST /api/admin/notifications` | ✅ |
+| P3.2 | 15 min | Move form from Delivery tab to Users tab sidebar | ✅ |
+| P3.3 | 15 min | Users tab redesign — sidebar layout, city group headers, Table component, RoleSelect CSS | ✅ |
+
+### Phase P4 — Users Tab UI Polish (~1 hr) ✅ (Done 2026-06-06)
+| Step | Time | Task | Status |
+|------|------|------|--------|
+| P4.1 | 15 min | `hideChevron` prop on `SelectTrigger` — cleaner icon-only action dropdown | ✅ |
+| P4.2 | 15 min | City accent colors on group headers + city selector dropdowns (emerald=Sargodha, blue=Bhalwal, amber=Khushab) | ✅ |
+| P4.3 | 15 min | Typography consistency — standardized `text-xs` table headers/rows, `text-[10px]` badges | ✅ |
+| P4.4 | 15 min | Action dropdown cleanup — `hideChevron`, `size-7`, no conflicting CSS | ✅ |
 
 ### Total Estimate Breakdown
 | Phase | Time | Cumulative |
@@ -1069,13 +1095,17 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 1 (Copy ref scripts) | 0.5 hrs | 37 hrs |
 | 2 (enrich-survey-units) | 2 hrs | 39 hrs |
 | 3 (load-payments) | 1 hr | 40 hrs |
-| 4 (city columns) | 0.5 hrs | 40.5 hrs |
+| 4 (city columns) | ~~0.5 hrs~~ | ✅ Already in DB via migration 023 |
 | 5 (ingest-all) | 1 hr | 41.5 hrs |
 | 6 (bill metadata) | 1.5 hrs | 43 hrs |
 | 2b (drop amount_due) | 0.5 hrs | 43.5 hrs |
 | **R.1-R.5 (Architecture)** | **6 hrs** | **49.5 hrs** |
 | **B2** (QR + HDS Delivery) | **3 hrs** | **52.5 hrs** |
 | **B3** (Delivery Stability & Hardening) | **8 hrs** | **60.5 hrs** |
+| **P1** (Notifications Infrastructure) | **2 hrs** | **62.5 hrs** |
+| **P2** (Notifications Bell UI) | **1.5 hrs** | **64 hrs** |
+| **P3** (Staff Notification Form) | **1 hr** | **65 hrs** |
+| **P4** (Users Tab UI Polish) | **1 hr** | **66 hrs** |
 
 ### Execution Order (Remaining)
 | Order | Phase | Time | What | Status |
@@ -1085,21 +1115,24 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 3 | **A** Admin Assignment UI | 3 hrs | UC list → pick staff → create daily chunks with approval chain support | ✅ Done |
 | 4 | **B1** Field Staff Delivery Basics | 7 hrs | /deliver page, photo capture, offline queue, map, card list, bottom sheet | ✅ Done |
 | 5 | **B2** QR + One-Tap Delivery | 2 hrs | QR scanner, UnitDeliverySheet, one-tap photo+GPS+auto-verify, auto-advance, Drive images in HDS gallery | ✅ Done |
-| 6 | **B3** Delivery Stability & Hardening | 8 hrs | DB CHECK fix, auth on mark route, webhook timeout, GPS reliability, photo queue, state machine, remaining auth, RLS | 🔲 |
-| 7 | **P1** Egress & Stability (H1-H3) | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | 🔲 |
-| 8 | **P2** Authorization Hardening | 4 hrs | `requireRole()`, RLS policies, ownership checks | 🔲 |
-| 9 | **C** Admin Dashboard | 3 hrs | `/stats`, staff performance, delivery KPIs | 🔲 |
-| 10 | **E** Flag Management UI | 4 hrs | `/flagged-units`, resolve/confirm/note actions | 🔲 |
-| 11 | **RBAC** Approval Chain | 3 hrs | User management + assignment approval chain (draft→pending→approved→active) | 🔲 |
-| 12 | **P3** Input Validation Completion | 2 hrs | Migrate remaining 18 routes to Zod | 🔲 |
-| 13 | **P4** Debugging Velocity | 6 hrs | API docs, owners file, barrel exports, structured logging, ESLint | 🔲 |
-| 14 | **P6** Egress Optimization | 3 hrs | HTTP cache headers, service worker, SWR/IndexedDB caching | 🔲 |
-| 15 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → write to survey_units → printer integration | 🔲 |
-| 16 | **G** Live Admin Monitoring | 3 hrs | Staff mode on map, breadcrumbs, near-real-time polling | 🔲 |
-| 17 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
-| 18 | **Z** App Audit Cleanup | 4 hrs | 10 items from Section 15.8 | 🔲 |
-| 19 | **Deploy** Office PC pipeline | 1 hr | `ingest-all.py` + scripts on Office PC, live test | 🔲 |
-| — | **P5** Industry Standards (CI/tests/Sentry) | 10 hrs | Deferred — after staff feedback cycle | ⏸️ 
+| 6 | **4** City columns in payment_history | 30 min | `city_district`, `tehsil`, `uc_name` are already on DB via migration 023 | ✅ Done |
+| 7 | **6** Bill Metadata in HDS | 1.5 hrs | Bill info API + HouseDetailSheet display | ✅ Done |
+| 8 | **P1** Notifications Infrastructure | 2 hrs | DB migration, types, 3 API routes, hook | ✅ Done (migration not yet applied) |
+| 9 | **P2** Notifications Bell UI | 1.5 hrs | Bell + badge + mobile/desktop panel, desktop filter bar integration, header integration | ✅ Done |
+| 10 | **P3** Staff Notification Form | 1 hr | Form in Users tab sidebar, send to all or individual | ✅ Done |
+| 11 | **P4** Users Tab UI Polish | 1 hr | hideChevron, city accent colors, typography, dropdown cleanup | ✅ Done |
+| 12 | **B3** Delivery Stability & Hardening | 8 hrs | DB CHECK fix, auth on mark route, webhook timeout, GPS reliability, photo queue, state machine, remaining auth, RLS | 🔲 |
+| 13 | **0d** Reference Tables & Filter Fix | 1.5 hrs | Create hierarchy/surveyors/bill_months tables, update APIs, delete dead services | 🔲 |
+| 14 | **0e** Stabilize & Clean | 2 hrs | Fix payment filter pagination, billing-stats empty arrays, route API, deduplicate currentMonth | 🔲 |
+| 15 | **0f** Egress & Stability | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | 🔲 |
+| 16 | **C** Admin Dashboard | 3 hrs | /stats, staff performance, delivery KPIs | 🔲 |
+| 17 | **E** Flag Management UI | 4 hrs | /flagged-units, resolve/confirm/note actions | 🔲 |
+| 18 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → survey_units → printer | 🔲 |
+| 19 | **G** Live Admin Monitoring | 3 hrs | Staff mode map, breadcrumbs, near-real-time polling | 🔲 |
+| 20 | **RBAC** Approval Chain | 3 hrs | Assignment draft→pending→approved→active workflow | 🔲 |
+| 21 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
+| 22 | **Deploy** Office PC pipeline | 1 hr | ingest-all.py + scripts on Office PC, live test | 🔲 |
+| — | **Z** Deferred | 19 hrs | Auth hardening, Zod validation, structured logging, egress optimization, audit cleanup | 🔲 Deferred |
 
 ---
 ## 11. Implementation Workflow (Permanent Rule)
@@ -2045,6 +2078,8 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-04 | 22.0 | **Khushab investigation, delivery KPIs removed, aggregate status toggle, desktop sheet debugging, migration 031 added.** Section 19 (Data Model Rules) added. `docs/AUDIT-2026-06-04.md` created with comprehensive grades (F for auth/egress, D for industry standards). |
 | 2026-06-05 | 23.0 | **Complete design overhaul: one-tap delivery, GPS distance verification, processing status, project cleanup.** Root directory cleaned (17 files moved/deleted). Scripts folder reorganized (active/reference/archive/temp separation). Audit report absorbed into MASTER.md Section 20-22. Delivery flow redesigned: one-tap photo → GPS → auto-verify (Haversine 50m) → `processing` intermediate status. No Missed/Skip (full enforcement). All 12 delivery UX gaps documented with fixes. Server handles webhook synchronously. User design decisions codified in Section 22. See Appendix C for full session log. |
 | 2026-06-05 | 24.0 | **Speed optimizations + admin Force Complete**: GPS timeout reduced 8s → 3s, `enableHighAccuracy` off (+3x faster on GPS-poor devices). Context-aware delivery messages ("Awaiting GPS Verification" vs "Out of range — Awaiting Review" — no misleading "Photos pending sync"). Optimistic cache update (status flips instantly on list, no refetch wait). New `POST /api/deliveries/force` admin endpoint + "Force Complete (admin)" button on sheet. MASTER.md updated with Part 8 session log. |
+| 2026-06-05 | 25.0 | **Notifications system (P1-P3)**: DB migration `037-notifications.sql` (not applied), Notification type, `GET /api/notifications`, `POST /api/notifications/read`, `POST /api/admin/notifications`, `use-notifications` hook, NotificationsBell with mobile sheet + desktop dropdown, bell on DesktopFilterBar + AppHeader, staff notification form in Users tab sidebar. Users tab redesigned: sidebar layout, city group headers, Table component, RoleSelect CSS with colored dots. Panel positioning fixed (absolute → fixed for desktop). Recipient dropdown shows display name. |
+| 2026-06-06 | 26.0 | **Users tab UI polish (P4)**: `hideChevron` prop on SelectTrigger for icon-only dropdowns. City accent colors on group headers (emerald=Sargodha, blue=Bhalwal, amber=Khushab) + city selector dropdowns. Typography standardization (text-xs, text-[10px] badges). Action dropdown cleanup (size-7, hideChevron, no conflicting CSS). |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -3334,6 +3369,60 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 4. Admin `/map` → click marker → "Force Complete (admin)" button shown → confirm → item flips to delivered
 5. Force Complete from admin map → staff's list reflects green on next refetch (or instantly if cache invalidated)
 6. `tsc --noEmit` — zero errors
+
+---
+
+### 2026-06-05 (Part 9) — Notifications System (P1-P3) + Users Tab Restructure — Location: Home
+
+**Focus:** Build in-app notification system — DB, API, hooks, bell UI, and admin notification form. Restructure Users tab.
+
+**Done (P1 — Notifications Infrastructure):**
+- **P1a** — Created `scripts/sql/037-notifications.sql` (table, indexes, RLS). **Not applied to Supabase** — needs PAT token.
+- **P1b** — Added `Notification` interface to `src/types/index.ts`
+- **P1c** — `GET /api/notifications/route.ts`: Returns notifications + unread count + admin summary. Auto-creates `admin_alert` when `pending + processing > 0` with no existing unread alert.
+- **P1d** — `POST /api/notifications/read/route.ts`: Mark single or all as read.
+- **P1e** — `POST /api/admin/notifications/route.ts`: Admin sends to individual staff or all staff.
+- **P1f** — `src/hooks/use-notifications.ts`: 3 React Query hooks (fetch, mark read, mark all read).
+
+**Done (P2 — Notifications Bell UI):**
+- **P2a** — `notifications-bell.tsx`: Bell icon + unread badge + bottom sheet (mobile) + dropdown anchored fixed (desktop). Admin summary block, notification list with type icons and deep links, "Mark all read" button, empty state, polling every 30s.
+- **P2b** — `DesktopFilterBar ActionButtons`: `NotificationsBell` + satellite toggle (`Layers` button) side-by-side.
+- **P2c** — `AppHeader` (mobile): `NotificationsBell` added after refresh button in header row 1.
+
+**Done (P3 — Staff Notification Form):**
+- Created staff notification form: recipient dropdown (all staff + individual field staff), subject, message, Send → `POST /api/admin/notifications`.
+- **Moved from Delivery tab to Users tab sidebar** — more discoverable.
+- **Panel positioning fix** — desktop dropdown uses `fixed` (not `absolute`) + `top-[48px] right-2`.
+- **Recipient dropdown fix** — `SelectValue` now shows display name via `notifyUserLabel` memo instead of UUID.
+
+**Done (Users Tab Redesign):**
+- Flex row layout (sidebar 260px + main `flex-1`).
+- City group header rows (★ Super Admin / Admin / City name / Unassigned) using `<Table>` component.
+- Sorted by role → city → name.
+- `RoleSelect` CSS with colored dots (blue for admin, muted for staff).
+
+**Known issue:** `037-notifications.sql` not yet applied to Supabase — PAT token required.
+
+### 2026-06-06 — Users Tab UI Polish (P4) — Location: Home
+
+**Focus:** Polish Users tab — city accent colors, typography consistency, dropdown styling.
+
+**Done (P4 — Users Tab UI Polish):**
+- **P4.1** — Added `hideChevron` prop to `SelectTrigger` in `src/components/ui/select.tsx`. Enables clean icon-only action dropdowns without a visible chevron icon.
+- **P4.2** — City accent colors on group headers (emerald=Sargodha, blue=Bhalwal, amber=Khushab) matching CitySwitcher. Same colors applied to city selector dropdowns in Add User + Edit City dialogs.
+- **P4.3** — Typography consistency: table header `text-[11px]` → `text-xs`, group headers `text-[11px]` → `text-xs`, badges `text-[9px]` → `text-[10px]`.
+- **P4.4** — Action dropdown cleanup: removed conflicting CSS (`min-w-[32px] w-8 h-8 p-0 flex items-center justify-center`), replaced with `size="sm" className="size-7 p-0"` + `hideChevron`.
+
+**Key decisions:**
+- `hideChevron` is a prop on the shared `SelectTrigger` — reusable for any icon-only select
+- City accent colors match `CitySwitcher.tsx` exactly (emerald-600/dark:emerald-400 for Sargodha, etc.)
+- `size-7` matches `data-[size=sm]:h-7` — no fighting CSS dimensions
+
+**Testing Verification:**
+1. Open `/settings` → Users tab → city group headers show colored text (emerald=Sargodha, blue=Bhalwal, amber=Khushab)
+2. Add User / Edit City dialogs → city dropdown items show colored city names
+3. Action dropdown (⋮) has no chevron — just the three dots icon
+4. `npx tsc --noEmit` — zero errors
 
 ---
 

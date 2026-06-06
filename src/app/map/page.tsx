@@ -14,6 +14,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import UnitDeliverySheet from '@/components/delivery/unit-delivery-sheet'
 import QRScannerButton from '@/components/delivery/qr-scanner-button'
+import { useUserLocation } from '@/hooks/use-user-location'
 import type { AssignmentItemWithUnit } from '@/types'
 
 const StaffMap = dynamic(
@@ -35,7 +36,7 @@ export default function MapPage() {
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const roleName = useAuthStore((s) => s.roleName)
   const user = useAuthStore((s) => s.user)
-
+  const { location: userLocation } = useUserLocation()
 
   useEffect(() => { setPageIdentity('Map') }, [setPageIdentity])
 
@@ -97,7 +98,7 @@ export default function MapPage() {
       <div className="flex flex-col h-full">
         <div className="flex-1 relative min-h-0 h-full">
           {activeView === 'map' && (roleName === 'field_staff' ? (
-            <StaffMap items={staffItems} />
+            <StaffMap items={staffItems} userLocation={userLocation} />
           ) : (
             <MapView />
           ))}
@@ -113,6 +114,9 @@ export default function MapPage() {
             <UnitDeliverySheet
               unit={deliveryUnit}
               assignmentItemId={deliveryItemId}
+              itemStatus={deliveryItem?.status || null}
+              initialLat={userLocation?.lat}
+              initialLng={userLocation?.lng}
               onViewDetails={() => {
                 const unitSurveyId = deliveryUnit?.survey_id
                 if (unitSurveyId) selectHouse(unitSurveyId)

@@ -6,6 +6,7 @@ import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronL
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
+import { useUnsentPhotos } from '@/hooks/use-unsent-photos'
 import { useAuthStore } from '@/stores/auth-store'
 import { compressImage } from '@/lib/image/compress'
 import { useToast } from '@/hooks/use-toast'
@@ -16,6 +17,9 @@ import type { AssignmentItemUnit, AssignmentItemWithUnit } from '@/types'
 interface UnitDeliverySheetProps {
   unit: AssignmentItemUnit | null
   assignmentItemId: string | null
+  initialLat?: number | null
+  initialLng?: number | null
+  itemStatus?: string | null
   onViewDetails?: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -25,6 +29,9 @@ interface UnitDeliverySheetProps {
 export default function UnitDeliverySheet({
   unit,
   assignmentItemId,
+  initialLat,
+  initialLng,
+  itemStatus,
   onViewDetails,
   onPrev,
   onNext,
@@ -41,13 +48,22 @@ export default function UnitDeliverySheet({
   const [userLat, setUserLat] = useState<number | null>(null)
   const [userLng, setUserLng] = useState<number | null>(null)
   const [forceCompleting, setForceCompleting] = useState(false)
+  const [allowNoPhoto, setAllowNoPhoto] = useState(false)
   const touchXRef = useRef<number | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
   const queryClient = useQueryClient()
   const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
-  const { deliver } = useDeliverUnit()
+  const { deliver, deliverNoPhoto } = useDeliverUnit()
   const { enqueuePhoto } = usePhotoQueue()
+  const { enqueueUnsent } = useUnsentPhotos()
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(data => setAllowNoPhoto(data?.allow_no_photo === true))
+      .catch(() => {})
+  }, [])
   const userId = useAuthStore((s) => s.user?.id)
   const email = useAuthStore((s) => s.user?.email)
   const roleName = useAuthStore((s) => s.roleName)
@@ -72,9 +88,28 @@ export default function UnitDeliverySheet({
     setDeliveryDistance(null)
     setDeliveryGpsLat(null)
     setDeliveryGpsLng(null)
-    setUserLat(null)
-    setUserLng(null)
-  }, [unit?.psid])
+    setUserLat(initialLat ?? null)
+    setUserLng(initialLng ?? null)
+  }, [unit?.psid, initialLat, initialLng])
+
+  // Fast initial GPS fix — getCurrentPosition fires immediately
+  useEffect(() => {
+    if (!unit?.lat || !unit?.lng || !navigator.geolocation) return
+    const timer = setTimeout(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const d = Math.round(haversine(pos.coords.latitude, pos.coords.longitude, unit.lat!, unit.lng!))
+          setLiveDistance(d)
+          setUserLat(pos.coords.latitude)
+          setUserLng(pos.coords.longitude)
+          setLiveGpsStatus('ready')
+        },
+        () => { /* silent — watchPosition will retry */ },
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+      )
+    }, 100) // tiny delay to let effects settle
+    return () => clearTimeout(timer)
+  }, [unit?.lat, unit?.lng, unit?.psid])
 
   // Live GPS tracking — watch position while sheet is idle
   useEffect(() => {
@@ -96,7 +131,7 @@ export default function UnitDeliverySheet({
       () => {
         setLiveGpsStatus('unavailable')
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
     )
     watchIdRef.current = id
     return () => {
@@ -179,6 +214,30 @@ export default function UnitDeliverySheet({
       queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
       queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-photos'] })
+
+      // If GAS upload failed, save to unsent queue for later retry
+      if (result.photo_url?.startsWith('pending://')) {
+        try {
+          const compressed = await compressImage(file)
+          new Promise<void>((resolve) => {
+            const reader = new FileReader()
+            reader.onloadend = async () => {
+              await enqueueUnsent({
+                assignmentItemId,
+                psid: unit.psid,
+                dataUrl: reader.result as string,
+                gpsLat: result.gps_lat,
+                gpsLng: result.gps_lng,
+              })
+              resolve()
+            }
+            reader.readAsDataURL(compressed)
+          })
+        } catch {
+          // Best-effort — don't block delivery on unsent queue failure
+        }
+      }
 
       // Auto-advance: 2s for delivered, 3.5s for processing
       const delay = result.status === 'delivered' ? 2000 : 3500
@@ -208,7 +267,69 @@ export default function UnitDeliverySheet({
       toast('Failed to save photo offline', 'error')
       setIsDelivering(false)
     }
-  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, toast, userLat, userLng, queryClient])
+  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, enqueueUnsent, toast, userLat, userLng, queryClient])
+
+  const handleSkipPhoto = useCallback(async () => {
+    if (!assignmentItemId || !unit?.psid) return
+    const ok = await confirm({
+      title: 'Deliver without photo?',
+      message: 'GPS coordinates and timestamp will be recorded. No photo will be saved.',
+      confirmLabel: 'Deliver without Photo',
+      variant: 'default',
+    })
+    if (!ok) return
+
+    const gpsOverride = userLat != null && userLng != null ? { lat: userLat, lng: userLng } : null
+    setIsDelivering(true)
+    try {
+      const result = await deliverNoPhoto(
+        assignmentItemId,
+        unit.psid,
+        unit.lat,
+        unit.lng,
+        gpsOverride,
+      )
+
+      if (result) {
+        setDeliveryStatus(result.status)
+        setDeliveryDistance(result.distance)
+        setDeliveryGpsLat(result.gps_lat)
+        setDeliveryGpsLng(result.gps_lng)
+
+        if (userId) {
+          queryClient.setQueryData<{ data: unknown; items: AssignmentItemWithUnit[] }>(
+            ['staff-assignment', userId],
+            (old) => {
+              if (!old) return old
+              return {
+                ...old,
+                items: old.items.map((item) =>
+                  item.id === assignmentItemId
+                    ? { ...item, status: result.status, delivered_at: new Date().toISOString() }
+                    : item
+                ),
+              }
+            }
+          )
+        }
+        queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
+        queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
+        queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
+
+        const delay = result.status === 'delivered' ? 2000 : 3500
+        setTimeout(() => {
+          setIsDelivering(false)
+          onClose?.()
+        }, delay)
+        return
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Server error'
+      toast(msg, 'error')
+    } finally {
+      setIsDelivering(false)
+    }
+  }, [assignmentItemId, unit, userLat, userLng, deliverNoPhoto, confirm, toast, queryClient, userId, onClose])
 
   const handleForceComplete = useCallback(async () => {
     if (!unit?.psid) return
@@ -393,6 +514,12 @@ export default function UnitDeliverySheet({
           {/* Action buttons */}
           {deliveryStatus === 'idle' && (
             <div className="flex flex-col gap-2">
+              {itemStatus === 'delivered' && (
+                <span className="text-[10px] text-white/50 text-center">Previously delivered — tap Redeliver to update photo</span>
+              )}
+              {itemStatus === 'processing' && (
+                <span className="text-[10px] text-amber-300/70 text-center">Needs attention — GPS was out of range</span>
+              )}
               <div className="flex items-stretch gap-2">
                 {assignmentItemId ? (
                   <button
@@ -401,7 +528,7 @@ export default function UnitDeliverySheet({
                     className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
                   >
                     {isDelivering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                    {isDelivering ? 'Processing...' : 'Take Picture & Deliver'}
+                    {isDelivering ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Take Picture & Deliver'}
                   </button>
                 ) : null}
                 {onViewDetails && (
@@ -421,6 +548,16 @@ export default function UnitDeliverySheet({
                   </button>
                 )}
               </div>
+              {allowNoPhoto && assignmentItemId && (
+                <button
+                  onClick={handleSkipPhoto}
+                  disabled={isDelivering}
+                  className='w-full h-8 text-[11px] font-medium rounded-lg bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors'
+                >
+                  {isDelivering ? <Loader2 className='h-3 w-3 animate-spin' /> : <Crosshair className='h-3 w-3' />}
+                  {isDelivering ? 'Processing...' : 'Photo not working? Tap to deliver without photo'}
+                </button>
+              )}
               {isAdmin && !assignmentItemId && (
                 <button
                   onClick={handleForceComplete}

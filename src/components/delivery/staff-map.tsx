@@ -7,6 +7,7 @@ import StaffMapMarkers from './staff-map-markers'
 import { useBillingStore } from '@/stores/billing-store'
 import { useUserLocation } from '@/hooks/use-user-location'
 import type { AssignmentItemWithUnit } from '@/types'
+import type { UserLocation } from '@/hooks/use-user-location'
 
 const GOOGLE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3']
 
@@ -22,11 +23,12 @@ const USER_DOT_ICON = L.divIcon({
   iconAnchor: [7, 7],
 })
 
-function UserMarker() {
-  const { location } = useUserLocation()
-  if (!location) return null
+function UserMarker({ location: propLocation }: { location?: UserLocation | null }) {
+  const { location: hookLocation } = useUserLocation()
+  const loc = propLocation || hookLocation
+  if (!loc) return null
 
-  return <Marker position={[location.lat, location.lng]} icon={USER_DOT_ICON} />
+  return <Marker position={[loc.lat, loc.lng]} icon={USER_DOT_ICON} />
 }
 
 function FlyToTarget({ items }: { items: AssignmentItemWithUnit[] }) {
@@ -45,9 +47,10 @@ function FlyToTarget({ items }: { items: AssignmentItemWithUnit[] }) {
 
 interface StaffMapProps {
   items: AssignmentItemWithUnit[]
+  userLocation?: UserLocation | null
 }
 
-export default function StaffMap({ items }: StaffMapProps) {
+export default function StaffMap({ items, userLocation }: StaffMapProps) {
   const mapType = useBillingStore((s) => s.mapType)
   const tileUrl = TILE_URLS[mapType]
 
@@ -67,7 +70,7 @@ export default function StaffMap({ items }: StaffMapProps) {
         />
         <StaffMapMarkers items={items} />
         <FlyToTarget items={items} />
-        <UserMarker />
+        <UserMarker location={userLocation} />
       </MapContainer>
     </div>
   )

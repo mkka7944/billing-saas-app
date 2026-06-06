@@ -75,7 +75,7 @@ export function usePhotoQueue() {
       const fileId = extractFileId(result)
       if (!fileId) throw new Error('No fileId in webhook response')
 
-      const photoUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w200`
+      const photoUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w640`
 
       const saveRes = await fetch('/api/delivery/photos', {
         method: 'POST',
