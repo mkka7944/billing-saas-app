@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Outfit, Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -30,6 +30,17 @@ export const metadata: Metadata = {
   description: "Billing & Recovery System",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -44,9 +55,9 @@ export default function RootLayout({
       <body className="h-full flex flex-col bg-background text-foreground" suppressHydrationWarning>
           <ThemeProvider
             attribute="class"
-            defaultTheme="vercel"
+            defaultTheme="light"
             disableTransitionOnChange
-            themes={["light", "dark", "vercel", "vercel-dark", "system"]}
+            themes={["light", "dark"]}
           >
           <QueryProvider>
             <AuthInit>

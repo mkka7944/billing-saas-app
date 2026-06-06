@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup } from '@/components/ui/select'
-import { Building2, ChevronDown, ChevronRight, Sun, Moon, Monitor, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save, Send } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight, Sun, Moon, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -24,9 +24,6 @@ import { DeliveryTable } from '@/components/settings/delivery-table'
 const THEMES = [
   { id: 'light', label: 'Light', icon: Sun, desc: 'Default light' },
   { id: 'dark', label: 'Dark', icon: Moon, desc: 'Default dark' },
-  { id: 'vercel', label: 'Vercel', icon: Sun, desc: 'Vercel light' },
-  { id: 'vercel-dark', label: 'V. Dark', icon: Moon, desc: 'Vercel dark' },
-  { id: 'system', label: 'System', icon: Monitor, desc: 'Follow OS' },
 ]
 
 const tabs = [

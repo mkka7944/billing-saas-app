@@ -15,6 +15,8 @@ export function SurveyList() {
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
   const setMapZoom = useBillingStore((s) => s.setMapZoom)
   const setView = useBillingStore((s) => s.setView)
+  const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
+  const activeView = useBillingStore((s) => s.activeView)
 
   const [page, setPage] = useState(1)
   const pageSize = 20
@@ -27,6 +29,15 @@ export function SurveyList() {
   useEffect(() => {
     setPage(1)
   }, [filters])
+
+  // Auto-select first item when entering list view (desktop HDS default-open behavior)
+  useEffect(() => {
+    if (activeView !== 'list') return
+    if (!items.length) return
+    const inPage = items.some((i) => i.survey_id === selectedHouseId)
+    if (selectedHouseId && inPage) return
+    selectHouse(items[0].survey_id, items, data?.total)
+  }, [items, data?.total, activeView]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const showOnMap = (s: (typeof items)[0]) => {
     if (s.lat && s.lng) {

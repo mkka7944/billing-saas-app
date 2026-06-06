@@ -612,7 +612,7 @@ function ActionButtons() {
 
 // ─── Mobile: Bottom Sheet ──────────────────────────────────────
 
-export function MobileFilterSheet() {
+export function MobileFilterSheet({ triggerId }: { triggerId?: string } = {}) {
   const [open, setOpen] = useState(false)
   const cancelFilters = useBillingStore((s) => s.cancelFilters)
   const filters = useBillingStore((s) => s.filters)
@@ -626,6 +626,7 @@ export function MobileFilterSheet() {
   return (
     <>
       <button
+        id={triggerId}
         onClick={() => setOpen(true)}
         className={cn(
           'h-9 px-3 text-xs font-bold rounded-lg border flex items-center gap-1.5 transition-colors cursor-pointer shrink-0',

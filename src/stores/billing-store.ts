@@ -7,7 +7,6 @@ import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 interface BillingState {
   selectedCity: string | null
   activeView: 'map' | 'list' | 'stats' | 'detail' | 'data-insight'
-  previousView: string
   filters: FilterState
   pendingFilters: FilterState
   selectedHouseId: string | null
@@ -66,7 +65,6 @@ export const useBillingStore = create<BillingState>()(
     (set, get) => ({
       selectedCity: null,
       activeView: 'map',
-      previousView: 'map',
       filters: { ...defaultFilters },
       pendingFilters: { ...defaultFilters },
       selectedHouseId: null,
@@ -145,15 +143,11 @@ export const useBillingStore = create<BillingState>()(
 
       selectHouse: (id, list, total) => {
         if (!id) {
-          const prev = get().previousView || 'map'
-          return set({ selectedHouseId: null, activeView: prev as BillingState['activeView'], previousView: 'map', houseList: [], houseListIndex: 0, houseListTotal: 0 })
+          return set({ selectedHouseId: null, houseList: [], houseListIndex: 0, houseListTotal: 0 })
         }
-        const s = get()
         const idx = list ? list.findIndex((h) => h.survey_id === id) : -1
         set({
           selectedHouseId: id,
-          activeView: 'detail',
-          previousView: s.activeView === 'detail' ? s.previousView : s.activeView,
           houseList: list || [],
           houseListIndex: idx >= 0 ? idx : 0,
           houseListTotal: total ?? list?.length ?? 0,

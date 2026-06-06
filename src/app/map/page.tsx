@@ -11,6 +11,8 @@ import { Dashboard } from '@/components/dashboard'
 import { HouseDetailSheet } from '@/components/house-detail-sheet'
 import { DataInsight } from '@/components/data-insight'
 import { AppShell } from '@/components/layout/AppShell'
+import { FloatingActions } from '@/components/layout/floating-actions'
+import { MobileFilterSheet } from '@/components/filter-panel'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import UnitDeliverySheet from '@/components/delivery/unit-delivery-sheet'
 import QRScannerButton from '@/components/delivery/qr-scanner-button'
@@ -93,9 +95,15 @@ export default function MapPage() {
     }
   }
 
+  const hdsLayoutMode: 'fixed-list' | 'sliding' = activeView === 'list' ? 'fixed-list' : 'sliding'
+
   return (
     <AppShell>
-      <div className="flex flex-col h-full">
+      <FloatingActions />
+      <div className="absolute opacity-0 pointer-events-none w-px h-px overflow-hidden">
+        <MobileFilterSheet triggerId="mobile-filter-trigger" />
+      </div>
+      <div className="flex flex-col lg:flex-row h-full">
         <div className="flex-1 relative min-h-0 h-full">
           {activeView === 'map' && (roleName === 'field_staff' ? (
             <StaffMap items={staffItems} userLocation={userLocation} />
@@ -104,7 +112,6 @@ export default function MapPage() {
           ))}
           {activeView === 'list' && <SurveyList />}
           {activeView === 'stats' && <Dashboard />}
-          {activeView === 'detail' && selectedHouseId && <HouseDetailSheet />}
           <div className={activeView !== 'data-insight' ? 'hidden' : 'absolute inset-0'}>
             <DataInsight />
           </div>
@@ -137,6 +144,9 @@ export default function MapPage() {
 
 
         </div>
+
+        {/* HDS — right panel on desktop / full-screen overlay on mobile */}
+        {selectedHouseId && <HouseDetailSheet layoutMode={hdsLayoutMode} />}
       </div>
     </AppShell>
   )

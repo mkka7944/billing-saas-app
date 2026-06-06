@@ -22,10 +22,11 @@ import type { AssignmentItemWithUnit } from '@/types'
 
 interface HouseDetailSheetProps {
   mode?: 'admin' | 'delivery'
+  layoutMode?: 'fixed-list' | 'sliding'
   assignmentItem?: AssignmentItemWithUnit | null
 }
 
-export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetailSheetProps) {
+export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assignmentItem }: HouseDetailSheetProps) {
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const selectHouse = useBillingStore((s) => s.selectHouse)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
@@ -166,7 +167,16 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
 
   return (
     <div
-      className="absolute inset-0 bg-background z-10 flex flex-col"
+      className={cn(
+        "flex flex-col bg-background",
+        // Mobile: full-screen overlay
+        "fixed inset-0 z-50",
+        // Desktop: side panel (relative flex sibling)
+        "lg:relative lg:inset-auto lg:z-auto",
+        layoutMode === 'fixed-list'
+          ? "lg:w-[420px] lg:shrink-0 lg:border-l"
+          : "lg:w-[380px] lg:shrink-0 lg:border-l"
+      )}
       onTouchStart={canNav && !galleryOpen ? handleTouchStart : undefined}
       onTouchEnd={canNav && !galleryOpen ? handleTouchEnd : undefined}
     >
@@ -523,6 +533,7 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
               )}
             </div>
           )}
+          {layoutMode === 'sliding' && (
           <div className="flex items-center justify-between px-3 py-2">
             <div className="flex items-center gap-1.5">
               <Button
@@ -572,6 +583,7 @@ export function HouseDetailSheet({ mode = 'admin', assignmentItem }: HouseDetail
               </Button>
             </div>
           </div>
+          )}
         </div>
       )}
 
