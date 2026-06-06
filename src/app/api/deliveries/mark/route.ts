@@ -122,7 +122,7 @@ export async function POST(request: Request) {
 
     const photo_url = gdrive_file_id
       ? `https://drive.google.com/thumbnail?id=${gdrive_file_id}&sz=w200`
-      : null
+      : `pending://delivery/${assignmentItemId}`
 
     // 2. Save delivery_photos record
     const { error: photoErr } = await sup.from('delivery_photos').insert({
