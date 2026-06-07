@@ -12,7 +12,6 @@ import { HouseDetailSheet } from '@/components/house-detail-sheet'
 import { DataInsight } from '@/components/data-insight'
 import { AppShell } from '@/components/layout/AppShell'
 import { FloatingActions } from '@/components/layout/floating-actions'
-import { MobileFilterSheet } from '@/components/filter-panel'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import UnitDeliverySheet from '@/components/delivery/unit-delivery-sheet'
 import QRScannerButton from '@/components/delivery/qr-scanner-button'
@@ -100,9 +99,6 @@ export default function MapPage() {
   return (
     <AppShell>
       <FloatingActions />
-      <div className="absolute opacity-0 pointer-events-none w-px h-px overflow-hidden">
-        <MobileFilterSheet triggerId="mobile-filter-trigger" />
-      </div>
       <div className="flex flex-col lg:flex-row h-full">
         <div className="flex-1 relative min-h-0 h-full">
           {activeView === 'map' && (roleName === 'field_staff' ? (
@@ -125,6 +121,7 @@ export default function MapPage() {
               initialLat={userLocation?.lat}
               initialLng={userLocation?.lng}
               onViewDetails={() => {
+                setDeliverTarget(null, null)
                 const unitSurveyId = deliveryUnit?.survey_id
                 if (unitSurveyId) selectHouse(unitSurveyId)
               }}

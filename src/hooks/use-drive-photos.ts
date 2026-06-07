@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 
 export interface DrivePhoto {
   id: string
@@ -20,6 +20,7 @@ export function useDrivePhotos(surveyId: string | null) {
       return json.data || []
     },
     enabled: !!surveyId,
+    placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
   })
 }

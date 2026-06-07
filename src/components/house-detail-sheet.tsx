@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useSurveyById, useSurveyPayments, useSurveyBillInfo } from '@/hooks/use-survey-data'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { useDrivePhotos } from '@/hooks/use-drive-photos'
+import { useFlaggedPsids } from '@/hooks/use-flagged-psids'
 import { shortenMCName } from '@/lib/mc-utils'
 import { currentMonth } from '@/lib/constants'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
@@ -39,7 +41,14 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   const firstHouse = useBillingStore((s) => s.firstHouse)
   const lastHouse = useBillingStore((s) => s.lastHouse)
 
-  const { data: survey } = useSurveyById(selectedHouseId)
+  const houseListSurvey = useMemo(() => {
+    if (!selectedHouseId) return null
+    return houseList.find((h) => h.survey_id === selectedHouseId) || null
+  }, [houseList, selectedHouseId])
+
+  const { data: apiSurvey } = useSurveyById(houseListSurvey ? null : selectedHouseId)
+
+  const survey = houseListSurvey || apiSurvey
   const { data: billData } = useSurveyPayments(selectedHouseId)
   const { data: billInfo } = useSurveyBillInfo(selectedHouseId)
   const { data: deliveryPhotos = [] } = useDeliveryPhotos(survey?.psid || null)
@@ -49,29 +58,15 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [flagging, setFlagging] = useState(false)
   const [flagDone, setFlagDone] = useState(false)
+  const [showOtherPsids, setShowOtherPsids] = useState(false)
   const roleName = useAuthStore((s) => s.roleName)
 
   useEffect(() => { setImgIdx(0); setGalleryOpen(false) }, [selectedHouseId])
 
-  // Fetch flagged status for this survey/psid
-  const [flaggedSummary, setFlaggedSummary] = useState<{ action: string; label: string; icon: string; plus_count: number } | null>(null)
-  const [flaggedEntries, setFlaggedEntries] = useState<{ psid: string; reason: string; notes: string | null }[]>([])
-  const [showOtherPsids, setShowOtherPsids] = useState(false)
-  useEffect(() => {
-    if (!survey?.survey_id && !survey?.psid) return
-    const surveyId = survey.survey_id
-    const psid = survey.psid
-    const params = new URLSearchParams()
-    if (surveyId) params.set('survey_id', surveyId)
-    if (psid) params.set('psid', psid)
-    fetch(`/api/flagged-psids?${params}`)
-      .then(r => r.json())
-      .then(d => {
-        setFlaggedSummary(d.summary || null)
-        setFlaggedEntries(d.entries || [])
-      })
-      .catch(() => { setFlaggedSummary(null); setFlaggedEntries([]) })
-  }, [survey?.survey_id, survey?.psid])
+  const queryClient = useQueryClient()
+  const { data: flaggedData } = useFlaggedPsids(survey?.survey_id || null, survey?.psid || null)
+  const flaggedSummary = flaggedData?.summary || null
+  const flaggedEntries = flaggedData?.entries || []
 
   interface GalleryImage {
     src: string
@@ -170,7 +165,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
       className={cn(
         "flex flex-col bg-background",
         // Mobile: full-screen overlay
-        "fixed inset-0 z-50",
+        "fixed inset-0 z-[800]",
         // Desktop: side panel (relative flex sibling)
         "lg:relative lg:inset-auto lg:z-auto",
         layoutMode === 'fixed-list'
@@ -210,7 +205,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
       </div>
 
       {/* Scrollable content */}
-      <div ref={contentRef} className="flex-1 overflow-y-auto">
+      <div ref={contentRef} className="flex-1 overflow-y-auto min-h-0">
         {/* Hero Image Gallery */}
         <div className="relative bg-muted">
           {allImages.length > 0 ? (
@@ -359,7 +354,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                         </button>
                         {showOtherPsids && (
                           <div className="mt-1 space-y-0.5">
-                            {flaggedEntries.filter(e => e.psid !== survey.psid).map((entry, i) => (
+                            {flaggedEntries.filter((e) => e.psid !== survey.psid).map((entry, i) => (
                               <div key={i} className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
                                 <span className="truncate max-w-[100px]">{entry.psid}</span>
                                 <span className="shrink-0 text-[9px] italic">
@@ -509,11 +504,8 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                       })
                       if (res.ok) {
                         setFlagDone(true)
-                        setFlaggedSummary({
-                          action: 'PENDING',
-                          label: 'Flagged for review',
-                          icon: 'flag',
-                          plus_count: 1,
+                        queryClient.invalidateQueries({
+                          queryKey: ['flagged-psids', survey.survey_id, survey.psid],
                         })
                       }
                     } finally {
@@ -533,7 +525,6 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
               )}
             </div>
           )}
-          {layoutMode === 'sliding' && (
           <div className="flex items-center justify-between px-3 py-2">
             <div className="flex items-center gap-1.5">
               <Button
@@ -583,7 +574,6 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
               </Button>
             </div>
           </div>
-          )}
         </div>
       )}
 

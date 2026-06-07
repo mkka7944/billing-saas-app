@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useEffect } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyData } from '@/hooks/use-survey-data'
 import { shortenMCName } from '@/lib/mc-utils'
@@ -17,22 +17,24 @@ export function SurveyList() {
   const setView = useBillingStore((s) => s.setView)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const activeView = useBillingStore((s) => s.activeView)
+  const listPage = useBillingStore((s) => s.listPage)
+  const setListPage = useBillingStore((s) => s.setListPage)
 
-  const [page, setPage] = useState(1)
   const pageSize = 20
 
-  const { data, isLoading } = useSurveyData(filters, page, pageSize)
+  const { data, isLoading } = useSurveyData(filters, listPage, pageSize)
 
   const totalPages = useMemo(() => Math.ceil((data?.total || 0) / pageSize), [data?.total])
   const items = data?.data || []
 
   useEffect(() => {
-    setPage(1)
+    setListPage(1)
   }, [filters])
 
-  // Auto-select first item when entering list view (desktop HDS default-open behavior)
+  // Auto-select first item when entering list view (desktop only)
   useEffect(() => {
     if (activeView !== 'list') return
+    if (window.innerWidth < 1024) return
     if (!items.length) return
     const inPage = items.some((i) => i.survey_id === selectedHouseId)
     if (selectedHouseId && inPage) return
@@ -121,10 +123,10 @@ export function SurveyList() {
 
       {/* Pagination */}
       <PaginationBar
-        page={page}
+        page={listPage}
         totalPages={totalPages}
         totalRecords={data?.total || 0}
-        onPageChange={setPage}
+        onPageChange={setListPage}
         centerInfo={(() => {
           if (filters.ucs.length) return `${filters.ucs[0]}${filters.ucs.length > 1 ? ` +${filters.ucs.length - 1}` : ''} · ${(data?.total || 0).toLocaleString()} records`
           return `${selectedCity || ''} · ${(data?.total || 0).toLocaleString()} records`

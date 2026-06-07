@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 
 export interface DeliveryPhoto {
   id: string
@@ -24,6 +24,7 @@ export function useDeliveryPhotos(psid: string | null) {
       return json.data || []
     },
     enabled: !!psid,
-    staleTime: 1000 * 60,
+    placeholderData: keepPreviousData,
+    staleTime: 5 * 60 * 1000,
   })
 }

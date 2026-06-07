@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import type { SurveyUnit, FilterState, BillInfo } from '@/types'
 
 export function useSurveyData(filters: FilterState, page = 1, pageSize = 50) {
@@ -41,6 +41,7 @@ export function useSurveyById(id: string | null) {
       return json.data as SurveyUnit | null
     },
     enabled: !!id,
+    placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
   })
 }
@@ -55,6 +56,7 @@ export function useSurveyPayments(surveyId: string | null) {
       return res.json()
     },
     enabled: !!surveyId,
+    placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
   })
 }
@@ -69,6 +71,7 @@ export function useSurveyBillInfo(surveyId: string | null) {
       return res.json() as Promise<BillInfo>
     },
     enabled: !!surveyId,
+    placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
   })
 }

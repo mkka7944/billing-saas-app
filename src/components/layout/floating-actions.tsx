@@ -3,10 +3,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { Search, SlidersHorizontal, Layers, X } from 'lucide-react'
+import { MobileFilterSheet } from '@/components/filter-panel'
 
 export function FloatingActions() {
   const [open, setOpen] = useState(false)
   const [searchVisible, setSearchVisible] = useState(false)
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const mapType = useBillingStore((s) => s.mapType)
   const setMapType = useBillingStore((s) => s.setMapType)
@@ -17,6 +19,7 @@ export function FloatingActions() {
     if (selectedHouseId) {
       setOpen(false)
       setSearchVisible(false)
+      setMobileFilterOpen(false)
     }
   }, [selectedHouseId])
 
@@ -27,7 +30,7 @@ export function FloatingActions() {
 
   const handleFilter = useCallback(() => {
     setOpen(false)
-    document.getElementById('mobile-filter-trigger')?.click()
+    setMobileFilterOpen(true)
   }, [])
 
   const handleSatellite = useCallback(() => {
@@ -39,13 +42,13 @@ export function FloatingActions() {
 
   return (
     <>
-      <div className="fixed right-3 top-1/2 -translate-y-1/2 z-40 lg:hidden">
+      <div className="fixed right-3 top-1/2 -translate-y-1/2 z-[800] lg:hidden">
         {open ? (
           <div className="flex flex-col items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
             <div className="flex flex-col gap-1 p-1.5 rounded-xl bg-background/80 backdrop-blur-md border border-border shadow-lg">
               <ActionButton icon={Search} label="Search" onClick={handleSearch} />
               <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} />
-              <ActionButton icon={Layers} label={mapType === 'streets' ? 'Satellite' : 'Street'} onClick={handleSatellite} />
+              <ActionButton icon={Layers} label={mapType === 'streets' ? 'Satellite' : 'Street'} onClick={handleSatellite} active={mapType === 'satellite'} />
             </div>
             <button
               onClick={() => setOpen(false)}
@@ -73,6 +76,8 @@ export function FloatingActions() {
           onClose={() => setSearchVisible(false)}
         />
       )}
+
+      <MobileFilterSheet open={mobileFilterOpen} onClose={() => setMobileFilterOpen(false)} />
     </>
   )
 }
@@ -81,15 +86,19 @@ function ActionButton({
   icon: Icon,
   label,
   onClick,
+  active,
 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
   onClick: () => void
+  active?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+      className={`h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer transition-colors ${
+        active ? 'text-blue-500' : 'text-muted-foreground hover:text-foreground'
+      }`}
       title={label}
       aria-label={label}
     >
@@ -113,7 +122,7 @@ function SlideDownSearch({
   }, [])
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[60] pt-[48px] lg:hidden animate-in slide-in-from-top-2 duration-200">
+    <div className="fixed top-0 left-0 right-0 z-[800] pt-[48px] lg:hidden animate-in slide-in-from-top-2 duration-200">
       <div className="flex items-center gap-2 px-3 py-2 bg-background border-b shadow-sm">
         <div className="flex-1 relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

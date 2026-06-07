@@ -53,7 +53,7 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
         <div className="flex items-center gap-1 min-w-0 flex-1">
           <button
             onClick={toggleSidebar}
-            className="h-11 w-11 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0"
+            className="h-11 w-11 lg:hidden flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer shrink-0"
             aria-label="Menu"
           >
             <Menu className="h-4 w-4" />
@@ -66,11 +66,17 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
 
         {actions ?? (
           <div className="flex items-center gap-1 shrink-0">
+            {isRefreshing && (
+              <span className="text-[10px] text-muted-foreground font-medium animate-pulse whitespace-nowrap">Syncing...</span>
+            )}
+            {showSuccess && !isRefreshing && (
+              <span className="text-[10px] text-green-600 dark:text-green-300 font-medium whitespace-nowrap">Updated</span>
+            )}
             <div className="relative">
               <button
                 onClick={handleRefresh}
                 disabled={isRefreshing}
-                className="h-11 w-11 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-9 w-9 flex items-center justify-center rounded-lg border border-border hover:bg-muted cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 title={isRefreshing ? 'Updating...' : showSuccess ? 'Updated' : 'Refresh data'}
               >
                 <RefreshCw
@@ -87,16 +93,14 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
               )}
             </div>
             <NotificationsBell />
-            {isRefreshing && (
-              <span className="text-[10px] text-muted-foreground font-medium animate-pulse whitespace-nowrap">Syncing...</span>
-            )}
-            {showSuccess && !isRefreshing && (
-              <span className="text-[10px] text-green-600 dark:text-green-300 font-medium whitespace-nowrap">Updated</span>
-            )}
-
-            <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center shrink-0">
-              <span className="text-[10px] font-black text-primary">
-                {(displayName || user?.email)?.charAt(0).toUpperCase() || 'U'}
+            <div className="h-9 flex items-center gap-1.5 px-2 rounded-lg border border-border hover:bg-muted shrink-0 cursor-pointer">
+              <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-[10px] font-black text-primary">
+                  {(displayName || user?.email)?.charAt(0).toUpperCase() || 'U'}
+                </span>
+              </div>
+              <span className="text-[10px] font-medium truncate max-w-[80px]">
+                {displayName || user?.email?.split('@')[0] || 'User'}
               </span>
             </div>
           </div>

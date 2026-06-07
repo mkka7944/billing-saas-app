@@ -612,41 +612,14 @@ function ActionButtons() {
 
 // ─── Mobile: Bottom Sheet ──────────────────────────────────────
 
-export function MobileFilterSheet({ triggerId }: { triggerId?: string } = {}) {
-  const [open, setOpen] = useState(false)
+export function MobileFilterSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const cancelFilters = useBillingStore((s) => s.cancelFilters)
-  const filters = useBillingStore((s) => s.filters)
-
-  const activeCount = [
-    filters.ucs.length,
-    filters.surveyor !== null,
-    filters.paymentStatus !== 'all',
-  ].filter(Boolean).length
 
   return (
     <>
-      <button
-        id={triggerId}
-        onClick={() => setOpen(true)}
-        className={cn(
-          'h-9 px-3 text-xs font-bold rounded-lg border flex items-center gap-1.5 transition-colors cursor-pointer shrink-0',
-          activeCount > 0
-            ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/15'
-            : 'border-border hover:bg-muted'
-        )}
-      >
-        <SlidersHorizontal className="h-3.5 w-3.5" />
-        Filters
-        {activeCount > 0 && (
-          <span className="inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-            {activeCount}
-          </span>
-        )}
-      </button>
-
       {open && (
-        <div className="fixed inset-0 z-50 flex flex-col">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { cancelFilters(); setOpen(false) }} />
+        <div className="fixed inset-0 z-[800] flex flex-col">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { cancelFilters(); onClose() }} />
           <div
             className={cn(
               'absolute bottom-0 left-0 right-0 bg-background rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh] z-10',
@@ -657,7 +630,7 @@ export function MobileFilterSheet({ triggerId }: { triggerId?: string } = {}) {
               <div className="w-9 h-1 rounded-full bg-muted-foreground/20" />
             </div>
             <div className="flex-1 overflow-y-auto">
-              <FilterPanelInner onClose={() => setOpen(false)} />
+              <FilterPanelInner onClose={onClose} />
             </div>
           </div>
         </div>

@@ -20,7 +20,9 @@ interface BillingState {
   houseList: SurveyUnit[]
   houseListIndex: number
   houseListTotal: number
+  listPage: number
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
+  setListPage: (page: number) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
   setDeliverTarget: (id: string | null, unit?: AssignmentItemUnit | null) => void
   setDeliverableList: (list: AssignmentItemUnit[]) => void
@@ -75,6 +77,7 @@ export const useBillingStore = create<BillingState>()(
       houseList: [],
       houseListIndex: 0,
       houseListTotal: 0,
+      listPage: 1,
       mapCenter: [32.0836, 72.6712],
       mapZoom: 12,
       mapType: 'streets',
@@ -154,23 +157,27 @@ export const useBillingStore = create<BillingState>()(
         })
       },
       nextHouse: () => {
-        const { houseList, houseListIndex, selectedHouseId } = get()
+        const { houseList, houseListIndex, selectedHouseId, listPage } = get()
         if (houseListIndex < houseList.length - 1) {
           const next = houseListIndex + 1
           const nextId = houseList[next].survey_id
           if (nextId !== selectedHouseId) {
             set({ selectedHouseId: nextId, houseListIndex: next })
           }
+        } else if (houseList.length > 0) {
+          set({ listPage: listPage + 1 })
         }
       },
       prevHouse: () => {
-        const { houseList, houseListIndex, selectedHouseId } = get()
+        const { houseList, houseListIndex, selectedHouseId, listPage } = get()
         if (houseListIndex > 0) {
           const prev = houseListIndex - 1
           const prevId = houseList[prev].survey_id
           if (prevId !== selectedHouseId) {
             set({ selectedHouseId: prevId, houseListIndex: prev })
           }
+        } else if (listPage > 1) {
+          set({ listPage: listPage - 1 })
         }
       },
       firstHouse: () => {
@@ -195,6 +202,7 @@ export const useBillingStore = create<BillingState>()(
       setMapCenter: (center) => set({ mapCenter: center }),
       setMapZoom: (zoom) => set({ mapZoom: zoom }),
       setMapType: (type) => set({ mapType: type }),
+      setListPage: (page) => set({ listPage: Math.max(1, page) }),
     }),
     {
       name: 'billing-store',
