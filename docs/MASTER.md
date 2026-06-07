@@ -2080,6 +2080,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-05 | 24.0 | **Speed optimizations + admin Force Complete**: GPS timeout reduced 8s → 3s, `enableHighAccuracy` off (+3x faster on GPS-poor devices). Context-aware delivery messages ("Awaiting GPS Verification" vs "Out of range — Awaiting Review" — no misleading "Photos pending sync"). Optimistic cache update (status flips instantly on list, no refetch wait). New `POST /api/deliveries/force` admin endpoint + "Force Complete (admin)" button on sheet. MASTER.md updated with Part 8 session log. |
 | 2026-06-05 | 25.0 | **Notifications system (P1-P3)**: DB migration `037-notifications.sql` (not applied), Notification type, `GET /api/notifications`, `POST /api/notifications/read`, `POST /api/admin/notifications`, `use-notifications` hook, NotificationsBell with mobile sheet + desktop dropdown, bell on DesktopFilterBar + AppHeader, staff notification form in Users tab sidebar. Users tab redesigned: sidebar layout, city group headers, Table component, RoleSelect CSS with colored dots. Panel positioning fixed (absolute → fixed for desktop). Recipient dropdown shows display name. |
 | 2026-06-06 | 26.0 | **Users tab UI polish (P4)**: `hideChevron` prop on SelectTrigger for icon-only dropdowns. City accent colors on group headers (emerald=Sargodha, blue=Bhalwal, amber=Khushab) + city selector dropdowns. Typography standardization (text-xs, text-[10px] badges). Action dropdown cleanup (size-7, hideChevron, no conflicting CSS). |
+| 2026-06-07 | 27.0 | **Post-launch bug fixes**: Double header on desktop (AppHeader wrapped in `lg:hidden`). HDS body not rendering from map — Leaflet z-index conflict (HDS `z-50` vs Leaflet panes up to z-700 → changed to `z-[800]`). Floating icons behind Leaflet (`z-40` → `z-[800]`). Mobile filter sheet reliability (removed hidden-DOM trigger mechanism, direct state control via `open`/`onClose` props). Mobile header uniform styling (all buttons `h-9 border border-border`, avatar shows full name, status text repositioned). 6 files changed. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -3424,7 +3425,41 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 3. Action dropdown (⋮) has no chevron — just the three dots icon
 4. `npx tsc --noEmit` — zero errors
 
+### 2026-06-07 (Part 10) — Post-Launch Bug Fixes: Double Header, HDS z-index, FloatingActions, Mobile Header — Location: Home
+
+**Focus:** Fix 4 post-launch bugs identified in field use — double header on desktop, HDS body not rendering from map, floating icons behind map, mobile header styling.
+
+**Done (Double Header Fix):**
+- **`AppShell.tsx:64`**: Wrapped `<AppHeader />` in `<div className="lg:hidden">` — hides mobile top bar on desktop (≥1024px). Desktop now shows sidebar-only header.
+
+**Done (HDS Body Not Rendering from Map):**
+- **Fixes applied in 2 files:**
+  1. `map/page.tsx:127`: Added `setDeliverTarget(null, null)` before `selectHouse(survey_id)` — closes UnitDeliverySheet first when tapping "View Details". Prevents z-index clash between two overlapping fixed overlays (UnitDeliverySheet at z-[1001] vs HDS at z-50).
+  2. `house-detail-sheet.tsx:168`: Changed HDS mobile z-index from `z-50` → `z-[800]`. Root cause: Leaflet's internal panes use z-indexes up to **700** (tile pane 200, marker pane 600, popup pane 700). The HDS at z-50 rendered BELOW Leaflet tiles, so the map covered the HDS body. HDS header appeared because it sits above the map container's top edge. Works on list page because no Leaflet map is present.
+  - `transform-gpu` tested and reverted — not the root cause.
+  - `min-h-0` tested and reverted — not the root cause.
+
+**Done (Mobile Floating Actions):**
+- **`floating-actions.tsx`**: Changed `z-40` → `z-[800]` — floating icons were behind Leaflet's tile pane (z-200). Added direct `mobileFilterOpen` state for filter sheet control, removing broken `document.getElementById('mobile-filter-trigger')?.click()` mechanism. Added `active` prop to Satellite icon → blue tint when satellite mode active. Added `active` prop to `ActionButton` for dynamic coloring.
+- **`filter-panel.tsx`**: `MobileFilterSheet` interface changed from `{ triggerId?: string }` to `{ open: boolean; onClose: () => void }`. Removed internal `useState`, hidden trigger button, and fragile hidden-DOM click mechanism (the hidden `<div className="absolute opacity-0 pointer-events-none w-px h-px overflow-hidden">` wrapper). Filter sheet now opens reliably via direct state prop.
+- **`map/page.tsx`**: Removed hidden `MobileFilterSheet` wrapper div and its import.
+
+**Done (Mobile Header Styling):**
+- **`AppHeader.tsx`**: 3 changes for uniform mobile header:
+  1. Status text (`Syncing...`/`Updated`) moved from between Bell and Avatar to **before the Refresh button** — clean icon grouping.
+  2. Refresh button: `h-11 w-11` (no border) → `h-9 w-9 border border-border` — matches NotificationsBell exact style.
+  3. Avatar: `w-5 h-5` initial-only badge → `h-9 border` button with initial + truncated display name.
+  All 3 right-side elements share uniform `h-9 border border-border rounded-lg hover:bg-muted` styling.
+
+**Known Issues (Carried Forward):**
+- `037-notifications.sql` not yet applied to Supabase — PAT token required.
+- F1 (GAS webhook timeout) still 🔴 Blocker — needs office PC verification.
+- Search in FloatingActions uses `setPendingFilter` instead of `setFilters` — search text does not apply to data queries (pending fix).
+- Mobile Filter icon lacks active filter indicator (pending fix).
+- Map view does not update markers after filter Apply on mobile (pending investigation).
+
 ---
+
 
 ## 19. Data Model Rules (Comprehensive Reference)
 
