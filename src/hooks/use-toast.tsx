@@ -11,7 +11,8 @@ export interface Toast {
 }
 
 interface ToastContextValue {
-  toast: (message: string, variant?: ToastVariant) => void
+  toast: (message: string, variant?: ToastVariant) => string
+  updateToast: (id: string, message: string, variant?: ToastVariant) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
@@ -21,6 +22,9 @@ export function useToast() {
   if (!ctx) throw new Error('useToast must be used within <ToastProvider>')
   return ctx
 }
+
+
+
 
 let toastId = 0
 
@@ -46,10 +50,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => [...prev, { id, message, variant }])
     const timer = setTimeout(() => removeToast(id), 5000)
     timersRef.current.set(id, timer)
+    return id
+  }, [removeToast])
+
+  const updateToast = useCallback((id: string, message: string, variant?: ToastVariant) => {
+    const timer = timersRef.current.get(id)
+    if (timer) { clearTimeout(timer); timersRef.current.delete(id) }
+    setToasts((prev) => prev.map((t) => t.id === id ? { ...t, message, ...(variant ? { variant } : {}) } : t))
+    const newTimer = setTimeout(() => removeToast(id), 5000)
+    timersRef.current.set(id, newTimer)
   }, [removeToast])
 
   return (
-    <ToastContext value={{ toast }}>
+    <ToastContext value={{ toast, updateToast }}>
       {children}
       {toasts.length > 0 && (
         <div className="fixed top-14 right-4 z-[9999] flex flex-col gap-2 max-w-[260px] pointer-events-none">

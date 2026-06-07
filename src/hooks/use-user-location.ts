@@ -19,6 +19,7 @@ export function useUserLocation() {
   const retryCountRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
+  const highAccuracyRef = useRef(true)
 
   const startWatch = useCallback(() => {
     if (!navigator.geolocation) return
@@ -39,6 +40,14 @@ export function useUserLocation() {
         setError(null)
       },
       () => {
+        if (highAccuracyRef.current) {
+          highAccuracyRef.current = false
+          navigator.geolocation.clearWatch(id)
+          watchIdRef.current = null
+          startWatch()
+          return
+        }
+
         const attempts = retryCountRef.current
         retryCountRef.current++
 
@@ -55,7 +64,7 @@ export function useUserLocation() {
           setIsTracking(false)
         }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      { enableHighAccuracy: highAccuracyRef.current, timeout: 10000, maximumAge: 5000 }
     )
     watchIdRef.current = id
   }, [])

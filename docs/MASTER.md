@@ -2113,7 +2113,8 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-05 | 25.0 | **Notifications system (P1-P3)**: DB migration `037-notifications.sql` (not applied), Notification type, `GET /api/notifications`, `POST /api/notifications/read`, `POST /api/admin/notifications`, `use-notifications` hook, NotificationsBell with mobile sheet + desktop dropdown, bell on DesktopFilterBar + AppHeader, staff notification form in Users tab sidebar. Users tab redesigned: sidebar layout, city group headers, Table component, RoleSelect CSS with colored dots. Panel positioning fixed (absolute → fixed for desktop). Recipient dropdown shows display name. |
 | 2026-06-06 | 26.0 | **Users tab UI polish (P4)**: `hideChevron` prop on SelectTrigger for icon-only dropdowns. City accent colors on group headers (emerald=Sargodha, blue=Bhalwal, amber=Khushab) + city selector dropdowns. Typography standardization (text-xs, text-[10px] badges). Action dropdown cleanup (size-7, hideChevron, no conflicting CSS). |
 | 2026-06-07 | 27.0 | **Post-launch bug fixes**: Double header on desktop (AppHeader wrapped in `lg:hidden`). HDS body not rendering from map — Leaflet z-index conflict (HDS `z-50` vs Leaflet panes up to z-700 → changed to `z-[800]`). Floating icons behind Leaflet (`z-40` → `z-[800]`). Mobile filter sheet reliability (removed hidden-DOM trigger mechanism, direct state control via `open`/`onClose` props). Mobile header uniform styling (all buttons `h-9 border border-border`, avatar shows full name, status text repositioned). 6 files changed. |
-| 2026-06-07 | 28.0 | **Unsent delivery flow fixes + testing protocol.** GPS signal tracking, toast redesign (top-right pill, 5s slide-in). "Always unsent" feature (7 steps): migration 038, admin toggle, handleFile unsent mode, max limit enforcement, UnsentBadge floating modal, skipAutoSync param. Fixed unsent delivery gap: POST /api/deliveries/mark-processing, POST /api/deliveries/promote, filter-bar icon replacing floating badge, concurrent processQueue (batch 3), orphan cleanup on 403/404. Bug: unsent icon placed in deliver filter bar — needs moving to FloatingActions. Testing protocol documented in Section 24. |
+| 2026-06-07 | 28.0 | **Unsent delivery flow fixes + testing protocol.** Toast redesign (top-right pill, 5s slide-in). "Always unsent" feature (7 steps): migration 038, admin toggle, handleFile unsent mode, max limit enforcement, UnsentBadge floating modal, skipAutoSync param. Fixed unsent delivery gap: POST /api/deliveries/mark-processing, POST /api/deliveries/promote, filter-bar icon replacing floating badge, concurrent processQueue (batch 3), orphan cleanup on 403/404. Bug: unsent icon placed in deliver filter bar — needs moving to FloatingActions. Shared GPS watcher with retry (1s/3s/10s). Delivery step progress overlay. Testing protocol in Section 24. |
+| 2026-06-07 | 29.0 | **Corrections: Progress overlay → sequential toasts + GPS dots.** Removed progress step checklist from sheet (overlaid action buttons). Added `updateToast(id, msg, variant?)` to toast system. Added `onProgress` callback to `useDeliverUnit.deliver()`. Online path: "Compressing..."→"Uploading..."→"Recording..."→final result as sequential toast updates. Unsent path: "Saving..."→"Compressing..."→"Saved ✓". Added 3-dot GPS signal indicator after live distance text (accuracy-based green/gray dots). 3 files changed. Part 11 doc corrected (removed incorrect GPS dots claim). Part 12 added. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -3491,16 +3492,14 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 - Mobile Filter icon lacks active filter indicator (pending fix).
 - Map view does not update markers after filter Apply on mobile (pending investigation).
 
-### 2026-06-07 (Part 11) — GPS Signal + Toast Redesign + "Always Unsent" Feature + Delivery Fixes — Location: Home
+### 2026-06-07 (Part 11) — Toast Redesign + "Always Unsent" Feature + Delivery Fixes — Location: Office
 
-**Focus:** Build GPS signal indicator in sheet, redesign toast system, implement "always unsent" delivery mode, fix the delivery status gap in unsent mode, establish testing protocol.
+**Focus:** Redesign toast system, implement "always unsent" delivery mode, fix the delivery status gap in unsent mode, establish testing protocol.
 
 **Done:**
 
-**GPS Signal Indicator (3 files):**
-- `src/hooks/use-user-location.ts` — Added `accuracy` field to return value. Expose `gpsAccuracy` from GeolocationPosition.coords.accuracy.
-- `src/components/delivery/unit-delivery-sheet.tsx` — Added GPS signal dots (3 dots: all green ≥good, 2 green =fair, 1 green =poor, all gray =inactive). Updates via accuracy from shared useUserLocation hook.
-- `src/components/delivery/staff-map.tsx` — Passes user location with accuracy to sheet context for GPS signal display.
+**GPS Accuracy field:**
+- `src/hooks/use-user-location.ts` — Added `accuracy` field to return type. `sharedLocation.accuracy` returns meters. GPS retry logic with exponential backoff (1s, 3s, 10s) on watch failure.
 
 **Toast Redesign (1 file):**
 - `src/hooks/use-toast.tsx` — Redesigned from bottom-right card stack to top-right slim pill below header. Styled as `rounded-full bg-white/90 backdrop-blur-sm` with variant-colored border + icon. `animate-slide-in-right` animation. 5s duration. `max-w-[260px]` on mobile. Keyframes added to globals.css.
@@ -3527,6 +3526,8 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 - Delivery status must be recorded at capture time (`processing`), even if photo upload is deferred.
 - "Always unsent" default OFF — admin must enable. Staff sees filter-bar icon with count badge when queue is non-empty.
 - Unsent icon should be in FloatingActions (map page floating panel), not in deliver page filter bar — deferred to next session.
+- Progress steps were overlaid on action buttons area — confusing for staff. Redesigned to sequential toast updates in Part 12.
+- GPS signal 3-dot indicator was described in documentation but never rendered in the sheet. Implemented in Part 12.
 - All 5 fixes pass `npx tsc --noEmit` with zero errors.
 
 **Testing Verification:**
@@ -3538,6 +3539,72 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 6. Max limit: 50th item blocks 51st with toast
 7. Orphan: revoke assignment → Sync All → photo removed silently
 8. Admin toggles OFF → normal online upload resumes
+
+### 2026-06-07 (Part 12) — Progress Steps → Sequential Toasts + GPS Signal Dots — Location: Home
+
+**Focus:** Fix the progress overlay in delivery sheet (moved to sequential toast updates), implement GPS signal 3-dot indicator.
+
+**Done:**
+
+**Sequential Toast Updates (3 files):**
+- `src/hooks/use-toast.tsx` — Added `updateToast(id, message, variant?)`. Reuses existing toast ID, clears old timer, updates message/variant in-place, sets new 5s auto-dismiss. Returns toast ID from `toast()` for chaining.
+- `src/hooks/use-deliver-unit.ts` — Added optional `onProgress: (step: DeliveryProgress) => void` callback parameter to `deliver()`. Called at each progress state transition (compressing, uploading, saving) so the sheet can fire toast updates. Backward compatible.
+- `src/components/delivery/unit-delivery-sheet.tsx`:
+  - **Removed** progress step checklist (the `✓ ○ spinner` step list that replaced action buttons during delivery)
+  - **Online path**: One toast ID, updates through `Compressing photo...` → `Uploading to Drive...` → `Recording delivery...` → final `Delivered (Xm away) ✓` or `Processing — awaiting review`
+  - **Unsent path**: One toast ID, updates through `Saving to queue...` → `Compressing photo...` → `Saved to queue ✓`
+  - Action buttons always visible — button shows `Processing...` and disabled during delivery
+
+**GPS Signal Dots (1 file):**
+- `src/components/delivery/unit-delivery-sheet.tsx` — 3 dots after live distance text:
+  - Accuracy ≤ 10m → 3 green dots
+  - Accuracy ≤ 50m → 2 green, 1 gray
+  - Accuracy > 50m → 1 green, 2 gray
+  - No accuracy → all gray
+  - Conditionally rendered when `liveGpsStatus === 'ready'` and `sharedLocation.accuracy != null`
+
+**Key decisions:**
+- Progress steps no longer block the action buttons area — staff sees button state throughout delivery.
+- Sequential toasts use a single toast slot — updates in-place without stacking multiple toasts.
+- `updateToast` is a general-purpose utility (not delivery-specific) — reusable for any progressive workflow.
+- GPS dots use local `gpsAccuracy` state (set from sheet's own watchPosition success callback).
+
+**Testing Verification:**
+1. `/deliver` → tap pending → tap "Take Picture & Deliver" → toast shows "Compressing photo..." → updates to "Uploading to Drive..." → final "Delivered (Xm away) ✓"
+2. Action buttons visible throughout delivery — button shows "Processing..." and disabled
+3. GPS signal 3 dots render near live distance text (3 green = strong, 2 green = fair, 1 green = poor)
+4. Unsent path: "Saving to queue..." → "Compressing photo..." → "Saved to queue ✓"
+5. `npx tsc --noEmit` — zero errors
+
+---
+
+### 2026-06-07 (Part 13) — GPS Debugging Black Hole + lfsvc Discovery — Location: Home
+
+**Focus:** Debug why restored watchPosition code still showed "Locating..." and later "GPS unavailable" on desktop.
+
+**Done:**
+
+**GPS regression analysis (git archaeology):**
+- Working version = commit `ac1bfc8` (5pm 6-6-26). Three effects: (1) fast `getCurrentPosition` low-accuracy init, (2) `watchPosition` high-accuracy live tracking, (3) unmount cleanup.
+- Office commit `248e6b6` replaced (2)+(3) with a sync effect reading from shared `useUserLocation` hook — B3b.2 "Single GPS watcher" optimization.
+- On desktop: fast init still ran and set `'ready'` via Wi-Fi in ~1-2s, but the sync effect's `sharedLocation` dependency caused a race that sometimes overrode to `'unavailable'`.
+- After reverting to the three-effect pattern, the same desktop showed "GPS unavailable" — both `getCurrentPosition` and `watchPosition` failed.
+
+**Root cause (non-code):**
+- Windows **Geolocation Service** (`lfsvc`) was set to **Disabled**. Settings UI showed "Location on" but the service never started.
+- `navigator.geolocation` calls were silently failing everywhere — including Google Maps.
+- Fix: `sc.exe config lfsvc start=auto` + `sc.exe start lfsvc` — service now running.
+
+**Key decisions:**
+- **B3b.2 was premature production optimization.** Two `watchPosition` calls (map + sheet) share the same GPS chip — the second callback adds negligible battery drain. Keeping both is fine during development.
+- **Deferred: Real battery optimization** — `useUserLocation` should use `enableHighAccuracy: false` by default (Wi-Fi/cell, GPS chip off), briefly switch to high accuracy only when the sheet opens for distance calculation. Marked in Remaining Corrections below.
+- **Code remains at proven three-effect pattern.** No shared-watcher complexity. Simple, worked before, will work again.
+
+**Testing Verification:**
+1. Verify lfsvc is Running: `Get-Service lfsvc` → Status: Running
+2. Hard refresh `/deliver` → tap pending → GPS shows distance within 1-2s
+3. GPS dots render based on accuracy (3 green = strong, etc.)
+4. Toast delivery feedback works through all steps
 
 ---
 
@@ -4187,29 +4254,544 @@ ORDER BY ai.psid;
 
 ---
 
+## 26. Delivery Mechanism Comprehensive Audit (2026-06-07)
+
+### 26.1 Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         DELIVERY MECHANISM                               │
+├───────────────────────┬──────────────────────┬──────────────────────────┤
+│   `/deliver` page     │    `/map` page        │   `/settings` page      │
+│   Staff-only list     │  Universal delivery   │   Admin + Staff config  │
+│   (Plain list +       │  (StaffMap +          │   Unsent Images tab     │
+│    UnsentModal)       │   UnitDeliverySheet)  │   Delivery tab (admin)  │
+├──────────┬────────────┴──────────┬────────────┴──────────┬──────────────┤
+│          │                       │                       │              │
+│  useStaffAssignment  │   useUserLocation     │   usePhotoQueue          │
+│  (query from GET     │   (shared GPS watcher │   (IndexedDB `billing-   │
+│   /api/assignments)  │    → StaffMap blue dot│    saas-photo-queue`)    │
+│                      │                       │   Badge + UnsentModal   │
+│  usePhotoQueue       │   useDeliverUnit      │   uses this queue        │
+│  (IndexedDB badge    │   (deliver/deliver-   │                         │
+│   + UnsentModal)     │    NoPhoto hooks)     │  useUnsentPhotos         │
+│                      │                       │  (IndexedDB `unsent-    │
+│                      │                       │   photo-queue`)         │
+│                      │                       │  Settings Unsent tab    │
+│                      │                       │  uses this queue        │
+├──────────────────────┴──────────────────────┴──────────────────────────┤
+│                           API ENDPOINTS                                │
+├─────────────────┬───────────────────────┬──────────────────────────────┤
+│ GET /api/assign │ POST /api/deliveries  │ POST /api/deliveries         │
+│   ments?staff_  │   /mark              │   /mark-processing           │
+│   id=X          │   (Normal delivery:   │   (Unsent mode:              │
+│   → assignment  │    GPS + photo +      │    mark as processing,       │
+│     items with  │    distance check)    │    no distance calc)         │
+│     unit data)  │                       │                              │
+├─────────────────┼───────────────────────┼──────────────────────────────┤
+│ POST /api/deliv │ POST /api/deliveries  │ POST /api/deliveries         │
+│   eries/promote │   /sync-photo         │   /ping                      │
+│   (processing→  │   (Upload to Drive,   │   (sendBeacon on             │
+│    delivered)   │    update photo,      │    tab close)                │
+│                 │    NO status update)  │                              │
+└─────────────────┴───────────────────────┴──────────────────────────────┘
+```
+
+### 26.2 User Flows
+
+#### Flow A: Normal Delivery (unsent_mode.enabled = false)
+
+Path: Staff on `/deliver` → taps unit → `/map` → UnitDeliverySheet → Take Picture → delivered/processing
+
+Step-by-step:
+
+1. **Staff opens `/deliver`** → `useStaffAssignment` fetches items from `GET /api/assignments?staff_id=USER_ID`
+   - Returns `{ data: DailyAssignment, items: AssignmentItemWithUnit[] }`
+   - Each item has `unit` (AssignmentItemUnit) with lat/lng from `survey_units`
+   - React Query with `staleTime: 30s`
+
+2. **Staff taps a pending unit** → `handleSelect(item.id)`:
+   - `setDeliverTarget(item.psid)` — stores PSID in billing store
+   - `router.push('/map?target=PSID')` — navigates to map page
+
+3. **Map page loads** → URL param `?target=PSID` triggers:
+   - Effect reads target from URL → `setDeliverTarget(target)` (no unit yet)
+   - Sync effect: find unit from `deliverableList` (populated from `staffItems[i].unit`) → `setDeliverTarget(target, item)`
+   - `UnitDeliverySheet` renders: `unit={deliverTargetUnit}`, `assignmentItemId={deliveryItem?.id || null}`
+
+4. **UnitDeliverySheet opens** → GPS tracking starts (3 effects):
+   - **Effect A** (Fast init): `setTimeout(100ms)` → `getCurrentPosition` with `{ enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }`. On success: `setLiveGpsStatus('ready')`, sets distance, userLat/userLng.
+   - **Effect B** (WatchPosition): Sets `liveGpsStatus('locating')` → `watchPosition` with `{ enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }`. On success: sets 'ready', distance, userLat/userLng, gpsAccuracy. On error: 'unavailable'.
+   - **Effect C** (Unmount cleanup): `clearWatch(watchIdRef.current)` on component unmount.
+   - **Fast init wins on desktop** (Wi-Fi returns in 1-2s). **WatchPosition wins on mobile** (GPS resolves instantly via `enableHighAccuracy: true`).
+   - Reset effect: When `unit.psid` changes, deliveryStatus/idle/resets, userLat/userLng reset to `initialLat/initialLng` (from `useUserLocation` via `userLocation?.lat/lng`).
+
+5. **Distance badge renders** — shows "X m away" with color coding (green ≤50m, amber ≤200m, gray >200m). 3 GPS accuracy dots (≤10m=3green, ≤50m=2green1gray, >50m=1green2gray).
+
+6. **Staff taps "Take Picture & Deliver"** → `openCamera()` triggers `inputRef.current.click()` (file input with `capture='environment'`).
+
+7. **File selected** → `handleFile(file)` fires:
+   ```javascript
+   const gpsOverride = userLat != null && userLng != null
+     ? { lat: userLat, lng: userLng }
+     : null
+   ```
+   - If `unsentModeEnabled` = true → **Flow B** below
+   - If `unsentModeEnabled` = false → continues:
+
+   ```javascript
+   const progressTid = toast('Compressing photo...', 'info')
+   try {
+     result = await deliver(
+       assignmentItemId, unit.psid, file,
+       unit.lat, unit.lng,  // target coordinates
+       gpsOverride,          // from live GPS tracking
+       (step) => { updateToast(progressTid, msgs[step], 'info') }
+     )
+   } catch (e) {
+     updateToast(progressTid, msg, 'error')
+     setIsDelivering(false)
+     return
+   }
+   ```
+
+8. **`useDeliverUnit.deliver()` executes**:
+   ```javascript
+   // If gpsOverride provided from live tracking, skip captureGPS
+   const gps = gpsOverride ?? await captureGPS()  // captureGPS: 3s timeout, low accuracy
+   const compressed = await compressImage(photoFile)  // WebP, q0.6, 1024px
+   // POST FormData to /api/deliveries/mark
+   const form = new FormData()
+   form.append('photo', compressed, `${psid}_delivery.webp`)
+   form.append('assignment_item_id', assignmentItemId)
+   form.append('psid', psid)
+   if (gps) { form.append('gps_lat', String(gps.lat)); form.append('gps_lng', String(gps.lng)) }
+   if (targetLat != null) form.append('target_lat', String(targetLat))
+   if (targetLng != null) form.append('target_lng', String(targetLng))
+   const res = await fetch('/api/deliveries/mark', { method: 'POST', body: form })
+   ```
+
+9. **Server (`POST /api/deliveries/mark`) processes**:
+   ```javascript
+   // Auth
+   const { data: { user } } = await sup.auth.getUser()  // field_staff role check
+   const ownership = await sup.from('assignment_items')
+     .select('id, status, daily_assignments!inner(staff_id)')
+     .eq('id', assignmentItemId).eq('daily_assignments.staff_id', user.id)
+     .maybeSingle()
+   if (!ownership) → 403
+   // If already delivered/missed → early return (NO photo saved!)
+   if (ownership.status === 'delivered' || ownership.status === 'missed')
+     → return { status: ownership.status, distance: null, already_delivered: true }
+   // Upload photo to GAS webhook (8s AbortController timeout)
+   if (WEBHOOK_URL) {
+     try { fetch(WEBHOOK_URL, { ... with AbortController(8000) }) }
+     catch { /* continue without Drive file */ }
+   }
+   // INSERT delivery_photos record
+   await sup.from('delivery_photos').insert({ assignment_item_id, photo_url, ... })
+   // Calculate Haversine distance
+   let distance = null
+   let status = 'processing'
+   if (gps_lat != null && gps_lng != null && target_lat != null && target_lng != null) {
+     distance = Math.round(haversine(gps_lat, gps_lng, target_lat, target_lng))
+     if (!enforceGps || distance <= gpsThreshold) status = 'delivered'
+   }
+   // UPDATE assignment_items
+   await sup.from('assignment_items').update({ status, delivered_at, gps_lat, gps_lng }).eq('id', assignmentItemId)
+   return { status, distance, photo_url, gps_lat, gps_lng }
+   ```
+
+10. **Client handles result**:
+    ```javascript
+    setDeliveryStatus(result.status)
+    // Toast
+    result.status === 'delivered'
+      ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`  // green success
+      : 'Processing — awaiting review'  // amber warning
+    // If GAS webhook failed (photo_url starts with "pending://")
+    if (result.photo_url?.startsWith('pending://')) {
+      compressImage(file)  // re-compress for IndexedDB
+      enqueueUnsent({ assignmentItemId, psid, photoBlob, gpsLat, gpsLng })  // → unsent-photo-queue
+    }
+    // Optimistic cache update
+    queryClient.setQueryData(['staff-assignment', userId], (old) => {
+      items: old.items.map(item => item.id === assignmentItemId
+        ? { ...item, status: result.status, delivered_at: new Date().toISOString() }
+        : item)
+    })
+    // Invalidate queries
+    queryClient.invalidateQueries(['staff-assignment', 'assignment-totals', 'staff-stats', 'delivery-photos'])
+    // Auto-advance timeout
+    const delay = result.status === 'delivered' ? 2000 : 3500
+    setTimeout(() => { setIsDelivering(false); onClose?.() }, delay)
+    ```
+
+11. **Auto-advance effect**: `[deliveryStatus, onNext]` — when deliveryStatus is 'delivered' or 'processing', calls `onNext?.()` after 2s (independent of the handleFile timeout).
+
+12. **onNext loads next unit** → step 4 repeats for the next pending item.
+
+#### Flow B: Always Unsent Mode (unsent_mode.enabled = true)
+
+Activated via Settings → Delivery tab → "Always Queue Unsent" toggle (admin only).
+
+Step 6 diverges from Flow A:
+
+```javascript
+if (unsentModeEnabled) {
+  // Block if queue full
+  if (queueCount >= unsentMaxLimit) {
+    toast(`Clear unsent queue first (${queueCount}/${unsentMaxLimit})`, 'warning')
+    return
+  }
+  setIsDelivering(true)
+  const progressTid = toast('Saving to queue...', 'info')
+  // 1. Mark item as processing (server-side)
+  const markRes = await fetch('/api/deliveries/mark-processing', {
+    method: 'POST',
+    body: JSON.stringify({ assignmentItemId, psid: unit.psid, gpsLat: gpsOverride?.lat, gpsLng: gpsOverride?.lng })
+  })
+  // 2. Compress photo
+  const compressed = await compressImage(file)
+  // 3. Enqueue to photo-queue (BUG: should be unsent-photo-queue)
+  await enqueuePhoto({
+    assignmentItemId, psid: unit.psid,
+    photoBlob: compressed, email: email || '',
+    gpsLat: gpsOverride?.lat, gpsLng: gpsOverride?.lng,
+    skipAutoSync: true  // never auto-syncs
+  })
+  setDeliveryStatus('processing')
+  updateToast(progressTid, 'Saved to queue ✓', 'success')
+  // Close sheet after 1.5s
+  setTimeout(() => { setIsDelivering(false); onClose?.() }, 1500)
+  return
+}
+```
+
+**mark-processing endpoint** (`POST /api/deliveries/mark-processing`):
+```javascript
+// Auth + ownership check (same as /mark)
+// Insert delivery_photos with photo_url = "pending://unsent/{assignmentItemId}"
+await sup.from('delivery_photos').insert({
+  assignment_item_id: assignmentItemId,
+  photo_url: `pending://unsent/${assignmentItemId}`,
+  gps_lat, gps_lng, synced_to_drive: false
+})
+// Update assignment_items status to 'processing'
+await sup.from('assignment_items').update({ status: 'processing', delivered_at, gps_lat, gps_lng })
+// NO distance calculation — always 'processing'
+```
+
+#### Flow C: Offline Fallback (Network Error)
+
+When `deliver()` in Flow A throws a TypeError (network failure):
+```javascript
+// deliver() catches TypeError and returns null
+catch (e) {
+  if (e instanceof TypeError) return null  // network error
+  throw e  // other errors propagate
+}
+```
+
+In handleFile:
+```javascript
+if (result) { /* Flow A result processing */; return }
+// result is null → offline fallback
+const compressed = await compressImage(file)
+await enqueuePhoto({
+  assignmentItemId, psid: unit.psid,
+  photoBlob: compressed, email: email || '',
+  // No skipAutoSync → will auto-sync when online
+})
+setDeliveryStatus('processing')  // NO toast shown
+setIsDelivering(false)
+```
+
+When online, `usePhotoQueue` auto-processes:
+```javascript
+// processQueue() runs on online event
+// Batch 3 photos via Promise.allSettled
+for each photo:
+  1. Upload to GAS webhook (resolvePhotoData → base64 → POST)
+  2. If webhook succeeds: POST /api/deliveries/promote
+     a. INSERT/UPDATE delivery_photos with real Drive URL
+     b. UPDATE assignment_items SET status='delivered' WHERE status='processing'
+  3. If promote returns 403/404: remove from queue (orphan)
+  4. If any failure: incrementRetry() — removed after 3 failures
+```
+
+### 26.3 GPS System Detail
+
+| Component | Hook/Effect | Accuracy | Timeout | Lifetime | Data flow |
+|-----------|-------------|----------|---------|----------|-----------|
+| **StaffMap blue dot** | `useUserLocation` (shared hook) | `enableHighAccuracy: true` | 30s | Continuous (page session) | `location` → Marker position |
+| **Sheet distance (fast init)** | getCurrentPosition | `enableHighAccuracy: false` | 5s | Once per unit open | → userLat/userLng → gpsOverride |
+| **Sheet distance (watchPosition)** | watchPosition | `enableHighAccuracy: true` | 30s | While sheet idle | → userLat/userLng → gpsOverride |
+| **deliver() captureGPS** | getCurrentPosition fallback | `enableHighAccuracy: false` | 3s | Once per delivery | Used only if gpsOverride is null |
+| **GPS override** | From userLat/userLng state | N/A | N/A | Closure at render time | Bypasses captureGPS entirely |
+
+**Current state:** TWO independent GPS watchers (StaffMap + Sheet). Battery impact minimal — same GPS chip, sheet watcher runs 10-15s per delivery.
+
+**Note:** `useUserLocation` hook also uses watchPosition with its own retry logic (exponential backoff: 1s, 3s, 10s). This hook is ONLY used by StaffMap (blue dot) and map page (initialLat). UnitDeliverySheet does NOT import `useUserLocation` as of Part 13 fix.
+
+#### Location on Desktop vs Mobile
+
+| Aspect | Desktop (Office/Home PC) | Mobile (Production) |
+|--------|-------------------------|---------------------|
+| GPS hardware | None (Wi-Fi positioning) | GPS chip |
+| lfsvc service | Required (was disabled on home PC) | N/A |
+| Fast init | getCurrentPosition returns in 1-2s via Wi-Fi | May fail (3s timeout too fast) |
+| WatchPosition | enableHighAccuracy:true may hang → fast init wins | enableHighAccuracy:true resolves instantly |
+| captureGPS fallback | getCurrentPosition 3s timeout → may return null | getCurrentPosition works but slow |
+
+### 26.4 Two Separate IndexedDB Queues
+
+| Property | `usePhotoQueue` | `useUnsentPhotos` |
+|----------|----------------|-------------------|
+| **Lib file** | `src/lib/photo-queue.ts` | `src/lib/unsent-photo-queue.ts` |
+| **DB Name** | `billing-saas-photo-queue` | *(separate IndexedDB)* |
+| **DB Version** | 3 | *(separate)* |
+| **Used by** | deliver page badge, UnsentModal, offline fallback, unsent mode | Settings "Unsent Images" tab |
+| **Auto-sync on online?** | Yes (unless `skipAutoSync: true`) | No |
+| **Promote endpoint** | `/api/deliveries/promote` (updates status to delivered) | `/api/deliveries/sync-photo` (NO status update) |
+| **Storage** | Blob (via photoBlob field) | dataUrl OR Blob |
+| **Fields** | id, assignmentItemId, psid, dataUrl/photoBlob, capturedAt, email, gpsLat, gpsLng, retryCount, status, lastError | id, assignmentItemId, psid, dataUrl/photoBlob, gpsLat, gpsLng, createdAt, retryCount |
+
+**photo-queue processing flow:**
+```
+queued → uploadSingle(): POST to GAS webhook → POST /api/deliveries/promote
+         → markSynced (status = 'synced') → clearSynced (delete synced entries)
+```
+
+**unsent-photo-queue processing flow:**
+```
+Unsentry entry → retrySingle(): resolvePhotoData (blob→dataUrl) → POST /api/deliveries/sync-photo
+                → removeUnsent (delete entry)
+```
+
+### 26.5 Server Endpoint Specification
+
+#### POST /api/deliveries/mark
+- **Purpose:** Normal one-tap delivery
+- **Input:** FormData (multipart)
+  - `photo` — WebP Blob (file)
+  - `assignment_item_id` — UUID string
+  - `psid` — string
+  - `gps_lat` / `gps_lng` — optional float strings
+  - `target_lat` / `target_lng` — optional float strings
+  - `skip_photo` — 'true' (no-photo delivery)
+- **Auth:** supabase.auth.getUser() + field_staff role check + ownership (assignment_items.daily_assignments.staff_id = user.id)
+- **Already delivered guard:** If item.status is 'delivered' or 'missed', return early with `{ status, distance: null, already_delivered: true }`. **NOTE: photo is NOT saved.**
+- **No 'processing' guard:** Items with status 'processing' proceed through full flow, creating duplicate delivery_photos records.
+- **GAS webhook:** POST to NEXT_PUBLIC_DRIVE_WEBHOOK_URL (AbortController 8s timeout). On success: extract fileId. On failure: continue without Drive file.
+- **Distance calculation:** Haversine formula. Only computed if gps_lat/lng AND target_lat/lng are all non-null.
+- **Status determination:**
+  - distance ≤ threshold(default 50m) OR enforceGps=false → `'delivered'`
+  - distance > threshold OR GPS null OR target null → `'processing'`
+- **Update:** `assignment_items.status = delivered_at = gps_lat = gps_lng =`
+- **Response:** `{ status, distance, photo_url, gdrive_file_id, gps_lat, gps_lng, target_lat, target_lng }`
+
+#### POST /api/deliveries/mark-processing
+- **Purpose:** Quick mark as processing (used by unsent mode)
+- **Input:** JSON
+  - `assignmentItemId`, `psid`, `gpsLat`, `gpsLng`
+- **Auth:** Same as /mark
+- **Behavior:**
+  - INSERT delivery_photos (photo_url = `"pending://unsent/{assignmentItemId}"`)
+  - UPDATE assignment_items SET status = 'processing'
+  - NO distance calculation
+  - NO photo upload
+- **Response:** `{ status: 'processing' }`
+
+#### POST /api/deliveries/promote
+- **Purpose:** Promote processing item to delivered (after successful Drive upload)
+- **Input:** JSON
+  - `assignmentItemId`, `photoUrl`, `gdriveFileId`, `gpsLat`, `gpsLng`
+- **Auth:** Same as /mark
+- **Behavior:**
+  - INSERT or UPDATE delivery_photos (real Drive URL, synced_to_drive=true)
+  - UPDATE assignment_items SET status='delivered' WHERE id=X AND status='processing'
+- **Response:** `{ status: 'delivered', promoted: true }`
+
+#### POST /api/deliveries/sync-photo
+- **Purpose:** Upload unsent photos to Drive (called by Settings Unsent Images → "Sync All" / retrySingle)
+- **Input:** JSON
+  - `assignmentItemId`, `psid`, `dataUrl`, `gpsLat`, `gpsLng`
+- **Auth:** supabase.auth.getUser() (no field_staff check — any authenticated user)
+- **Behavior:**
+  - POST to GAS webhook with base64 dataUrl (8s AbortController timeout)
+  - UPDATE delivery_photos SET photo_url, gdrive_file_id, synced_to_drive=true
+  - **BUG: Does NOT call promote endpoint or update assignment_items status**
+  - If webhook fails → returns 502
+- **Response:** `{ success: true, photo_url, gdrive_file_id }`
+
+### 26.6 Settings / Admin Controls
+
+| Setting | DB Key | Storage Type | Frontend | Effect |
+|---------|--------|-------------|----------|--------|
+| **GPS Enforcement** | `gps_enforcement` | JSON `{ enforce: boolean, threshold: number }` | Settings → Delivery tab | Toggle distance check + threshold slider |
+| **Allow No Photo** | `allow_no_photo` | boolean | Settings → Delivery tab | Enables "Photo not working? Deliver without photo" button in sheet |
+| **Always Unsent Mode** | `unsent_mode` | JSON `{ enabled: boolean, max_limit: number }` | Settings → Delivery tab | Routes all deliveries to mark-processing + photo-queue |
+
+**API:**
+- `GET /api/settings` — returns all settings as flat object: `{ gps_enforcement: {...}, allow_no_photo: bool, unsent_mode: {...}, ... }`
+- `PATCH /api/settings` — body `{ key: string, value: any }` — upserts into app_settings table
+
+**Settings page tabs:**
+- Appearance (staff + admin): Theme toggle
+- Account (staff + admin): Username, password change
+- Unsent Images (staff + admin): `UnsentImagesSection` — reads from `useUnsentPhotos` (NOT photo-queue)
+- Delivery (admin only): GPS enforcement, Allow No Photo, Unsent Mode toggle
+- Users (admin only): User management CRUD
+
+### 26.7 Critical Issues Found
+
+| # | Issue | Location | Severity | Root Cause |
+|---|-------|----------|----------|------------|
+| 1 | **Unsent mode writes to wrong queue** | `unit-delivery-sheet.tsx:208` — calls `enqueuePhoto()` instead of `enqueueUnsent()` | **HIGH** | Office commit added unsent mode path but used the wrong hook. Settings reads from `unsent-photo-queue`, unsent mode writes to `photo-queue`. Photos invisible in Settings. |
+| 2 | **sync-photo doesn't promote status** | `sync-photo/route.ts:75-97` — updates delivery_photos but NOT assignment_items.status | **HIGH** | The promote endpoint exists (`/api/deliveries/promote`) but sync-photo never calls it. Items stay 'processing' even after successful Drive upload. |
+| 3 | **Redelivery blocks photo save** | `mark/route.ts:83-90` — early returns for 'delivered'/'missed' WITHOUT inserting/updating delivery_photos | **MEDIUM** | Redelivery of an already-delivered item silently drops the new photo. The photo is taken, uploaded, but never saved. |
+| 4 | **No early-return for 'processing' items** | `mark/route.ts` — 'delivered' and 'missed' have early returns, 'processing' does not | **MEDIUM** | Redelivery of a 'processing' item creates a DUPLICATE delivery_photos record every time. |
+| 5 | **Unsent icon in wrong location** | `deliver/page.tsx:209-222` — placed in filter bar, should be in FloatingActions | **LOW** | MASTER.md item #1 — reverting deliver filter bar and adding to FloatingActions is pending. |
+| 6 | **Two separate unsent queues are confusing** | `usePhotoQueue` vs `useUnsentPhotos` — completely independent IndexedDB stores | **MEDIUM** | Same concept (unsent photos) implemented twice with different storage, sync mechanisms, and visibility. |
+| 7 | **Offline fallback has no toast** | `unit-delivery-sheet.tsx:323-337` — sets deliveryStatus('processing') without showing any toast | **LOW** | User gets no feedback that photo was queued offline. Only visible via badge increment. |
+| 8 | **captureGPS timeout (3s) may be too fast** | `use-deliver-unit.ts:6-25` — timeout 3000ms for getCurrentPosition | **LOW** | On slow networks or GPS-poor devices, captureGPS may return null, causing unnecessary 'processing' status. However, gpsOverride from live tracking bypasses this. |
+| 9 | **lfsvc disabled on home PC** | OS-level — Windows Geolocation Service was set to Disabled | **FIXED** | `sc.exe config lfsvc start=auto` + `sc.exe start lfsvc` resolved it. Documented here for reference. |
+| 10 | **Stale MASTER.md: GPS dots use sharedLocation.accuracy** | MASTER.md Part 12 (line 3570) — says GPS dots use `sharedLocation.accuracy` | **LOW** | Current code uses local `gpsAccuracy` state from sheet's own watchPosition callback. Documentation is stale. |
+
+### 26.8 Efficiency Assessment
+
+| Criterion | Score | Evidence |
+|-----------|-------|----------|
+| **Speed per delivery** | ⚡ ~3-5s | Photo compression ~500ms + FormData upload ~1-2s + server processing ~500ms. GPS pre-warmed via live tracking (0s wait). 2s auto-advance after delivered. |
+| **GPS accuracy** | ✅ 50m Haversine | Street-level precision in Pakistani urban areas. Configurable via settings. Falls to 'processing' if GPS null or coordinates null. |
+| **Battery drain** | ✅ Negligible | Two watchers share same GPS chip. Sheet watcher runs 10-15s per delivery (while sheet is idle). StaffMap watcher continuous but adds only JS callback overhead. |
+| **Offline resilience** | ✅ IndexedDB + sendBeacon | Photo queued to IndexedDB on network error. `beforeunload` fires sendBeacon for best-effort ping. Auto-syncs when online via `online` event listener. |
+| **Data integrity** | ⚠️ Duplicate records | No dedup guard for re-delivery photo inserts. Items in 'processing' status get new delivery_photos records on each delivery attempt. |
+| **Admin oversight** | ✅ Processing status + Force Complete | Admin can review 'processing' items and force-deliver or revoke. Force Complete endpoint at `POST /api/deliveries/force`. |
+| **QR scanning** | ✅ Present on map | QRScannerButton scans PSID, opens delivery sheet with matching unit. |
+| **Photo storage cost** | ✅ Zero Supabase egress | All photos stored in Google Drive via GAS webhook. Supabase only stores the Drive URL. |
+| **Unsent queue visibility** | ❌ Split across 2 queues | photo-queue (deliver badge) and unsent-photo-queue (Settings tab) are completely separate. Photos in one are invisible in the other. |
+| **Redelivery experience** | ⚠️ Silent drop on delivered items | Tapping "Redeliver" on a 'delivered' item captures photo + uploads but server returns early without saving. Staff sees "Delivered" toast but photo is lost. |
+
+### 26.9 Fix Priority Matrix for Office Session
+
+| Priority | Issue # | Files | Fix Description | Estimated Time |
+|----------|---------|-------|-----------------|----------------|
+| **P0** | #1 | `unit-delivery-sheet.tsx:208` | Change `enqueuePhoto(...)` → `enqueueUnsent({ assignmentItemId, psid, photoBlob, gpsLat, gpsLng })` in the unsent mode path. Remove `skipAutoSync` param. | 5 min |
+| **P0** | #2 | `sync-photo/route.ts:75-97` | After successful webhook upload + delivery_photos update, add: `await sup.from('assignment_items').update({ status: 'delivered' }).eq('id', assignmentItemId).eq('status', 'processing')`. Same logic as promote endpoint lines 65-73. | 10 min |
+| **P1** | #3 | `mark/route.ts:83-90` | Change early return to also INSERT the new delivery_photos record before returning. Or allow photo replacement by UPDATE. | 15 min |
+| **P1** | #4 | `mark/route.ts` | Add `ownership.status === 'processing'` early return guard (same as 'delivered'/'missed') to prevent duplicate photo records. | 5 min |
+| **P1** | #5 | `deliver/page.tsx`, `floating-actions.tsx` | Move unsent icon from deliver filter bar → add as 4th button in FloatingActions. Wire UnsentModal. | 20 min |
+| **P2** | #7 | `unit-delivery-sheet.tsx:332` | Add `updateToast(progressTid, 'Saved for later — will sync when online', 'info')` in the offline fallback path. | 5 min |
+| **P3** | #6 | Both queue files | Deferred: Consider merging both queues into one. Not urgent — confusing UX but functional. | Deferred |
+| **P3** | #10 | MASTER.md:3570 | Update "GPS dots use `sharedLocation.accuracy`" → "GPS dots use local `gpsAccuracy` state". | 2 min |
+
+### 26.10 Data Flow Diagrams
+
+#### Normal Delivery (No photo → delivered/processing)
+```
+Camera/File → compressImage (WebP, q0.6, 1024px)
+  → FormData (gps_override OR captureGPS)
+    → POST /api/deliveries/mark
+      → Auth: user.getId() + role=field_staff + ownership
+      → If already delivered/missed: return early (BUG: no photo saved)
+      → GAS webhook: POST to Drive (8s AbortController timeout)
+      → INSERT delivery_photos (photo_url, gps, synced_to_drive)
+      → Haversine distance(gps, target)
+      → If enforceGps && distance ≤ 50m → status='delivered'
+        Else → status='processing'
+      → UPDATE assignment_items
+      → Response: { status, distance, photo_url }
+  → If photo_url starts with "pending://":
+      → compressImage again (for IndexedDB)
+      → enqueueUnsent() to unsent-photo-queue
+  → Optimistic cache update
+  → Invalidate queries
+  → Auto-advance after 2s (delivered) / 3.5s (processing)
+```
+
+#### Always Unsent Mode (mark-processing → queue)
+```
+Camera/File → POST /api/deliveries/mark-processing
+  → Auth (same as mark)
+  → INSERT delivery_photos (pending://unsent/...)
+  → UPDATE assignment_items SET status='processing'
+  → compressImage
+  → enqueuePhoto(skipAutoSync:true)  ← BUG: writes to wrong queue
+  → Toast "Saved to queue ✓"
+  → setTimeout 1.5s → onClose()
+```
+
+#### Offline Fallback (network error)
+```
+Camera/File → deliver() throws TypeError → returns null
+  → compressImage
+  → enqueuePhoto() to photo-queue (no skipAutoSync)
+  → setDeliveryStatus('processing')  ← no toast shown
+  → When online: processQueue()
+    → For each photo (batch 3):
+      → Upload to GAS webhook
+      → POST /api/deliveries/promote
+        → INSERT/UPDATE delivery_photos
+        → UPDATE assignment_items SET status='delivered'
+      → markSynced → clearSynced after all done
+```
+
+#### Unsent Sync from Settings (retrySingle)
+```
+Settings → "Sync All" → retryAll → retrySingle() per photo
+  → resolvePhotoData (blob → dataUrl)
+  → POST /api/deliveries/sync-photo
+    → POST to GAS webhook (base64)
+    → UPDATE delivery_photos (photo_url, gdrive_file_id, synced_to_drive=true)
+    → BUG: NO status update — item stays 'processing'
+  → removeUnsent from queue
+```
+
+---
+
 ## 25. Remaining Corrections
 
 Items that need to be fixed before the next session or are deferred from this session:
 
 | # | Priority | Issue | Files | Fix |
 |---|----------|-------|-------|-----|
-| 1 | **HIGH** | Unsent icon in deliver page filter bar (should be in FloatingActions on map page) | `deliver/page.tsx`, `floating-actions.tsx` | Revert deliver bar, add 4th Image-button with queue badge to FloatingActions. Keep `UnsentModal` triggered from FloatingActions. |
-| 2 | LOW | Orphan message too alarming ("assignment no longer active") | `use-photo-queue.ts` | Change to "stale entry skipped" |
-| 3 | INFO | Stale IndexedDB entries from prior testing | browser DevTools | Clear before each fresh test session |
-| 4 | HIGH | Stale `processing` items in DB from failed earlier tests | SQL | Reset to `pending` before fresh test cycle |
-| 5 | MEDIUM | `037-notifications.sql` not yet applied to Supabase | `scripts/sql/037-notifications.sql` | Needs PAT token from office PC (`SUPABASE_ACCESS_TOKEN`) |
-| 6 | MEDIUM | Notification scheme update: polling at 30s, no real-time | — | Implemented but migration not applied |
-| 7 | INFO | GPS signal indicator uses `accuracy` from geolocation — needs verification on mobile | `use-user-location.ts` | Test with actual mobile GPS (disable office PC "no GPS" fallback) |
-| 8 | INFO | Toast redesign renders on all pages — verify on delivery + settings + assignments | `globals.css`, `use-toast.tsx` | Visual check on mobile width (max-w-[260px]) |
+| 1 | **HIGH** | Unsent mode writes to wrong queue — `enqueuePhoto()` to `photo-queue` instead of `enqueueUnsent()` to `unsent-photo-queue`. Photos invisible in Settings. | `unit-delivery-sheet.tsx` | Change `enqueuePhoto(...)` → `enqueueUnsent({ assignmentItemId, psid, photoBlob, gpsLat, gpsLng })` in unsent mode path. Remove `skipAutoSync`. |
+| 2 | **HIGH** | sync-photo endpoint doesn't promote status — after successful Drive upload, `assignment_items` stays 'processing' forever | `sync-photo/route.ts` | Add `sup.from('assignment_items').update({ status: 'delivered' }).eq('id', assignmentItemId).eq('status', 'processing')` after successful webhook upload. |
+| 3 | **HIGH** | Unsent icon in deliver page filter bar (should be in FloatingActions on map page) | `deliver/page.tsx`, `floating-actions.tsx` | Revert deliver bar, add 4th Image-button with queue badge to FloatingActions. Keep `UnsentModal` triggered from FloatingActions. |
+| 4 | MEDIUM | Redelivery blocks photo save — /mark route returns early for 'delivered'/'missed' before inserting delivery_photos record | `mark/route.ts:83-90` | Insert delivery_photos record before early return, or add UPDATE path for photo replacement. |
+| 5 | MEDIUM | No early-return for 'processing' items — each redelivery creates duplicate delivery_photos records | `mark/route.ts` | Add `ownership.status === 'processing'` early return guard (same as 'delivered'/'missed'). |
+| 6 | LOW | Offline fallback has no toast — `setDeliveryStatus('processing')` with no user feedback | `unit-delivery-sheet.tsx` | Add `updateToast(progressTid, 'Saved for later — will sync when online', 'info')` in offline fallback path. |
+| 7 | INFO | Stale IndexedDB entries from prior testing | browser DevTools | Clear before each fresh test session |
+| 8 | HIGH | Stale `processing` items in DB from failed earlier tests | SQL | Reset to `pending` before fresh test cycle |
+| 9 | MEDIUM | `037-notifications.sql` not yet applied to Supabase | `scripts/sql/037-notifications.sql` | Needs PAT token from office PC (`SUPABASE_ACCESS_TOKEN`) |
+| 10 | MEDIUM | Notification scheme update: polling at 30s, no real-time | — | Implemented but migration not applied |
+| 11 | INFO | GPS signal indicator accuracy thresholds (10m, 50m, Infinity) — verify on mobile GPS | `unit-delivery-sheet.tsx` | Test with actual mobile GPS; thresholds may need tuning |
+| 12 | INFO | Toast redesign renders on all pages — verify on delivery + settings + assignments | `globals.css`, `use-toast.tsx` | Visual check on mobile width (max-w-[260px]) |
+| 13 | INFO | GPS battery optimization (deferred to production): `useUserLocation` default low accuracy, switch to high accuracy only when sheet opens | `use-user-location.ts`, `unit-delivery-sheet.tsx` | Keep three-effect pattern during development. Revisit before field deployment. |
+| 14 | INFO | Stale MASTER.md GPS dots documentation — says `sharedLocation.accuracy`, should be local `gpsAccuracy` | `MASTER.md:3570` | Update text to match current code. |
+| 15 | INFO | Two separate unsent queues (photo-queue + unsent-photo-queue) — confusing UX | Both queue lib files | Consider merging into one queue. Deferred. |
 
-### 25.1 Next Session Kickoff
+### 25.1 Next Session Kickoff — Office (2026-06-08)
 
-When returning from home, the first task is:
+When returning to the office, the first tasks are:
 
-1. **Revert** unsent icon from deliver page filter bar
-2. **Add** unsent icon as 4th button to `FloatingActions` component (map page floating panel)
-3. **Wire** `UnsentModal` open/close from the FloatingActions button
-4. Apply `037-notifications.sql` migration to Supabase (requires PAT token from office PC)
-5. Clean up stale IndexedDB + DB records from prior testing
-6. Run through the full testing protocol (Section 24) from step 1
+**P0 — Fix delivery blocking bugs (est. 15 min):**
+1. **Fix unsent mode queue** (`unit-delivery-sheet.tsx`): Change `enqueuePhoto(...)` → `enqueueUnsent({...})` in unsent mode path
+2. **Fix sync-photo promote** (`sync-photo/route.ts`): Add `assignment_items` status update to 'delivered' after successful Drive upload
+3. **Fix redelivery photo drop** (`mark/route.ts`): Insert delivery_photos record before early-return for delivered/missed items
+4. **Add processing guard** (`mark/route.ts`): Early-return for 'processing' items to prevent duplicate photos
+
+**P1 — UI fixes (est. 20 min):**
+5. **Move unsent icon** from deliver filter bar → FloatingActions (4th button)
+6. **Add offline toast** in handleFile fallback path
+
+**Data cleanup before testing:**
+7. Apply `037-notifications.sql` migration to Supabase (requires PAT token from office PC)
+8. Clear stale IndexedDB + DB records from prior testing:
+   - SQL: `UPDATE assignment_items SET status='pending' WHERE status='processing' AND delivered_at IS NOT NULL`
+   - SQL: `DELETE FROM delivery_photos WHERE photo_url LIKE 'pending://%'`
+   - DevTools: Clear IndexedDB → delete `billing-saas-photo-queue` and unsent-photo-queue databases
+9. Run through the full testing protocol (Section 24) from step 1
 

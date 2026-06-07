@@ -53,10 +53,12 @@ export function useDeliverUnit() {
     targetLat: number | null,
     targetLng: number | null,
     gpsOverride?: { lat: number; lng: number } | null,
+    onProgress?: (p: DeliveryProgress) => void,
   ): Promise<DeliveryResult | null> => {
     setIsDelivering(true)
     setLastResult(null)
     setProgress('compressing')
+    onProgress?.('compressing')
 
     try {
       const gps = gpsOverride ?? await captureGPS()
@@ -64,6 +66,7 @@ export function useDeliverUnit() {
       const compressed = await compressImage(photoFile)
 
       setProgress('uploading')
+      onProgress?.('uploading')
 
       const form = new FormData()
       form.append('photo', compressed, `${psid}_delivery.webp`)
@@ -83,6 +86,7 @@ export function useDeliverUnit() {
         throw new Error(errBody.error || `HTTP ${res.status}`)
       }
 
+      onProgress?.('saving')
       setProgress('saving')
 
       const result: DeliveryResult = await res.json()
