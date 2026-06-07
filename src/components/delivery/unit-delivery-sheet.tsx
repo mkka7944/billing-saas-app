@@ -7,6 +7,7 @@ import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
 import { useUnsentPhotos } from '@/hooks/use-unsent-photos'
+import { useUserLocation } from '@/hooks/use-user-location'
 import { useAuthStore } from '@/stores/auth-store'
 import { compressImage } from '@/lib/image/compress'
 import { useToast } from '@/hooks/use-toast'
@@ -49,19 +50,26 @@ export default function UnitDeliverySheet({
   const [userLng, setUserLng] = useState<number | null>(null)
   const [forceCompleting, setForceCompleting] = useState(false)
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
+  const [unsentModeEnabled, setUnsentModeEnabled] = useState(false)
+  const [unsentMaxLimit, setUnsentMaxLimit] = useState(50)
   const touchXRef = useRef<number | null>(null)
-  const watchIdRef = useRef<number | null>(null)
 
   const queryClient = useQueryClient()
   const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
-  const { deliver, deliverNoPhoto } = useDeliverUnit()
-  const { enqueuePhoto } = usePhotoQueue()
+  const { deliver, deliverNoPhoto, progress } = useDeliverUnit()
+  const { enqueuePhoto, queueCount } = usePhotoQueue()
   const { enqueueUnsent } = useUnsentPhotos()
+  const { location: sharedLocation, isTracking: gpsTracking, error: gpsError } = useUserLocation()
 
   useEffect(() => {
     fetch('/api/settings')
       .then(r => r.json())
-      .then(data => setAllowNoPhoto(data?.allow_no_photo === true))
+      .then(data => {
+        setAllowNoPhoto(data?.allow_no_photo === true)
+        const um = data?.unsent_mode || { enabled: false, max_limit: 50 }
+        setUnsentModeEnabled(um.enabled)
+        setUnsentMaxLimit(um.max_limit ?? 50)
+      })
       .catch(() => {})
   }, [])
   const userId = useAuthStore((s) => s.user?.id)
@@ -111,43 +119,29 @@ export default function UnitDeliverySheet({
     return () => clearTimeout(timer)
   }, [unit?.lat, unit?.lng, unit?.psid])
 
-  // Live GPS tracking — watch position while sheet is idle
+  // Sync shared GPS watcher into local state while sheet is idle
   useEffect(() => {
-    if (!unit?.lat || !unit?.lng || deliveryStatus !== 'idle' || !navigator.geolocation) {
+    if (!unit?.lat || !unit?.lng || deliveryStatus !== 'idle') {
       setLiveDistance(null)
       setLiveGpsStatus('idle')
       return
     }
 
-    setLiveGpsStatus('locating')
-    const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        const d = Math.round(haversine(pos.coords.latitude, pos.coords.longitude, unit.lat!, unit.lng!))
-        setLiveDistance(d)
-        setUserLat(pos.coords.latitude)
-        setUserLng(pos.coords.longitude)
-        setLiveGpsStatus('ready')
-      },
-      () => {
-        setLiveGpsStatus('unavailable')
-      },
-      { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
-    )
-    watchIdRef.current = id
-    return () => {
-      navigator.geolocation.clearWatch(id)
-      watchIdRef.current = null
+    if (gpsError) {
+      setLiveGpsStatus('unavailable')
+      return
     }
-  }, [unit?.lat, unit?.lng, unit?.psid, deliveryStatus])
 
-  // Cleanup watch on unmount
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current != null) {
-        navigator.geolocation.clearWatch(watchIdRef.current)
-      }
+    if (sharedLocation) {
+      const d = Math.round(haversine(sharedLocation.lat, sharedLocation.lng, unit.lat, unit.lng))
+      setLiveDistance(d)
+      setUserLat(sharedLocation.lat)
+      setUserLng(sharedLocation.lng)
+      setLiveGpsStatus('ready')
+    } else {
+      setLiveGpsStatus(gpsTracking ? 'locating' : 'unavailable')
     }
-  }, [])
+  }, [sharedLocation?.lat, sharedLocation?.lng, gpsTracking, gpsError, unit?.lat, unit?.lng, unit?.psid, deliveryStatus])
 
   // Auto-advance after successful delivery
   useEffect(() => {
@@ -169,6 +163,57 @@ export default function UnitDeliverySheet({
     if (!file || !file.type.startsWith('image/') || !assignmentItemId || !unit?.psid) return
 
     const gpsOverride = userLat != null && userLng != null ? { lat: userLat, lng: userLng } : null
+
+    if (unsentModeEnabled && queueCount >= unsentMaxLimit) {
+      toast(`Clear unsent queue first (${queueCount}/${unsentMaxLimit})`, 'warning')
+      return
+    }
+
+    if (unsentModeEnabled) {
+      setIsDelivering(true)
+      try {
+        const markRes = await fetch('/api/deliveries/mark-processing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assignmentItemId,
+            psid: unit.psid,
+            gpsLat: gpsOverride?.lat,
+            gpsLng: gpsOverride?.lng,
+          }),
+        })
+        if (!markRes.ok) {
+          const err = await markRes.json().catch(() => ({ error: 'Mark failed' }))
+          throw new Error(err.error || 'Mark failed')
+        }
+
+        const compressed = await compressImage(file)
+        await enqueuePhoto({
+          assignmentItemId,
+          psid: unit.psid,
+          photoBlob: compressed,
+          email: email || '',
+          gpsLat: gpsOverride?.lat,
+          gpsLng: gpsOverride?.lng,
+          skipAutoSync: true,
+        })
+        setDeliveryStatus('processing')
+        toast('Saved to queue — will upload later', 'info')
+        queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
+        queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
+        queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
+        setTimeout(() => {
+          setIsDelivering(false)
+          onClose?.()
+        }, 1500)
+        return
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Failed to save photo'
+        toast(msg, 'error')
+        setIsDelivering(false)
+        return
+      }
+    }
 
     // 1. Try online delivery (uses pre-warmed GPS from live tracking if available)
     let result: Awaited<ReturnType<typeof deliver>> = null
@@ -193,6 +238,13 @@ export default function UnitDeliverySheet({
       setDeliveryDistance(result.distance)
       setDeliveryGpsLat(result.gps_lat)
       setDeliveryGpsLng(result.gps_lng)
+
+      toast(
+        result.status === 'delivered'
+          ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`
+          : 'Processing — awaiting review',
+        result.status === 'delivered' ? 'success' : 'warning',
+      )
 
       // Optimistic cache update — flip status immediately
       if (userId) {
@@ -220,19 +272,12 @@ export default function UnitDeliverySheet({
       if (result.photo_url?.startsWith('pending://')) {
         try {
           const compressed = await compressImage(file)
-          new Promise<void>((resolve) => {
-            const reader = new FileReader()
-            reader.onloadend = async () => {
-              await enqueueUnsent({
-                assignmentItemId,
-                psid: unit.psid,
-                dataUrl: reader.result as string,
-                gpsLat: result.gps_lat,
-                gpsLng: result.gps_lng,
-              })
-              resolve()
-            }
-            reader.readAsDataURL(compressed)
+          enqueueUnsent({
+            assignmentItemId,
+            psid: unit.psid,
+            photoBlob: compressed,
+            gpsLat: result.gps_lat,
+            gpsLng: result.gps_lng,
           })
         } catch {
           // Best-effort — don't block delivery on unsent queue failure
@@ -251,23 +296,19 @@ export default function UnitDeliverySheet({
     // 2. Offline fallback — compress + enqueue to IndexedDB
     try {
       const compressed = await compressImage(file)
-      const reader = new FileReader()
-      reader.onloadend = async () => {
-        await enqueuePhoto({
-          assignmentItemId,
-          psid: unit.psid,
-          dataUrl: reader.result as string,
-          email: email || '',
-        })
-        setDeliveryStatus('processing')
-        setIsDelivering(false)
-      }
-      reader.readAsDataURL(compressed)
+      await enqueuePhoto({
+        assignmentItemId,
+        psid: unit.psid,
+        photoBlob: compressed,
+        email: email || '',
+      })
+      setDeliveryStatus('processing')
+      setIsDelivering(false)
     } catch {
       toast('Failed to save photo offline', 'error')
       setIsDelivering(false)
     }
-  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, enqueueUnsent, toast, userLat, userLng, queryClient])
+  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, enqueueUnsent, toast, userLat, userLng, queryClient, unsentModeEnabled, unsentMaxLimit, queueCount])
 
   const handleSkipPhoto = useCallback(async () => {
     if (!assignmentItemId || !unit?.psid) return
@@ -295,6 +336,13 @@ export default function UnitDeliverySheet({
         setDeliveryDistance(result.distance)
         setDeliveryGpsLat(result.gps_lat)
         setDeliveryGpsLng(result.gps_lng)
+
+        toast(
+          result.status === 'delivered'
+            ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`
+            : 'Processing — awaiting review',
+          result.status === 'delivered' ? 'success' : 'warning',
+        )
 
         if (userId) {
           queryClient.setQueryData<{ data: unknown; items: AssignmentItemWithUnit[] }>(
@@ -511,62 +559,93 @@ export default function UnitDeliverySheet({
             </div>
           )}
 
-          {/* Action buttons */}
+          {/* Progress steps or action buttons */}
           {deliveryStatus === 'idle' && (
             <div className="flex flex-col gap-2">
-              {itemStatus === 'delivered' && (
-                <span className="text-[10px] text-white/50 text-center">Previously delivered — tap Redeliver to update photo</span>
-              )}
-              {itemStatus === 'processing' && (
-                <span className="text-[10px] text-amber-300/70 text-center">Needs attention — GPS was out of range</span>
-              )}
-              <div className="flex items-stretch gap-2">
-                {assignmentItemId ? (
-                  <button
-                    onClick={openCamera}
-                    disabled={isDelivering}
-                    className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
-                  >
-                    {isDelivering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                    {isDelivering ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Take Picture & Deliver'}
-                  </button>
-                ) : null}
-                {onViewDetails && (
-                  <button
-                    onClick={() => onViewDetails()}
-                    className={
-                      assignmentItemId
-                        ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm"
-                        : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md"
-                    }
-                  >
+              {progress !== 'idle' ? (
+                <div className="flex flex-col gap-1.5 py-1">
+                  {[
+                    { key: 'compressing', label: 'Compressing photo' } as const,
+                    { key: 'uploading', label: 'Uploading to Drive' } as const,
+                    { key: 'saving', label: 'Recording delivery' } as const,
+                  ].map((step) => {
+                    const stepIdx = ['idle', 'compressing', 'uploading', 'saving', 'done'].indexOf(progress)
+                    const stepTargetIdx = ['idle', 'compressing', 'uploading', 'saving', 'done'].indexOf(step.key)
+                    const isDone = stepTargetIdx < stepIdx
+                    const isCurrent = step.key === progress
+                    return (
+                      <div key={step.key} className="flex items-center gap-2 text-sm">
+                        {isDone ? (
+                          <span className="text-green-400 shrink-0">✓</span>
+                        ) : isCurrent ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-white shrink-0" />
+                        ) : (
+                          <span className="text-white/30 shrink-0">○</span>
+                        )}
+                        <span className={isDone ? 'text-white/50' : isCurrent ? 'text-white font-medium' : 'text-white/30'}>
+                          {step.label}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <>
+                  {itemStatus === 'delivered' && (
+                    <span className="text-[10px] text-white/50 text-center">Previously delivered — tap Redeliver to update photo</span>
+                  )}
+                  {itemStatus === 'processing' && (
+                    <span className="text-[10px] text-amber-300/70 text-center">Needs attention — GPS was out of range</span>
+                  )}
+                  <div className="flex items-stretch gap-2">
                     {assignmentItemId ? (
-                      <>Details <ChevronRight className="h-3.5 w-3.5" /></>
-                    ) : (
-                      <>View Details <ChevronRight className="h-4 w-4" /></>
+                      <button
+                        onClick={openCamera}
+                        disabled={isDelivering}
+                        className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
+                      >
+                        {isDelivering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                        {isDelivering ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Take Picture & Deliver'}
+                      </button>
+                    ) : null}
+                    {onViewDetails && (
+                      <button
+                        onClick={() => onViewDetails()}
+                        className={
+                          assignmentItemId
+                            ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm"
+                            : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md"
+                        }
+                      >
+                        {assignmentItemId ? (
+                          <>Details <ChevronRight className="h-3.5 w-3.5" /></>
+                        ) : (
+                          <>View Details <ChevronRight className="h-4 w-4" /></>
+                        )}
+                      </button>
                     )}
-                  </button>
-                )}
-              </div>
-              {allowNoPhoto && assignmentItemId && (
-                <button
-                  onClick={handleSkipPhoto}
-                  disabled={isDelivering}
-                  className='w-full h-8 text-[11px] font-medium rounded-lg bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors'
-                >
-                  {isDelivering ? <Loader2 className='h-3 w-3 animate-spin' /> : <Crosshair className='h-3 w-3' />}
-                  {isDelivering ? 'Processing...' : 'Photo not working? Tap to deliver without photo'}
-                </button>
-              )}
-              {isAdmin && !assignmentItemId && (
-                <button
-                  onClick={handleForceComplete}
-                  disabled={forceCompleting}
-                  className="w-full h-10 text-xs font-semibold rounded-xl bg-amber-500/70 text-white border border-amber-400/30 hover:bg-amber-500 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors"
-                >
-                  {forceCompleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {forceCompleting ? 'Marking...' : 'Force Complete (admin)'}
-                </button>
+                  </div>
+                  {allowNoPhoto && assignmentItemId && (
+                    <button
+                      onClick={handleSkipPhoto}
+                      disabled={isDelivering}
+                      className='w-full h-8 text-[11px] font-medium rounded-lg bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors'
+                    >
+                      {isDelivering ? <Loader2 className='h-3 w-3 animate-spin' /> : <Crosshair className='h-3 w-3' />}
+                      {isDelivering ? 'Processing...' : 'Photo not working? Tap to deliver without photo'}
+                    </button>
+                  )}
+                  {isAdmin && !assignmentItemId && (
+                    <button
+                      onClick={handleForceComplete}
+                      disabled={forceCompleting}
+                      className="w-full h-10 text-xs font-semibold rounded-xl bg-amber-500/70 text-white border border-amber-400/30 hover:bg-amber-500 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors"
+                    >
+                      {forceCompleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                      {forceCompleting ? 'Marking...' : 'Force Complete (admin)'}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}

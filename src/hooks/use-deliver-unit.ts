@@ -24,6 +24,8 @@ function captureGPS(timeout = 3000): Promise<{ lat: number; lng: number } | null
   })
 }
 
+export type DeliveryProgress = 'idle' | 'compressing' | 'uploading' | 'saving' | 'done'
+
 export interface DeliveryResult {
   status: 'delivered' | 'processing'
   distance: number | null
@@ -37,6 +39,12 @@ export interface DeliveryResult {
 export function useDeliverUnit() {
   const [isDelivering, setIsDelivering] = useState(false)
   const [lastResult, setLastResult] = useState<DeliveryResult | null>(null)
+  const [progress, setProgress] = useState<DeliveryProgress>('idle')
+
+  const resetProgress = useCallback(() => {
+    setProgress('idle')
+    setIsDelivering(false)
+  }, [])
 
   const deliver = useCallback(async (
     assignmentItemId: string,
@@ -48,11 +56,14 @@ export function useDeliverUnit() {
   ): Promise<DeliveryResult | null> => {
     setIsDelivering(true)
     setLastResult(null)
+    setProgress('compressing')
 
     try {
       const gps = gpsOverride ?? await captureGPS()
 
       const compressed = await compressImage(photoFile)
+
+      setProgress('uploading')
 
       const form = new FormData()
       form.append('photo', compressed, `${psid}_delivery.webp`)
@@ -72,18 +83,20 @@ export function useDeliverUnit() {
         throw new Error(errBody.error || `HTTP ${res.status}`)
       }
 
+      setProgress('saving')
+
       const result: DeliveryResult = await res.json()
       setLastResult(result)
+      setProgress('done')
       return result
     } catch (e) {
+      resetProgress()
       if (e instanceof TypeError) {
         return null
       }
       throw e
-    } finally {
-      setIsDelivering(false)
     }
-  }, [])
+  }, [resetProgress])
 
   const deliverNoPhoto = useCallback(async (
     assignmentItemId: string,
@@ -94,6 +107,7 @@ export function useDeliverUnit() {
   ): Promise<DeliveryResult | null> => {
     setIsDelivering(true)
     setLastResult(null)
+    setProgress('uploading')
 
     try {
       const gps = gpsOverride ?? await captureGPS()
@@ -116,18 +130,20 @@ export function useDeliverUnit() {
         throw new Error(errBody.error || `HTTP ${res.status}`)
       }
 
+      setProgress('saving')
+
       const result: DeliveryResult = await res.json()
       setLastResult(result)
+      setProgress('done')
       return result
     } catch (e) {
+      resetProgress()
       if (e instanceof TypeError) {
         return null
       }
       throw e
-    } finally {
-      setIsDelivering(false)
     }
-  }, [])
+  }, [resetProgress])
 
-  return { deliver, deliverNoPhoto, isDelivering, lastResult }
+  return { deliver, deliverNoPhoto, isDelivering, lastResult, progress }
 }

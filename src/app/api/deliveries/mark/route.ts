@@ -66,18 +66,27 @@ export async function POST(request: Request) {
 
   const role = profile?.roles as { name: string } | undefined
   if (!role || role.name !== 'field_staff') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return NextResponse.json({ error: `Forbidden — role "${role?.name ?? '(none)'}" is not field_staff` }, { status: 403 })
   }
 
   const { data: ownership } = await sup
     .from('assignment_items')
-    .select('id, daily_assignments!inner(staff_id)')
+    .select('id, status, daily_assignments!inner(staff_id)')
     .eq('id', assignmentItemId)
     .eq('daily_assignments.staff_id', user.id)
     .maybeSingle()
 
   if (!ownership) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return NextResponse.json({ error: 'Forbidden — assignment item does not belong to this user' }, { status: 403 })
+  }
+
+  if (ownership.status === 'delivered' || ownership.status === 'missed') {
+    return NextResponse.json({
+      status: ownership.status,
+      distance: null,
+      photo_url: null,
+      already_delivered: true,
+    })
   }
 
   const email = user.email

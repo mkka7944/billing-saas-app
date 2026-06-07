@@ -2,7 +2,8 @@ export interface UnsentPhoto {
   id?: number
   assignmentItemId: string
   psid: string
-  dataUrl: string
+  dataUrl?: string
+  photoBlob?: Blob
   gpsLat?: number | null
   gpsLng?: number | null
   retryCount: number
@@ -11,7 +12,7 @@ export interface UnsentPhoto {
 
 const DB_NAME = 'billing-saas-unsent-photos'
 const STORE_NAME = 'unsent_photos'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

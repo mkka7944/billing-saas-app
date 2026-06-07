@@ -2,18 +2,20 @@ export interface QueuedPhoto {
   id?: number
   assignmentItemId: string
   psid: string
-  dataUrl: string
+  dataUrl?: string
+  photoBlob?: Blob
   capturedAt: string
   email: string
   gpsLat?: number | null
   gpsLng?: number | null
   retryCount: number
   status: 'queued' | 'uploading' | 'synced' | 'failed'
+  lastError?: string
 }
 
 const DB_NAME = 'billing-saas-photo-queue'
 const STORE_NAME = 'photo_queue'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

@@ -1,0 +1,1 @@
+SELECT key, value FROM public.app_settings WHERE key = 'unsent_mode';

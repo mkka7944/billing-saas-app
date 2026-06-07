@@ -24,6 +24,13 @@ export function useToast() {
 
 let toastId = 0
 
+const VARIANT_STYLES: Record<ToastVariant, { icon: string; border: string; ring: string }> = {
+  success: { icon: '✓', border: 'border-green-500', ring: 'ring-green-500/20' },
+  error:   { icon: '✕', border: 'border-red-500', ring: 'ring-red-500/20' },
+  warning: { icon: '⚠', border: 'border-yellow-500', ring: 'ring-yellow-500/20' },
+  info:    { icon: 'i', border: 'border-blue-500', ring: 'ring-blue-500/20' },
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -37,7 +44,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const toast = useCallback((message: string, variant: ToastVariant = 'info') => {
     const id = `toast-${++toastId}`
     setToasts((prev) => [...prev, { id, message, variant }])
-    const timer = setTimeout(() => removeToast(id), 4000)
+    const timer = setTimeout(() => removeToast(id), 5000)
     timersRef.current.set(id, timer)
   }, [removeToast])
 
@@ -45,22 +52,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext value={{ toast }}>
       {children}
       {toasts.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm pointer-events-none">
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              role="alert"
-              onClick={() => removeToast(t.id)}
-              className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium cursor-pointer transition-opacity duration-200 ${
-                t.variant === 'success' ? 'bg-green-600 text-white' :
-                t.variant === 'error' ? 'bg-red-600 text-white' :
-                t.variant === 'warning' ? 'bg-yellow-500 text-white' :
-                'bg-blue-600 text-white'
-              }`}
-            >
-              {t.message}
-            </div>
-          ))}
+        <div className="fixed top-14 right-4 z-[9999] flex flex-col gap-2 max-w-[260px] pointer-events-none">
+          {toasts.map((t) => {
+            const vs = VARIANT_STYLES[t.variant]
+            return (
+              <div
+                key={t.id}
+                role="alert"
+                onClick={() => removeToast(t.id)}
+                className={`animate-slide-in-right flex items-center gap-1.5 px-2.5 py-1.5 rounded-full shadow-lg text-[11px] font-medium cursor-pointer backdrop-blur-sm bg-white/90 border ${vs.border} ring-1 ${vs.ring} text-gray-800 transition-opacity duration-200`}
+              >
+                <span className="shrink-0 text-xs">{vs.icon}</span>
+                {t.message}
+              </div>
+            )
+          })}
         </div>
       )}
     </ToastContext>

@@ -10,6 +10,21 @@ import {
 } from '@/lib/unsent-photo-queue'
 import type { UnsentPhoto } from '@/lib/unsent-photo-queue'
 
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function resolvePhotoData(photo: UnsentPhoto): Promise<string> {
+  if (photo.dataUrl) return photo.dataUrl
+  if (photo.photoBlob) return blobToDataUrl(photo.photoBlob)
+  throw new Error('No photo data available')
+}
+
 export function useUnsentPhotos() {
   const [unsentList, setUnsentList] = useState<UnsentPhoto[]>([])
   const [count, setCount] = useState(0)
@@ -24,7 +39,7 @@ export function useUnsentPhotos() {
   const enqueueUnsent = useCallback(async (opts: {
     assignmentItemId: string
     psid: string
-    dataUrl: string
+    photoBlob: Blob
     gpsLat?: number | null
     gpsLng?: number | null
   }) => {
@@ -35,13 +50,15 @@ export function useUnsentPhotos() {
   const retrySingle = useCallback(async (photo: UnsentPhoto): Promise<boolean> => {
     setSyncingIds((prev) => new Set(prev).add(photo.id!))
     try {
+      const dataUrl = await resolvePhotoData(photo)
+
       const res = await fetch('/api/deliveries/sync-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assignmentItemId: photo.assignmentItemId,
           psid: photo.psid,
-          dataUrl: photo.dataUrl,
+          dataUrl,
           gpsLat: photo.gpsLat,
           gpsLng: photo.gpsLng,
         }),

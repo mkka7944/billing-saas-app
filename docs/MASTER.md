@@ -63,6 +63,9 @@
 20. [Delivery Verification System](#20-delivery-verification-system)
 21. [Audit Findings Summary](#21-audit-findings-summary-2026-06-04)
 22. [User Design Decisions](#22-user-design-decisions)
+23. [Industry Complexity & Engineering Reality](#23-industry-complexity--engineering-reality-2026-06-05)
+24. [Deliver — Testing Protocol for Unsent Flow](#24-deliver--testing-protocol-for-unsent-flow)
+25. [Remaining Corrections](#25-remaining-corrections)
 ---
 ## App Vision — Daily Reference
 
@@ -1078,6 +1081,29 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | P4.3 | 15 min | Typography consistency — standardized `text-xs` table headers/rows, `text-[10px]` badges | ✅ |
 | P4.4 | 15 min | Action dropdown cleanup — `hideChevron`, `size-7`, no conflicting CSS | ✅ |
 
+### Phase M1 — Map Unification (Staff Sees Survey Data + Assignment Overlay) (~30 min)
+| Step | Time | Task |
+|------|------|------|
+| M1.1 | 15 min | `map-view.tsx` — accept optional `assignmentItems` prop, render assignment markers on top of survey markers with blue ring dot |
+| M1.2 | 15 min | `map/page.tsx` — remove role-split rendering, always render `MapView`, pass `staffItems` as `assignmentItems` for staff |
+
+### Phase M2 — "Show All" Markers + Unit Counts per UC (~3 hrs)
+| Step | Time | Task |
+|------|------|------|
+| M2.1 | 30 min | `GET /api/hierarchy` — add `active_unit_count` per UC via LEFT JOIN survey_units |
+| M2.2 | 15 min | `FilterState.showAll` — add boolean to types + billing store defaults |
+| M2.3 | 45 min | Surveys API + repository — handle `all=true` with `fetchAllRows` batched pattern |
+| M2.4 | 15 min | `useSurveyData` — pass `showAll` through query key, adjust pageSize |
+| M2.5 | 30 min | `map-view.tsx` — wrap markers in `<MarkerClusterGroup>` (react-leaflet-cluster already installed) |
+| M2.6 | 45 min | `filter-panel.tsx` — show count per UC in desktop dropdown + mobile sheet. Add "Show all on map" toggle |
+
+### Phase M3 — Post-Enrichment JSON Marker Chunks (~1.5 hrs)
+| Step | Time | Task |
+|------|------|------|
+| M3.1 | 45 min | `scripts/export-marker-chunks.py` — per-UC JSON export with lean columns (survey_id, lat, lng, psid, consumer_name, uc_name, monthly_fee, arrears, status) |
+| M3.2 | 15 min | `ingest-all.py` — add `[4] Export marker chunks` menu option |
+| M3.3 | 30 min | Surveys API — add `source=chunk` mode, stream from static JSON when available |
+
 ### Total Estimate Breakdown
 | Phase | Time | Cumulative |
 |-------|------|------------|
@@ -1106,6 +1132,9 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | **P2** (Notifications Bell UI) | **1.5 hrs** | **64 hrs** |
 | **P3** (Staff Notification Form) | **1 hr** | **65 hrs** |
 | **P4** (Users Tab UI Polish) | **1 hr** | **66 hrs** |
+| **M1** (Map Unification) | **0.5 hrs** | **66.5 hrs** |
+| **M2** ("Show All" + Counts) | **3 hrs** | **69.5 hrs** |
+| **M3** (JSON Marker Chunks) | **1.5 hrs** | **71 hrs** |
 
 ### Execution Order (Remaining)
 | Order | Phase | Time | What | Status |
@@ -1122,16 +1151,19 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 10 | **P3** Staff Notification Form | 1 hr | Form in Users tab sidebar, send to all or individual | ✅ Done |
 | 11 | **P4** Users Tab UI Polish | 1 hr | hideChevron, city accent colors, typography, dropdown cleanup | ✅ Done |
 | 12 | **B3** Delivery Stability & Hardening | 8 hrs | DB CHECK fix, auth on mark route, webhook timeout, GPS reliability, photo queue, state machine, remaining auth, RLS | 🔲 |
-| 13 | **0d** Reference Tables & Filter Fix | 1.5 hrs | Create hierarchy/surveyors/bill_months tables, update APIs, delete dead services | 🔲 |
-| 14 | **0e** Stabilize & Clean | 2 hrs | Fix payment filter pagination, billing-stats empty arrays, route API, deduplicate currentMonth | 🔲 |
-| 15 | **0f** Egress & Stability | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | 🔲 |
-| 16 | **C** Admin Dashboard | 3 hrs | /stats, staff performance, delivery KPIs | 🔲 |
-| 17 | **E** Flag Management UI | 4 hrs | /flagged-units, resolve/confirm/note actions | 🔲 |
-| 18 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → survey_units → printer | 🔲 |
-| 19 | **G** Live Admin Monitoring | 3 hrs | Staff mode map, breadcrumbs, near-real-time polling | 🔲 |
-| 20 | **RBAC** Approval Chain | 3 hrs | Assignment draft→pending→approved→active workflow | 🔲 |
-| 21 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
-| 22 | **Deploy** Office PC pipeline | 1 hr | ingest-all.py + scripts on Office PC, live test | 🔲 |
+| 13 | **M1** Map Unification | 30 min | Unified map — staff sees survey data + assignment overlay, filters work for all | 🔲 |
+| 14 | **M2** "Show All" + Counts | 3 hrs | Marker counts per UC, show all on map, marker clustering | 🔲 |
+| 15 | **M3** JSON Marker Chunks | 1.5 hrs | Post-enrichment per-UC JSON export, static file serving | 🔲 |
+| 16 | **0d** Reference Tables & Filter Fix | 1.5 hrs | Create hierarchy/surveyors/bill_months tables, update APIs, delete dead services | 🔲 |
+| 17 | **0e** Stabilize & Clean | 2 hrs | Fix payment filter pagination, billing-stats empty arrays, route API, deduplicate currentMonth | 🔲 |
+| 18 | **0f** Egress & Stability | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | 🔲 |
+| 19 | **C** Admin Dashboard | 3 hrs | /stats, staff performance, delivery KPIs | 🔲 |
+| 20 | **E** Flag Management UI | 4 hrs | /flagged-units, resolve/confirm/note actions | 🔲 |
+| 21 | **F** Auto-Route Generation | 3 hrs | Delivery sequence → consensus route → survey_units → printer | 🔲 |
+| 22 | **G** Live Admin Monitoring | 3 hrs | Staff mode map, breadcrumbs, near-real-time polling | 🔲 |
+| 23 | **RBAC** Approval Chain | 3 hrs | Assignment draft→pending→approved→active workflow | 🔲 |
+| 24 | **D** Visual Rehaul | 4 hrs | Staff mobile layout, admin sidebar, theme system, touch targets | 🔲 |
+| 25 | **Deploy** Office PC pipeline | 1 hr | ingest-all.py + scripts on Office PC, live test | 🔲 |
 | — | **Z** Deferred | 19 hrs | Auth hardening, Zod validation, structured logging, egress optimization, audit cleanup | 🔲 Deferred |
 
 ---
@@ -2081,6 +2113,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-05 | 25.0 | **Notifications system (P1-P3)**: DB migration `037-notifications.sql` (not applied), Notification type, `GET /api/notifications`, `POST /api/notifications/read`, `POST /api/admin/notifications`, `use-notifications` hook, NotificationsBell with mobile sheet + desktop dropdown, bell on DesktopFilterBar + AppHeader, staff notification form in Users tab sidebar. Users tab redesigned: sidebar layout, city group headers, Table component, RoleSelect CSS with colored dots. Panel positioning fixed (absolute → fixed for desktop). Recipient dropdown shows display name. |
 | 2026-06-06 | 26.0 | **Users tab UI polish (P4)**: `hideChevron` prop on SelectTrigger for icon-only dropdowns. City accent colors on group headers (emerald=Sargodha, blue=Bhalwal, amber=Khushab) + city selector dropdowns. Typography standardization (text-xs, text-[10px] badges). Action dropdown cleanup (size-7, hideChevron, no conflicting CSS). |
 | 2026-06-07 | 27.0 | **Post-launch bug fixes**: Double header on desktop (AppHeader wrapped in `lg:hidden`). HDS body not rendering from map — Leaflet z-index conflict (HDS `z-50` vs Leaflet panes up to z-700 → changed to `z-[800]`). Floating icons behind Leaflet (`z-40` → `z-[800]`). Mobile filter sheet reliability (removed hidden-DOM trigger mechanism, direct state control via `open`/`onClose` props). Mobile header uniform styling (all buttons `h-9 border border-border`, avatar shows full name, status text repositioned). 6 files changed. |
+| 2026-06-07 | 28.0 | **Unsent delivery flow fixes + testing protocol.** GPS signal tracking, toast redesign (top-right pill, 5s slide-in). "Always unsent" feature (7 steps): migration 038, admin toggle, handleFile unsent mode, max limit enforcement, UnsentBadge floating modal, skipAutoSync param. Fixed unsent delivery gap: POST /api/deliveries/mark-processing, POST /api/deliveries/promote, filter-bar icon replacing floating badge, concurrent processQueue (batch 3), orphan cleanup on 403/404. Bug: unsent icon placed in deliver filter bar — needs moving to FloatingActions. Testing protocol documented in Section 24. |
 
 ---
 ## 15. Full App Audit Report (2026-05-27)
@@ -3458,6 +3491,54 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 - Mobile Filter icon lacks active filter indicator (pending fix).
 - Map view does not update markers after filter Apply on mobile (pending investigation).
 
+### 2026-06-07 (Part 11) — GPS Signal + Toast Redesign + "Always Unsent" Feature + Delivery Fixes — Location: Home
+
+**Focus:** Build GPS signal indicator in sheet, redesign toast system, implement "always unsent" delivery mode, fix the delivery status gap in unsent mode, establish testing protocol.
+
+**Done:**
+
+**GPS Signal Indicator (3 files):**
+- `src/hooks/use-user-location.ts` — Added `accuracy` field to return value. Expose `gpsAccuracy` from GeolocationPosition.coords.accuracy.
+- `src/components/delivery/unit-delivery-sheet.tsx` — Added GPS signal dots (3 dots: all green ≥good, 2 green =fair, 1 green =poor, all gray =inactive). Updates via accuracy from shared useUserLocation hook.
+- `src/components/delivery/staff-map.tsx` — Passes user location with accuracy to sheet context for GPS signal display.
+
+**Toast Redesign (1 file):**
+- `src/hooks/use-toast.tsx` — Redesigned from bottom-right card stack to top-right slim pill below header. Styled as `rounded-full bg-white/90 backdrop-blur-sm` with variant-colored border + icon. `animate-slide-in-right` animation. 5s duration. `max-w-[260px]` on mobile. Keyframes added to globals.css.
+
+**"Always Unsent" Feature — 7 steps:**
+1. **Step 1** — `scripts/sql/038-unsent-mode-setting.sql`: INSERT into `app_settings` with `key='unsent_mode'`, value `{"enabled":false,"max_limit":50}`. Applied to Supabase.
+2. **Step 2** — `src/app/settings/page.tsx`: Admin toggle in Delivery tab sidebar: switch + max limit input + summary line "Unsent: On (max 50)". Saved via existing `PATCH /api/settings`.
+3. **Step 3** — `src/components/delivery/unit-delivery-sheet.tsx`: handleFile unsent mode path — compress → enqueue to IndexedDB with `skipAutoSync: true` → local `setDeliveryStatus('processing')` → auto-advance 1.5s. No webhook call. Max limit enforcement: if queueCount >= unsentMaxLimit → toast + return early.
+4. **Step 4** — `src/components/delivery/unsent-badge.tsx`: Floating bottom-right button with queue count badge + slim modal ("Sync All" + progress bar + error display).
+5. **Step 5** — `src/hooks/use-photo-queue.ts`: `skipAutoSync` param on `enqueuePhoto` — when true, skips `processQueue()` call.
+6. Step 6 — `src/hooks/use-unsent-photos.ts`: Blob storage deferred blob-to-base64 in `retrySingle`.
+7. Step 7 — Verify all pass `npx tsc --noEmit`.
+
+**Fixed: Unsent Delivery Status Gap (5 fixes):**
+1. **Fix 1** — `src/app/api/deliveries/mark-processing/route.ts`: NEW endpoint. Auth check (getUser + ownership), creates delivery_photos placeholder (`photo_url = 'pending://unsent/{id}'`), sets assignment_items.status = 'processing'. Returns { status: 'processing' }.
+2. **Fix 1b** — `src/components/delivery/unit-delivery-sheet.tsx`: handleFile calls POST /api/deliveries/mark-processing BEFORE enqueue. Catches error with distinct message.
+3. **Fix 2** — `src/components/delivery/unsent-badge.tsx` → refactored to `UnsentModal` (just modal content, no floating button). `src/app/deliver/page.tsx`: Added 📷 icon in filter pills row (between "All" pill and right edge) with queue count badge. *Note: user requested this be in FloatingActions instead — deferred to next session.*
+4. **Fix 3** — `src/app/api/deliveries/promote/route.ts`: NEW endpoint. Finds placeholder delivery_photos row (synced_to_drive=false), updates with real Drive URL + gdrive_file_id. Updates assignment_items.status = 'delivered'. Uses promote instead of duplicate insert. `src/hooks/use-photo-queue.ts`: uploadSingle calls POST /api/deliveries/promote instead of POST /api/delivery/photos.
+5. **Fix 4** — `src/hooks/use-photo-queue.ts`: processQueue now processes in batches of 3 concurrently via Promise.allSettled. uploadSingle returns 'ok' | 'retry' | 'orphan'. Orphan on 403/404 = remove from queue silently.
+6. **Fix 5** — Orphan cleanup: promote endpoint errors with 403/404 → uploadSingle returns 'orphan' → removed from queue.
+
+**Key decisions:**
+- Blob storage in IndexedDB eliminates FileReader UI freeze on main thread.
+- Delivery status must be recorded at capture time (`processing`), even if photo upload is deferred.
+- "Always unsent" default OFF — admin must enable. Staff sees filter-bar icon with count badge when queue is non-empty.
+- Unsent icon should be in FloatingActions (map page floating panel), not in deliver page filter bar — deferred to next session.
+- All 5 fixes pass `npx tsc --noEmit` with zero errors.
+
+**Testing Verification:**
+1. **Pre-cleanup**: Delete IndexedDB databases, reset 10 test items to `pending`, ensure unsent_mode ON
+2. Staff `/deliver` → tap pending → take picture → "Saved to queue" → auto-advance 1.5s
+3. DB: status = `processing`, delivery_photos placeholder row
+4. Filter bar 📷 badge increments
+5. Sync All → photos upload (batch 3 concurrent) → status = `delivered`, real Drive URL
+6. Max limit: 50th item blocks 51st with toast
+7. Orphan: revoke assignment → Sync All → photo removed silently
+8. Admin toggles OFF → normal online upload resumes
+
 ---
 
 
@@ -4044,4 +4125,91 @@ After the F1 field bug is fixed at office PC, the priority order should be:
 5. **Address F1 root cause** (P1 egress audit H1-H3) — 2-3 days. Audit compliance.
 
 **Do NOT add more features until the live system is stable.** The F1 failure is a sign that the implementation pipeline is fragile to real-world conditions, not a sign of missing features.
+
+---
+
+## 24. Deliver — Testing Protocol for Unsent Flow
+
+### 24.1 Pre-Cleanup (Before Testing from Step 1)
+
+| # | Step | Details |
+|---|------|---------|
+| 1 | Clear IndexedDB | DevTools → Application → IndexedDB → delete `billing-saas-photo-queue` + `billing-saas-unsent-photos` |
+| 2 | Reset test data (admin) | Verify 10 test items (2 dummy MCs, TST_PSID_*) are all `pending`. Revoke any with `processing` status |
+| 3 | Clear stale delivery_photos | `DELETE FROM delivery_photos WHERE synced_to_drive = false AND assignment_item_id IN (SELECT id FROM assignment_items WHERE psid LIKE 'TST_%')` |
+| 4 | Ensure unsent_mode ON | Settings → Delivery tab → toggle "Always Queue Unsent" = ON, max limit = 50 → Save |
+
+### 24.2 Test Flow
+
+| # | Action | Expected Result | Verification |
+|---|--------|----------------|-------------|
+| 1 | Staff opens `/deliver` | Sees assignment list with 10 pending items (blue dots) | List loads, progress bar shows 0/10 |
+| 2 | Tap a pending unit → sheet opens → take picture | Sheet shows progress (compressing/uploading/saving) → toast "Saved to queue" → auto-advances 1.5s to next pending | Network tab: `POST /api/deliveries/mark-processing` returns 200 |
+| 3 | Check DB | `SELECT status FROM assignment_items WHERE psid = ?` → `'processing'` | `delivery_photos` has row with `photo_url = 'pending://unsent/...'`, `synced_to_drive = false` |
+| 4 | Check filter bar | 📷 icon visible with badge "1" | No floating button at bottom-right |
+| 5 | Deliver 2 more units | Badge increments: "2" → "3" | Queue count reflects total |
+| 6 | Tap 📷 icon in filter bar | Modal opens: "3 photos queued" + "Sync All" button | Queue count matches expected |
+| 7 | Tap "Sync All" | Photos upload in batches of 3 concurrent. Progress bar animates. Badge counts down. | Network tab: `POST /api/deliveries/promote` calls with sequential 3 concurrent uploads to GAS webhook |
+| 8 | After sync completes | Badge disappears (queue empty) | `SELECT status FROM assignment_items` → `'delivered'`, `delivery_photos.photo_url` = real Drive thumbnail, `synced_to_drive = true` |
+| 9 | Tap delivered unit marker | Sheet shows "View Details" only (no delivery button for admin) | Green checkmark visible |
+| 10 | Max limit test | Queue 50 photos → try to deliver 51st → toast "Clear unsent queue first (50/50)" → button blocked | Items remain `pending` |
+| 11 | Orphan test | Admin revokes test assignment → Staff Sync All → photo silently removed from queue | `SELECT status FROM assignment_items WHERE psid = ?` → item still `pending` (if orphaned) |
+| 12 | Admin disables unsent mode | Settings → toggle OFF → Save | Staff delivery goes back to normal online upload (direct POST /api/deliveries/mark with webhook) |
+
+### 24.3 Admin Verification Queries
+
+```sql
+-- Check item statuses
+SELECT id, psid, status, delivered_at, gps_lat, gps_lng 
+FROM assignment_items 
+WHERE psid LIKE 'TST_%'
+ORDER BY psid;
+
+-- Check photo records
+SELECT ai.psid, dp.photo_url, dp.synced_to_drive, dp.gdrive_file_id
+FROM delivery_photos dp
+JOIN assignment_items ai ON ai.id = dp.assignment_item_id
+WHERE ai.psid LIKE 'TST_%'
+ORDER BY ai.psid;
+```
+
+### 24.4 Edge Cases
+
+| Edge Case | Expected Behavior |
+|-----------|------------------|
+| No GPS during capture | status = `processing` with null GPS fields. Photo queue handles without GPS. |
+| Offline during capture | Photo queued to IndexedDB. Auto-syncs when online via `online` event listener. |
+| Tab closed before sync | `sendBeacon` fires on `beforeunload` (best-effort ping). Full queue survives in IndexedDB. |
+| Duplicate photo attempt (double-tap) | Mark-processing endpoint is idempotent — early return if already `delivered`/`missed`. |
+| Webhook fails during Sync All | Retries up to 3 times per photo. After 3 failures, removed from queue with `lastError`. |
+| 403/404 from promote (orphan) | Photo silently removed from queue. Item stays `processing` in DB (admin must Force Complete or revoke). |
+| Max limit exactly 50 | 50th item enqueued successfully. 51st blocked with toast. "Sync All" clears → counter resets. |
+
+---
+
+## 25. Remaining Corrections
+
+Items that need to be fixed before the next session or are deferred from this session:
+
+| # | Priority | Issue | Files | Fix |
+|---|----------|-------|-------|-----|
+| 1 | **HIGH** | Unsent icon in deliver page filter bar (should be in FloatingActions on map page) | `deliver/page.tsx`, `floating-actions.tsx` | Revert deliver bar, add 4th Image-button with queue badge to FloatingActions. Keep `UnsentModal` triggered from FloatingActions. |
+| 2 | LOW | Orphan message too alarming ("assignment no longer active") | `use-photo-queue.ts` | Change to "stale entry skipped" |
+| 3 | INFO | Stale IndexedDB entries from prior testing | browser DevTools | Clear before each fresh test session |
+| 4 | HIGH | Stale `processing` items in DB from failed earlier tests | SQL | Reset to `pending` before fresh test cycle |
+| 5 | MEDIUM | `037-notifications.sql` not yet applied to Supabase | `scripts/sql/037-notifications.sql` | Needs PAT token from office PC (`SUPABASE_ACCESS_TOKEN`) |
+| 6 | MEDIUM | Notification scheme update: polling at 30s, no real-time | — | Implemented but migration not applied |
+| 7 | INFO | GPS signal indicator uses `accuracy` from geolocation — needs verification on mobile | `use-user-location.ts` | Test with actual mobile GPS (disable office PC "no GPS" fallback) |
+| 8 | INFO | Toast redesign renders on all pages — verify on delivery + settings + assignments | `globals.css`, `use-toast.tsx` | Visual check on mobile width (max-w-[260px]) |
+
+### 25.1 Next Session Kickoff
+
+When returning from home, the first task is:
+
+1. **Revert** unsent icon from deliver page filter bar
+2. **Add** unsent icon as 4th button to `FloatingActions` component (map page floating panel)
+3. **Wire** `UnsentModal` open/close from the FloatingActions button
+4. Apply `037-notifications.sql` migration to Supabase (requires PAT token from office PC)
+5. Clean up stale IndexedDB + DB records from prior testing
+6. Run through the full testing protocol (Section 24) from step 1
 

@@ -7,11 +7,13 @@ import { useBillingStore } from '@/stores/billing-store'
 import { useStaffAssignment } from '@/hooks/use-assignments'
 import { useOnlineStatus } from '@/hooks/use-online-status'
 import { cacheAssignment, getCachedAssignment } from '@/lib/offline-cache'
-import { Loader2, WifiOff, CheckCircle2, CreditCard, ArrowLeft, ArrowRight } from 'lucide-react'
+import { Loader2, WifiOff, CheckCircle2, CreditCard, ArrowLeft, ArrowRight, Image } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AssignmentItemWithUnit } from '@/types'
 import { AppShell } from '@/components/layout/AppShell'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
+import { UnsentModal } from '@/components/delivery/unsent-badge'
+import { usePhotoQueue } from '@/hooks/use-photo-queue'
 
 const PAGE_SIZE = 50
 
@@ -39,6 +41,8 @@ export default function DeliverPage() {
   const [useCache, setUseCache] = useState(false)
   const [page, setPage] = useState(0)
   const [filterTab, setFilterTab] = useState<'pending' | 'issues' | 'delivered' | 'all'>('pending')
+  const [unsentOpen, setUnsentOpen] = useState(false)
+  const { queueCount } = usePhotoQueue()
 
   const { data, isLoading, refetch } = useStaffAssignment(user?.id || null)
   const isOnline = useOnlineStatus()
@@ -201,6 +205,21 @@ export default function DeliverPage() {
               >
                 All ({items.length})
               </button>
+
+              {/* Unsent queue icon */}
+              <div className="flex-1" />
+              <button
+                onClick={() => setUnsentOpen(true)}
+                className="relative h-7 w-7 flex items-center justify-center rounded-lg hover:bg-muted transition-colors cursor-pointer"
+                aria-label="Unsent photos"
+              >
+                <Image className="h-3.5 w-3.5 text-muted-foreground" />
+                {queueCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 h-3.5 min-w-[14px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[8px] font-bold px-0.5">
+                    {queueCount > 99 ? '99+' : queueCount}
+                  </span>
+                )}
+              </button>
             </div>
 
             {/* List */}
@@ -290,6 +309,7 @@ export default function DeliverPage() {
           </div>
         )}
       </div>
+      <UnsentModal open={unsentOpen} onClose={() => setUnsentOpen(false)} />
     </AppShell>
   )
 }

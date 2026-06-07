@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -8,12 +8,28 @@ import { Loader2, RefreshCw, Trash2, Upload, ImageOff } from 'lucide-react'
 import { useUnsentPhotos } from '@/hooks/use-unsent-photos'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
-import { cn } from '@/lib/utils'
+
+function getPhotoUrl(photo: { dataUrl?: string; photoBlob?: Blob }): string {
+  if (photo.dataUrl) return photo.dataUrl
+  if (photo.photoBlob) return URL.createObjectURL(photo.photoBlob)
+  return ''
+}
 
 export function UnsentImagesSection() {
   const { unsentList, count, syncingIds, retrySingle, retryAll, discard, refresh } = useUnsentPhotos()
   const confirm = useConfirm()
   const { toast } = useToast()
+  const blobUrlsRef = useRef<string[]>([])
+
+  useEffect(() => {
+    const urls = unsentList.map((p) => (p.photoBlob ? URL.createObjectURL(p.photoBlob) : ''))
+    blobUrlsRef.current = urls
+    return () => {
+      for (const url of urls) {
+        if (url) URL.revokeObjectURL(url)
+      }
+    }
+  }, [unsentList])
 
   const handleRetryAll = useCallback(async () => {
     await retryAll()
@@ -71,15 +87,22 @@ export function UnsentImagesSection() {
       <div className="space-y-2">
         {unsentList.map((photo) => {
           const isSyncing = syncingIds.has(photo.id!)
+          const thumbSrc = getPhotoUrl(photo)
           return (
             <Card key={photo.id}>
               <CardContent className="flex items-start gap-3 p-3">
                 <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 bg-muted">
-                  <img
-                    src={photo.dataUrl}
-                    alt={`PSID ${photo.psid}`}
-                    className="w-full h-full object-cover"
-                  />
+                  {thumbSrc ? (
+                    <img
+                      src={thumbSrc}
+                      alt={`PSID ${photo.psid}`}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-muted-foreground text-[10px]">
+                      No img
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">

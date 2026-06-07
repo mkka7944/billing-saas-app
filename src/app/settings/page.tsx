@@ -138,6 +138,9 @@ export default function SettingsPage() {
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
   const [savedAllowNoPhoto, setSavedAllowNoPhoto] = useState(false)
   const [deliverySaving, setDeliverySaving] = useState(false)
+  const [unsentModeEnabled, setUnsentModeEnabled] = useState(false)
+  const [unsentMaxLimit, setUnsentMaxLimit] = useState(50)
+  const [savedUnsentMode, setSavedUnsentMode] = useState<{ enabled: boolean; max_limit: number } | null>(null)
 
   // Staff notification form
   const [notifyUserId, setNotifyUserId] = useState('')
@@ -184,6 +187,10 @@ export default function SettingsPage() {
           setDeliverySettings({ enforce: gps.enforce !== false, threshold: typeof gps.threshold === 'number' ? gps.threshold : 50 })
           setAllowNoPhoto(data?.allow_no_photo === true)
           setSavedAllowNoPhoto(data?.allow_no_photo === true)
+          const um = data?.unsent_mode || { enabled: false, max_limit: 50 }
+          setUnsentModeEnabled(um.enabled)
+          setUnsentMaxLimit(um.max_limit ?? 50)
+          setSavedUnsentMode({ enabled: um.enabled, max_limit: um.max_limit ?? 50 })
         })
         .catch(() => toast('Failed to load settings', 'error'))
     }
@@ -208,12 +215,21 @@ export default function SettingsPage() {
           value: allowNoPhoto,
         }),
       })
-      if (res1.ok && res2.ok) {
+      const res3 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'unsent_mode',
+          value: { enabled: unsentModeEnabled, max_limit: unsentMaxLimit },
+        }),
+      })
+      if (res1.ok && res2.ok && res3.ok) {
         setDeliverySettings({ enforce: deliveryEnforce, threshold: deliveryThreshold })
         setSavedAllowNoPhoto(allowNoPhoto)
+        setSavedUnsentMode({ enabled: unsentModeEnabled, max_limit: unsentMaxLimit })
         toast('Delivery settings saved', 'success')
       } else {
-        const j = await (res1.ok ? res2 : res1).json()
+        const j = await (res1.ok ? (res2.ok ? res3 : res2) : res1).json()
         toast(j.error || 'Failed to save', 'error')
       }
     } catch {
@@ -350,7 +366,9 @@ export default function SettingsPage() {
     deliverySettings != null && (
       deliveryEnforce !== deliverySettings.enforce ||
       deliveryThreshold !== deliverySettings.threshold ||
-      allowNoPhoto !== savedAllowNoPhoto
+      allowNoPhoto !== savedAllowNoPhoto ||
+      unsentModeEnabled !== (savedUnsentMode?.enabled ?? false) ||
+      unsentMaxLimit !== (savedUnsentMode?.max_limit ?? 50)
     )
 
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
@@ -505,6 +523,29 @@ export default function SettingsPage() {
 
                   <Separator />
 
+                  {/* Always Unsent Mode */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-medium">Always Queue Unsent</span>
+                        {unsentModeEnabled && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Photos stored locally, upload later</p>
+                        )}
+                      </div>
+                      <Switch checked={unsentModeEnabled} onCheckedChange={setUnsentModeEnabled} />
+                    </div>
+                    {unsentModeEnabled && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-muted-foreground">Max unsent limit</label>
+                        <Input type="number" min={1} max={200} value={unsentMaxLimit}
+                          onChange={(e) => setUnsentMaxLimit(Number(e.target.value))}
+                          className="h-8 text-xs" />
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
                   {/* Save button */}
                   <Button onClick={handleSaveDelivery} disabled={!hasChanges || deliverySaving} size="sm" className="w-full h-8 text-xs">
                     {deliverySaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
@@ -514,6 +555,7 @@ export default function SettingsPage() {
                     <div className="text-[10px] text-muted-foreground space-y-0.5">
                       <p>GPS: {deliverySettings.enforce ? `${deliverySettings.threshold}m` : 'Off'}</p>
                       <p>No-Photo: {savedAllowNoPhoto ? 'On' : 'Off'}</p>
+                      <p>Unsent: {savedUnsentMode?.enabled ? `On (max ${savedUnsentMode.max_limit})` : 'Off'}</p>
                     </div>
                   )}
                 </CardContent>

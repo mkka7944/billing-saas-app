@@ -31,6 +31,21 @@ function stripDataPrefix(dataUrl: string): string {
   return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function resolvePhotoData(photo: QueuedPhoto): Promise<string> {
+  if (photo.dataUrl) return photo.dataUrl
+  if (photo.photoBlob) return blobToBase64(photo.photoBlob)
+  throw new Error('No photo data available')
+}
+
 export function usePhotoQueue() {
   const [queueCount, setQueueCount] = useState(0)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -42,15 +57,16 @@ export function usePhotoQueue() {
     setQueueCount(count)
   }, [])
 
-  const uploadSingle = useCallback(async (photo: QueuedPhoto): Promise<boolean> => {
+  const uploadSingle = useCallback(async (photo: QueuedPhoto): Promise<'ok' | 'retry' | 'orphan'> => {
     if (!WEBHOOK_URL) {
       console.warn('NEXT_PUBLIC_DRIVE_WEBHOOK_URL not set — photo silently skipped')
       await markSynced(photo.id!)
-      return true
+      return 'ok'
     }
 
     try {
-      const rawBase64 = stripDataPrefix(photo.dataUrl)
+      const dataUrl = await resolvePhotoData(photo)
+      const rawBase64 = stripDataPrefix(dataUrl)
       const filename = `${photo.psid}_${Date.now()}.webp`
 
       const res = await fetch(WEBHOOK_URL, {
@@ -77,29 +93,38 @@ export function usePhotoQueue() {
 
       const photoUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w640`
 
-      const saveRes = await fetch('/api/delivery/photos', {
+      const promoteRes = await fetch('/api/deliveries/promote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          assignment_item_id: photo.assignmentItemId,
-          photo_url: photoUrl,
-          gdrive_file_id: fileId,
-          gps_lat: photo.gpsLat,
-          gps_lng: photo.gpsLng,
+          assignmentItemId: photo.assignmentItemId,
+          photoUrl,
+          gdriveFileId: fileId,
+          gpsLat: photo.gpsLat,
+          gpsLng: photo.gpsLng,
         }),
       })
 
-      if (!saveRes.ok) throw new Error('Failed to save photo record')
+      if (!promoteRes.ok) {
+        if (promoteRes.status === 403 || promoteRes.status === 404) {
+          await removeFromQueue(photo.id!)
+          return 'orphan'
+        }
+        const errBody = await promoteRes.json().catch(() => ({ error: 'Promote failed' }))
+        throw new Error(errBody.error || 'Failed to promote delivery')
+      }
 
       await markSynced(photo.id!)
-      return true
+      return 'ok'
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error'
       if (photo.retryCount >= MAX_RETRIES) {
         await removeFromQueue(photo.id!)
       } else {
         await incrementRetry(photo.id!)
       }
-      return false
+      setLastError(`Photo ${photo.psid}: ${errMsg}`)
+      return 'retry'
     }
   }, [])
 
@@ -111,10 +136,20 @@ export function usePhotoQueue() {
 
     try {
       const photos = await getQueuedPhotos()
-      for (const photo of photos) {
-        const ok = await uploadSingle(photo)
-        if (!ok) {
-          setLastError(`Failed to upload photo for ${photo.psid}`)
+      const batchSize = 3
+      for (let i = 0; i < photos.length; i += batchSize) {
+        const batch = photos.slice(i, i + batchSize)
+        const results = await Promise.allSettled(batch.map((p) => uploadSingle(p)))
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j]
+          const photo = batch[j]
+          if (result.status === 'rejected') {
+            setLastError(`Failed to upload photo for ${photo.psid}: ${result.reason}`)
+          } else if (result.value === 'orphan') {
+            setLastError(`Photo for ${photo.psid} skipped (assignment no longer active)`)
+          } else if (result.value === 'retry') {
+            setLastError(`Failed to upload photo for ${photo.psid}`)
+          }
         }
       }
       await clearSynced()
@@ -128,15 +163,16 @@ export function usePhotoQueue() {
   const enqueuePhoto = useCallback(async (opts: {
     assignmentItemId: string
     psid: string
-    dataUrl: string
+    photoBlob: Blob
     email: string
     gpsLat?: number | null
     gpsLng?: number | null
+    skipAutoSync?: boolean
   }) => {
     const id = await addToQueue({
       assignmentItemId: opts.assignmentItemId,
       psid: opts.psid,
-      dataUrl: opts.dataUrl,
+      photoBlob: opts.photoBlob,
       capturedAt: new Date().toISOString(),
       email: opts.email,
       gpsLat: opts.gpsLat,
@@ -145,12 +181,26 @@ export function usePhotoQueue() {
 
     await refreshCount()
 
-    if (navigator.onLine) {
+    if (!opts.skipAutoSync && navigator.onLine) {
       processQueue()
     }
 
     return id
   }, [refreshCount, processQueue])
+
+  // sendBeacon flush on tab close — best-effort
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (queueCount === 0) return
+      try {
+        navigator.sendBeacon('/api/deliveries/ping')
+      } catch {
+        // ignore
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [queueCount])
 
   useEffect(() => {
     refreshCount()
