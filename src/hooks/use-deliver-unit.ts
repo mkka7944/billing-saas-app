@@ -3,6 +3,9 @@
 import { useState, useCallback } from 'react'
 import { compressImage } from '@/lib/image/compress'
 
+const MIN_STEP_MS = 500
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 function captureGPS(timeout = 3000): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -54,24 +57,28 @@ export function useDeliverUnit() {
     targetLng: number | null,
     gpsOverride?: { lat: number; lng: number } | null,
     onProgress?: (p: DeliveryProgress) => void,
+    surveyId?: string | null,
   ): Promise<DeliveryResult | null> => {
     setIsDelivering(true)
     setLastResult(null)
     setProgress('compressing')
     onProgress?.('compressing')
+    await sleep(MIN_STEP_MS)
 
     try {
       const gps = gpsOverride ?? await captureGPS()
 
       const compressed = await compressImage(photoFile)
 
-      setProgress('uploading')
       onProgress?.('uploading')
+      setProgress('uploading')
+      await sleep(MIN_STEP_MS)
 
       const form = new FormData()
-      form.append('photo', compressed, `${psid}_delivery.webp`)
+      form.append('photo', compressed, `${surveyId || psid}_delivery.webp`)
       form.append('assignment_item_id', assignmentItemId)
       form.append('psid', psid)
+      if (surveyId) form.append('survey_id', surveyId)
       if (gps) {
         form.append('gps_lat', String(gps.lat))
         form.append('gps_lng', String(gps.lng))
@@ -112,6 +119,7 @@ export function useDeliverUnit() {
     setIsDelivering(true)
     setLastResult(null)
     setProgress('uploading')
+    await sleep(300)
 
     try {
       const gps = gpsOverride ?? await captureGPS()

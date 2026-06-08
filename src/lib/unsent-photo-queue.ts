@@ -2,6 +2,7 @@ export interface UnsentPhoto {
   id?: number
   assignmentItemId: string
   psid: string
+  surveyId?: string
   dataUrl?: string
   photoBlob?: Blob
   gpsLat?: number | null

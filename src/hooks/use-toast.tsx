@@ -11,8 +11,8 @@ export interface Toast {
 }
 
 interface ToastContextValue {
-  toast: (message: string, variant?: ToastVariant) => string
-  updateToast: (id: string, message: string, variant?: ToastVariant) => void
+  toast: (message: string, variant?: ToastVariant, duration?: number) => string
+  updateToast: (id: string, message: string, variant?: ToastVariant, duration?: number) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
@@ -35,6 +35,8 @@ const VARIANT_STYLES: Record<ToastVariant, { icon: string; border: string; ring:
   info:    { icon: 'i', border: 'border-blue-500', ring: 'ring-blue-500/20' },
 }
 
+const DEFAULT_DURATION = 8000
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -45,19 +47,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     if (timer) { clearTimeout(timer); timersRef.current.delete(id) }
   }, [])
 
-  const toast = useCallback((message: string, variant: ToastVariant = 'info') => {
+  const toast = useCallback((message: string, variant: ToastVariant = 'info', duration?: number) => {
     const id = `toast-${++toastId}`
     setToasts((prev) => [...prev, { id, message, variant }])
-    const timer = setTimeout(() => removeToast(id), 5000)
+    const timer = setTimeout(() => removeToast(id), duration ?? DEFAULT_DURATION)
     timersRef.current.set(id, timer)
     return id
   }, [removeToast])
 
-  const updateToast = useCallback((id: string, message: string, variant?: ToastVariant) => {
+  const updateToast = useCallback((id: string, message: string, variant?: ToastVariant, duration?: number) => {
     const timer = timersRef.current.get(id)
     if (timer) { clearTimeout(timer); timersRef.current.delete(id) }
     setToasts((prev) => prev.map((t) => t.id === id ? { ...t, message, ...(variant ? { variant } : {}) } : t))
-    const newTimer = setTimeout(() => removeToast(id), 5000)
+    const newTimer = setTimeout(() => removeToast(id), duration ?? DEFAULT_DURATION)
     timersRef.current.set(id, newTimer)
   }, [removeToast])
 
@@ -73,10 +75,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 key={t.id}
                 role="alert"
                 onClick={() => removeToast(t.id)}
-                className={`animate-slide-in-right flex items-center gap-1.5 px-2.5 py-1.5 rounded-full shadow-lg text-[11px] font-medium cursor-pointer backdrop-blur-sm bg-white/90 border ${vs.border} ring-1 ${vs.ring} text-gray-800 transition-opacity duration-200`}
+                className={`animate-slide-in-right pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-xl shadow-lg text-[11px] font-medium cursor-pointer backdrop-blur-sm bg-white/95 border ${vs.border} ring-1 ${vs.ring} text-gray-800 transition-all duration-200`}
               >
                 <span className="shrink-0 text-xs">{vs.icon}</span>
-                {t.message}
+                <span className="truncate">{t.message}</span>
               </div>
             )
           })}

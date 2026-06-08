@@ -2,18 +2,22 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
-import { Search, SlidersHorizontal, Layers, X } from 'lucide-react'
+import { Search, SlidersHorizontal, Layers, Image, X } from 'lucide-react'
 import { MobileFilterSheet } from '@/components/filter-panel'
+import { UnsentModal } from '@/components/delivery/unsent-badge'
+import { useUnsentPhotos } from '@/hooks/use-unsent-photos'
 
 export function FloatingActions() {
   const [open, setOpen] = useState(false)
   const [searchVisible, setSearchVisible] = useState(false)
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
+  const [unsentOpen, setUnsentOpen] = useState(false)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const mapType = useBillingStore((s) => s.mapType)
   const setMapType = useBillingStore((s) => s.setMapType)
   const search = useBillingStore((s) => s.filters.search)
   const setPendingFilter = useBillingStore((s) => s.setPendingFilter)
+  const { count: unsentCount } = useUnsentPhotos(5000)
 
   useEffect(() => {
     if (selectedHouseId) {
@@ -38,17 +42,30 @@ export function FloatingActions() {
     setMapType(mapType === 'streets' ? 'satellite' : 'streets')
   }, [mapType, setMapType])
 
+  const handleUnsent = useCallback(() => {
+    setOpen(false)
+    setUnsentOpen(true)
+  }, [])
+
   if (selectedHouseId) return null
 
   return (
     <>
-      <div className="fixed right-3 top-1/2 -translate-y-1/2 z-[800] lg:hidden">
+      <div className="fixed right-3 top-1/2 -translate-y-1/2 z-[800]">
         {open ? (
           <div className="flex flex-col items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
             <div className="flex flex-col gap-1 p-1.5 rounded-xl bg-background/80 backdrop-blur-md border border-border shadow-lg">
               <ActionButton icon={Search} label="Search" onClick={handleSearch} />
               <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} />
               <ActionButton icon={Layers} label={mapType === 'streets' ? 'Satellite' : 'Street'} onClick={handleSatellite} active={mapType === 'satellite'} />
+              <div className="relative">
+                <ActionButton icon={Image} label="Unsent" onClick={handleUnsent} />
+                {unsentCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 h-3.5 min-w-[14px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[8px] font-bold px-0.5 pointer-events-none">
+                    {unsentCount > 99 ? '99+' : unsentCount}
+                  </span>
+                )}
+              </div>
             </div>
             <button
               onClick={() => setOpen(false)}
@@ -59,13 +76,20 @@ export function FloatingActions() {
             </button>
           </div>
         ) : (
-          <button
-            onClick={() => setOpen(true)}
-            className="h-10 w-10 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-md border border-border shadow-lg hover:bg-muted cursor-pointer"
-            aria-label="Open actions"
-          >
-            <span className="text-base font-bold text-muted-foreground leading-none">&#x2726;</span>
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setOpen(true)}
+              className="h-10 w-10 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-md border border-border shadow-lg hover:bg-muted cursor-pointer"
+              aria-label="Open actions"
+            >
+              <span className="text-base font-bold text-muted-foreground leading-none">&#x2726;</span>
+            </button>
+            {unsentCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[9px] font-bold px-1 pointer-events-none shadow-sm">
+                {unsentCount > 99 ? '99+' : unsentCount}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -78,6 +102,7 @@ export function FloatingActions() {
       )}
 
       <MobileFilterSheet open={mobileFilterOpen} onClose={() => setMobileFilterOpen(false)} />
+      <UnsentModal open={unsentOpen} onClose={() => setUnsentOpen(false)} />
     </>
   )
 }

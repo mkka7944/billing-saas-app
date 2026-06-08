@@ -67,7 +67,8 @@ export function usePhotoQueue() {
     try {
       const dataUrl = await resolvePhotoData(photo)
       const rawBase64 = stripDataPrefix(dataUrl)
-      const filename = `${photo.psid}_${Date.now()}.webp`
+      const fileKey = photo.surveyId || photo.psid
+      const filename = `${fileKey}_${Date.now()}.webp`
 
       const res = await fetch(WEBHOOK_URL, {
         method: 'POST',
@@ -76,8 +77,8 @@ export function usePhotoQueue() {
           action: 'upload',
           name: filename,
           data: rawBase64,
-          surveyId: photo.psid,
-          survey_id: photo.psid,
+          surveyId: fileKey,
+          survey_id: fileKey,
           email: photo.email,
           timestamp: photo.capturedAt,
         }),
@@ -91,7 +92,7 @@ export function usePhotoQueue() {
       const fileId = extractFileId(result)
       if (!fileId) throw new Error('No fileId in webhook response')
 
-      const photoUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w640`
+      const photoUrl = `/api/delivery/photo/${fileId}`
 
       const promoteRes = await fetch('/api/deliveries/promote', {
         method: 'POST',
@@ -163,6 +164,7 @@ export function usePhotoQueue() {
   const enqueuePhoto = useCallback(async (opts: {
     assignmentItemId: string
     psid: string
+    surveyId?: string | null
     photoBlob: Blob
     email: string
     gpsLat?: number | null
@@ -172,6 +174,7 @@ export function usePhotoQueue() {
     const id = await addToQueue({
       assignmentItemId: opts.assignmentItemId,
       psid: opts.psid,
+      surveyId: opts.surveyId || undefined,
       photoBlob: opts.photoBlob,
       capturedAt: new Date().toISOString(),
       email: opts.email,

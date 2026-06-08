@@ -215,12 +215,22 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                 className="w-full h-52 cursor-pointer text-left"
                 aria-label="Open gallery"
               >
-                <img
-                  src={currentImage!.src}
-                  alt=""
-                  className="w-full h-full object-cover"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                />
+                <div className="w-full h-full relative">
+                  <img
+                    src={currentImage!.src}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const el = e.target as HTMLImageElement
+                      el.style.display = 'none'
+                      const fallback = el.parentElement?.querySelector('.img-fallback')
+                      if (fallback) fallback.classList.remove('hidden')
+                    }}
+                  />
+                  <div className="img-fallback hidden absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground">
+                    <Camera className="h-8 w-8" />
+                  </div>
+                </div>
               </button>
               {currentImage && (
                 <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm z-10 uppercase tracking-wider">
@@ -449,12 +459,12 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                   <p className="text-[10px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
                     <Image className="h-3 w-3" /> Photos ({allImages.length})
                   </p>
-                  <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  <div className="grid grid-cols-3 gap-2">
                     {allImages.map((img, i) => (
                       <button
                         key={i}
                         onClick={() => openGallery(i)}
-                        className="shrink-0 w-14 h-14 rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer relative"
+                        className="aspect-square rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer relative"
                       >
                         <img src={img.thumb} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                         <div className={`absolute bottom-0 left-0 right-0 text-[7px] font-bold text-white text-center leading-[1.2] py-[1px] ${

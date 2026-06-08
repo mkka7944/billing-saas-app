@@ -2,6 +2,7 @@ export interface QueuedPhoto {
   id?: number
   assignmentItemId: string
   psid: string
+  surveyId?: string
   dataUrl?: string
   photoBlob?: Blob
   capturedAt: string

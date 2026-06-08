@@ -37,6 +37,7 @@ export async function POST(request: Request) {
   const gpsLngStr = form.get('gps_lng') as string | null
   const assignmentItemId = form.get('assignment_item_id') as string | null
   const psid = form.get('psid') as string | null
+  const surveyId = form.get('survey_id') as string | null
   const targetLatStr = form.get('target_lat') as string | null
   const targetLngStr = form.get('target_lng') as string | null
   const skipPhoto = form.get('skip_photo') === 'true'
@@ -80,18 +81,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Forbidden — assignment item does not belong to this user' }, { status: 403 })
   }
 
-  if (ownership.status === 'delivered' || ownership.status === 'missed') {
-    return NextResponse.json({
-      status: ownership.status,
-      distance: null,
-      photo_url: null,
-      already_delivered: true,
-    })
-  }
-
   const email = user.email
 
   try {
+    const startedAt = new Date().toISOString()
+
     // Check skip_photo permission
     if (skipPhoto || !photo) {
       const { data: noPhotoSetting } = await sup
@@ -112,7 +106,8 @@ export async function POST(request: Request) {
     if (photo && !skipPhoto) {
       const buffer = Buffer.from(await photo.arrayBuffer())
       const base64 = buffer.toString('base64')
-      const filename = `${psid}_${Date.now()}.webp`
+      const fileKey = surveyId || psid
+      const filename = `${fileKey}_${Date.now()}.webp`
 
       if (WEBHOOK_URL) {
         const ac = new AbortController()
@@ -126,8 +121,8 @@ export async function POST(request: Request) {
               action: 'upload',
               name: filename,
               data: stripDataPrefix(base64),
-              surveyId: psid,
-              survey_id: psid,
+              surveyId: fileKey,
+              survey_id: fileKey,
               email: email || 'staff@billing.local',
               timestamp: new Date().toISOString(),
             }),
@@ -147,7 +142,7 @@ export async function POST(request: Request) {
       }
 
       photo_url = gdrive_file_id
-        ? `https://drive.google.com/thumbnail?id=${gdrive_file_id}&sz=w640`
+        ? `/api/delivery/photo/${gdrive_file_id}`
         : `pending://delivery/${assignmentItemId}`
     }
 
@@ -163,6 +158,43 @@ export async function POST(request: Request) {
 
     if (photoErr) {
       return NextResponse.json({ error: `Failed to save photo: ${photoErr.message}` }, { status: 500 })
+    }
+
+    if (ownership.status === 'delivered' || ownership.status === 'missed') {
+      return NextResponse.json({
+        status: ownership.status,
+        distance: null,
+        photo_url,
+        already_delivered: true,
+      })
+    }
+
+    const deliveredAt = new Date().toISOString()
+
+    if (ownership.status === 'processing') {
+      const { error: promoteErr } = await sup
+        .from('assignment_items')
+        .update({
+          status: 'delivered',
+          started_at: startedAt,
+          delivered_at: deliveredAt,
+          gps_lat,
+          gps_lng,
+        })
+        .eq('id', assignmentItemId)
+
+      if (promoteErr) {
+        return NextResponse.json({ error: `Failed to promote processing item: ${promoteErr.message}` }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        status: 'delivered',
+        distance: null,
+        photo_url,
+        gdrive_file_id,
+        gps_lat,
+        gps_lng,
+      })
     }
 
     // 3. Read GPS enforcement settings
@@ -192,7 +224,8 @@ export async function POST(request: Request) {
     // 5. Update assignment_items status
     const update: Record<string, unknown> = {
       status,
-      delivered_at: new Date().toISOString(),
+      started_at: startedAt,
+      delivered_at: deliveredAt,
     }
     if (gps_lat != null) update.gps_lat = gps_lat
     if (gps_lng != null) update.gps_lng = gps_lng

@@ -21,6 +21,7 @@ interface DeliveryItem {
   portal_lat: number | null
   portal_lng: number | null
   status: string
+  started_at: string | null
   delivered_at: string | null
   gps_lat: number | null
   gps_lng: number | null
@@ -107,6 +108,17 @@ export function DeliveryTable() {
     const dLng = toRad(item.gps_lng - item.portal_lng)
     const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(item.portal_lat)) * Math.cos(toRad(item.gps_lat)) * Math.sin(dLng / 2) ** 2
     return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)))
+  }
+
+  function fmtDuration(started: string | null, delivered: string | null): string {
+    if (!started) return '—'
+    const s = new Date(started).getTime()
+    const e = delivered ? new Date(delivered).getTime() : Date.now()
+    const diffMs = e - s
+    if (diffMs < 1000) return '<1s'
+    const secs = Math.floor(diffMs / 1000)
+    if (secs < 60) return `${secs}s`
+    return `${Math.floor(secs / 60)}m ${secs % 60}s`
   }
 
   function toggleSort(key: SortKey) {
@@ -333,6 +345,7 @@ export function DeliveryTable() {
                   <TableHead className="cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('distance')}>
                     Dist. <SortIcon col="distance" />
                   </TableHead>
+                  <TableHead>Duration</TableHead>
                   <TableHead>Photo</TableHead>
                   <TableHead className="cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort('delivered_at')}>
                     Date/Time <SortIcon col="delivered_at" />
@@ -370,19 +383,27 @@ export function DeliveryTable() {
                       <TableCell className="font-mono text-[10px] whitespace-nowrap">
                         {dist >= 0 ? <span className={dist <= 50 ? 'text-green-600' : dist <= 200 ? 'text-amber-600' : 'text-red-600'}>{dist}m</span> : '—'}
                       </TableCell>
+                      <TableCell className="font-mono text-[10px] whitespace-nowrap text-muted-foreground">
+                        {fmtDuration(item.started_at, item.delivered_at)}
+                      </TableCell>
                       <TableCell>
                         {item.photo_url && !item.photo_url.startsWith('pending://') ? (
                           <img
                             src={item.photo_url}
                             alt=""
                             className="w-8 h-8 rounded object-cover border"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                            onError={(e) => {
+                              const el = e.target as HTMLImageElement
+                              el.style.display = 'none'
+                              el.nextElementSibling?.classList.remove('hidden')
+                            }}
                           />
                         ) : item.photo_url?.startsWith('pending://') ? (
                           <span className="text-[9px] text-amber-500 font-medium">Pending</span>
                         ) : (
                           <span className="text-[9px] text-muted-foreground">—</span>
                         )}
+                        <span className="hidden text-[9px] text-muted-foreground">☁</span>
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{fmtTime(item.delivered_at)}</TableCell>
                       <TableCell className="whitespace-nowrap max-w-[100px] truncate">{item.staff_name}</TableCell>
@@ -451,6 +472,7 @@ export function DeliveryTable() {
                     <span>Saved: {item.gps_lat != null ? `${fmtCoord(item.gps_lat)}, ${fmtCoord(item.gps_lng)}` : '—'}</span>
                     <span className="col-span-full">Distance: {dist >= 0 ? <span className={dist <= 50 ? 'text-green-600' : dist <= 200 ? 'text-amber-600' : 'text-red-600'}>{dist}m</span> : '—'}</span>
                     <span className="col-span-full">Delivered: {fmtTime(item.delivered_at)}</span>
+                    <span className="col-span-full">Duration: {fmtDuration(item.started_at, item.delivered_at)}</span>
                   </div>
                   {isRevoking && (
                     <div className="flex justify-center pt-1 text-[10px] text-muted-foreground">

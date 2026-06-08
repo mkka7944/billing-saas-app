@@ -42,9 +42,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Failed to create photo record: ${photoErr.message}` }, { status: 500 })
   }
 
+  const now = new Date().toISOString()
   const update: Record<string, unknown> = {
     status: 'processing',
-    delivered_at: new Date().toISOString(),
+    started_at: now,
+    delivered_at: now,
   }
   if (gpsLat != null) update.gps_lat = gpsLat
   if (gpsLng != null) update.gps_lng = gpsLng

@@ -66,6 +66,7 @@
 23. [Industry Complexity & Engineering Reality](#23-industry-complexity--engineering-reality-2026-06-05)
 24. [Deliver — Testing Protocol for Unsent Flow](#24-deliver--testing-protocol-for-unsent-flow)
 25. [Remaining Corrections](#25-remaining-corrections)
+26. [Delivery KPI Queries (Future)](#26-delivery-kpi-queries-future)
 ---
 ## App Vision — Daily Reference
 
@@ -2114,9 +2115,54 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-06 | 26.0 | **Users tab UI polish (P4)**: `hideChevron` prop on SelectTrigger for icon-only dropdowns. City accent colors on group headers (emerald=Sargodha, blue=Bhalwal, amber=Khushab) + city selector dropdowns. Typography standardization (text-xs, text-[10px] badges). Action dropdown cleanup (size-7, hideChevron, no conflicting CSS). |
 | 2026-06-07 | 27.0 | **Post-launch bug fixes**: Double header on desktop (AppHeader wrapped in `lg:hidden`). HDS body not rendering from map — Leaflet z-index conflict (HDS `z-50` vs Leaflet panes up to z-700 → changed to `z-[800]`). Floating icons behind Leaflet (`z-40` → `z-[800]`). Mobile filter sheet reliability (removed hidden-DOM trigger mechanism, direct state control via `open`/`onClose` props). Mobile header uniform styling (all buttons `h-9 border border-border`, avatar shows full name, status text repositioned). 6 files changed. |
 | 2026-06-07 | 28.0 | **Unsent delivery flow fixes + testing protocol.** Toast redesign (top-right pill, 5s slide-in). "Always unsent" feature (7 steps): migration 038, admin toggle, handleFile unsent mode, max limit enforcement, UnsentBadge floating modal, skipAutoSync param. Fixed unsent delivery gap: POST /api/deliveries/mark-processing, POST /api/deliveries/promote, filter-bar icon replacing floating badge, concurrent processQueue (batch 3), orphan cleanup on 403/404. Bug: unsent icon placed in deliver filter bar — needs moving to FloatingActions. Shared GPS watcher with retry (1s/3s/10s). Delivery step progress overlay. Testing protocol in Section 24. |
-| 2026-06-07 | 29.0 | **Corrections: Progress overlay → sequential toasts + GPS dots.** Removed progress step checklist from sheet (overlaid action buttons). Added `updateToast(id, msg, variant?)` to toast system. Added `onProgress` callback to `useDeliverUnit.deliver()`. Online path: "Compressing..."→"Uploading..."→"Recording..."→final result as sequential toast updates. Unsent path: "Saving..."→"Compressing..."→"Saved ✓". Added 3-dot GPS signal indicator after live distance text (accuracy-based green/gray dots). 3 files changed. Part 11 doc corrected (removed incorrect GPS dots claim). Part 12 added. |
+| 2026-06-07 | 29.0 | **Corrections: Progress overlay → sequential toasts + GPS dots.** Removed progress step checklist from sheet (overlaid action buttons). Added `updateToast(id, msg, variant?)` to toast system. Added `onProgress` callback to `useDeliverUnit.deliver()`. Online path: "Compressing..."→"Uploading..."→"Recording..."→final result as sequential toast updates. Unsent path: "Saving..."→"Compressing..."→"Saved ✓". Added 3-dot GPS signal indicator after live distance text (accuracy-based green/gray dots). 3 files changed. Part 11 doc corrected (removed incorrect GPS claims). Part 12 added. |
+| 2026-06-08 | 30.0 | **Delivery hardening + started_at KPI column.** A1-A4: unsent queue destination, sync-photo promotion, mark route photo order, processing guard. B1-B2: unsent icon moved to FloatingActions, desktop visibility. C1-C4: offline toast, auth check, orphan cleanup (useAssignmentRealtime hook). D1: 037-notifications migration applied. `started_at` column added to `assignment_items` (migration 040), written by mark + mark-processing routes, displayed as Duration column in admin delivery table. See Section 26 for KPI query. |
 
 ---
+
+## 26. Delivery KPI Queries (Future)
+
+After 2-3 months of `started_at` data collection:
+
+```sql
+-- Average delivery time per staff
+SELECT
+  staff_id,
+  COUNT(*) AS deliveries,
+  AVG(EXTRACT(EPOCH FROM (delivered_at - started_at))) AS avg_seconds
+FROM assignment_items
+WHERE started_at IS NOT NULL AND delivered_at IS NOT NULL
+  AND delivered_at > started_at
+GROUP BY staff_id
+ORDER BY avg_seconds;
+
+-- Average delivery time per UC
+SELECT
+  da.uc_name,
+  COUNT(*) AS deliveries,
+  AVG(EXTRACT(EPOCH FROM (ai.delivered_at - ai.started_at))) AS avg_seconds
+FROM assignment_items ai
+JOIN daily_assignments da ON da.id = ai.daily_assignment_id
+WHERE ai.started_at IS NOT NULL AND ai.delivered_at IS NOT NULL
+  AND ai.delivered_at > ai.started_at
+GROUP BY da.uc_name;
+
+-- Delivery time distribution (buckets)
+SELECT
+  CASE
+    WHEN EXTRACT(EPOCH FROM (delivered_at - started_at)) < 60 THEN '<1m'
+    WHEN EXTRACT(EPOCH FROM (delivered_at - started_at)) < 180 THEN '1-3m'
+    WHEN EXTRACT(EPOCH FROM (delivered_at - started_at)) < 300 THEN '3-5m'
+    WHEN EXTRACT(EPOCH FROM (delivered_at - started_at)) < 600 THEN '5-10m'
+    ELSE '>10m'
+  END AS bucket,
+  COUNT(*)
+FROM assignment_items
+WHERE started_at IS NOT NULL AND delivered_at IS NOT NULL
+  AND delivered_at > started_at
+GROUP BY bucket
+ORDER BY bucket;
+```
 ## 15. Full App Audit Report (2026-05-27)
 
 ### 15.1 Efficiency Score: 61/100

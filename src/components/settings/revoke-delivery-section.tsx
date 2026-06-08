@@ -13,6 +13,7 @@ interface RevocableItem {
   id: string
   psid: string
   status: 'delivered' | 'processing'
+  started_at: string | null
   delivered_at: string | null
   gps_lat: number | null
   gps_lng: number | null

@@ -25,7 +25,7 @@ async function resolvePhotoData(photo: UnsentPhoto): Promise<string> {
   throw new Error('No photo data available')
 }
 
-export function useUnsentPhotos() {
+export function useUnsentPhotos(refreshIntervalMs?: number) {
   const [unsentList, setUnsentList] = useState<UnsentPhoto[]>([])
   const [count, setCount] = useState(0)
   const [syncingIds, setSyncingIds] = useState<Set<number>>(new Set())
@@ -39,11 +39,12 @@ export function useUnsentPhotos() {
   const enqueueUnsent = useCallback(async (opts: {
     assignmentItemId: string
     psid: string
+    surveyId?: string | null
     photoBlob: Blob
     gpsLat?: number | null
     gpsLng?: number | null
   }) => {
-    await addUnsent(opts)
+    await addUnsent({ ...opts, surveyId: opts.surveyId || undefined })
     await refresh()
   }, [refresh])
 
@@ -58,6 +59,7 @@ export function useUnsentPhotos() {
         body: JSON.stringify({
           assignmentItemId: photo.assignmentItemId,
           psid: photo.psid,
+          survey_id: photo.surveyId,
           dataUrl,
           gpsLat: photo.gpsLat,
           gpsLng: photo.gpsLng,
@@ -94,6 +96,12 @@ export function useUnsentPhotos() {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  useEffect(() => {
+    if (!refreshIntervalMs) return
+    const timer = setInterval(refresh, refreshIntervalMs)
+    return () => clearInterval(timer)
+  }, [refresh, refreshIntervalMs])
 
   return {
     unsentList,

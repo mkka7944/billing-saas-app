@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     let query = sup
       .from('assignment_items')
       .select(`
-        id, psid, status, delivered_at, gps_lat, gps_lng,
+        id, psid, status, started_at, delivered_at, gps_lat, gps_lng,
         daily_assignments!inner(uc_name, staff_id, staff:staff_id(id, full_name))
       `)
 
@@ -89,6 +89,7 @@ export async function GET(req: NextRequest) {
           id: r.id,
           psid: r.psid,
           status: r.status,
+          started_at: r.started_at,
           delivered_at: r.delivered_at,
           gps_lat: r.gps_lat,
           gps_lng: r.gps_lng,
@@ -138,6 +139,7 @@ export async function GET(req: NextRequest) {
         portal_lat: unit.lat ?? null,
         portal_lng: unit.lng ?? null,
         status: r.status,
+        started_at: r.started_at,
         delivered_at: r.delivered_at,
         gps_lat: r.gps_lat,
         gps_lng: r.gps_lng,
@@ -204,6 +206,7 @@ export async function POST(req: NextRequest) {
     await (admin.from('assignment_items') as any)
       .update({
         status: 'pending',
+        started_at: null,
         delivered_at: null,
         gps_lat: null,
         gps_lng: null,

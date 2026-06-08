@@ -54,6 +54,7 @@ export default function UnitDeliverySheet({
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
   const touchXRef = useRef<number | null>(null)
   const watchIdRef = useRef<number | null>(null)
+  const stepStartRef = useRef<Record<string, number>>({})
 
   const queryClient = useQueryClient()
   const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
@@ -76,7 +77,7 @@ export default function UnitDeliverySheet({
   const email = useAuthStore((s) => s.user?.email)
   const roleName = useAuthStore((s) => s.roleName)
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
-  const { toast, updateToast } = useToast()
+  const { toast } = useToast()
   const confirm = useConfirm()
 
   function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -161,7 +162,10 @@ export default function UnitDeliverySheet({
   // Auto-advance after successful delivery
   useEffect(() => {
     if (deliveryStatus === 'delivered' || deliveryStatus === 'processing') {
-      const timer = setTimeout(() => onNext?.(), 2000)
+      const timer = setTimeout(() => {
+        setIsDelivering(false)
+        onNext?.()
+      }, 2000)
       return () => clearTimeout(timer)
     }
   }, [deliveryStatus, onNext])
@@ -186,7 +190,7 @@ export default function UnitDeliverySheet({
 
     if (unsentModeEnabled) {
       setIsDelivering(true)
-      const progressTid = toast('Saving to queue...', 'info')
+      toast('Saving to queue...', 'info')
       try {
         const markRes = await fetch('/api/deliveries/mark-processing', {
           method: 'POST',
@@ -203,19 +207,18 @@ export default function UnitDeliverySheet({
           throw new Error(err.error || 'Mark failed')
         }
 
-        updateToast(progressTid, 'Compressing photo...', 'info')
+        toast('Compressing photo...', 'info')
         const compressed = await compressImage(file)
-        await enqueuePhoto({
+        await enqueueUnsent({
           assignmentItemId,
           psid: unit.psid,
+          surveyId: unit.survey_id,
           photoBlob: compressed,
-          email: email || '',
           gpsLat: gpsOverride?.lat,
           gpsLng: gpsOverride?.lng,
-          skipAutoSync: true,
         })
         setDeliveryStatus('processing')
-        updateToast(progressTid, 'Saved to queue ✓', 'success')
+        toast('Saved to queue ✓', 'success')
         queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
         queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
         queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
@@ -226,7 +229,7 @@ export default function UnitDeliverySheet({
         return
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Failed to save photo'
-        updateToast(progressTid, msg, 'error')
+        toast(msg, 'error')
         setIsDelivering(false)
         return
       }
@@ -234,7 +237,7 @@ export default function UnitDeliverySheet({
 
     // 1. Try online delivery (uses pre-warmed GPS from live tracking if available)
     let result: Awaited<ReturnType<typeof deliver>> = null
-    const progressTid = toast('Compressing photo...', 'info')
+    stepStartRef.current = { compressing: Date.now() }
     try {
       result = await deliver(
         assignmentItemId,
@@ -244,17 +247,22 @@ export default function UnitDeliverySheet({
         unit.lng,
         gpsOverride,
         (step) => {
+          const now = Date.now()
+          const prevStep = step === 'idle' || step === 'compressing' ? null : step
+          const elapsed = now - (stepStartRef.current[prevStep || 'compressing'] || now)
+          stepStartRef.current[step] = now
           const msgs: Record<string, string> = {
-            compressing: 'Compressing photo...',
-            uploading: 'Uploading to Drive...',
-            saving: 'Recording delivery...',
+            compressing: `Compressing photo${step === 'compressing' ? '...' : ` (${elapsed}ms)`}`,
+            uploading: `Uploading to Drive (${elapsed}ms)...`,
+            saving: `Recording delivery (${elapsed}ms)...`,
           }
-          if (msgs[step]) updateToast(progressTid, msgs[step], 'info')
+          if (msgs[step]) toast(msgs[step], 'info')
         },
+        unit.survey_id || undefined,
       )
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Server error'
-      updateToast(progressTid, msg, 'error')
+      toast(msg, 'error', 10000)
       setIsDelivering(false)
       return
     }
@@ -265,12 +273,12 @@ export default function UnitDeliverySheet({
       setDeliveryGpsLat(result.gps_lat)
       setDeliveryGpsLng(result.gps_lng)
 
-      updateToast(
-        progressTid,
+      toast(
         result.status === 'delivered'
           ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`
           : 'Processing — awaiting review',
         result.status === 'delivered' ? 'success' : 'warning',
+        10000,
       )
 
       // Optimistic cache update — flip status immediately
@@ -302,6 +310,7 @@ export default function UnitDeliverySheet({
           enqueueUnsent({
             assignmentItemId,
             psid: unit.psid,
+            surveyId: unit.survey_id,
             photoBlob: compressed,
             gpsLat: result.gps_lat,
             gpsLng: result.gps_lng,
@@ -311,12 +320,6 @@ export default function UnitDeliverySheet({
         }
       }
 
-      // Auto-advance: 2s for delivered, 3.5s for processing
-      const delay = result.status === 'delivered' ? 2000 : 3500
-      setTimeout(() => {
-        setIsDelivering(false)
-        onClose?.()
-      }, delay)
       return
     }
 
@@ -326,11 +329,13 @@ export default function UnitDeliverySheet({
       await enqueuePhoto({
         assignmentItemId,
         psid: unit.psid,
+        surveyId: unit.survey_id,
         photoBlob: compressed,
         email: email || '',
       })
       setDeliveryStatus('processing')
       setIsDelivering(false)
+      toast('Photo saved offline — will sync automatically', 'info')
     } catch {
       toast('Failed to save photo offline', 'error')
       setIsDelivering(false)
@@ -390,12 +395,6 @@ export default function UnitDeliverySheet({
         queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
         queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
         queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
-
-        const delay = result.status === 'delivered' ? 2000 : 3500
-        setTimeout(() => {
-          setIsDelivering(false)
-          onClose?.()
-        }, delay)
         return
       }
     } catch (e) {

@@ -7,13 +7,13 @@ import { useBillingStore } from '@/stores/billing-store'
 import { useStaffAssignment } from '@/hooks/use-assignments'
 import { useOnlineStatus } from '@/hooks/use-online-status'
 import { cacheAssignment, getCachedAssignment } from '@/lib/offline-cache'
-import { Loader2, WifiOff, CheckCircle2, CreditCard, ArrowLeft, ArrowRight, Image } from 'lucide-react'
+import { Loader2, WifiOff, CheckCircle2, ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AssignmentItemWithUnit } from '@/types'
+import { shortenMCName, compareMC } from '@/lib/mc-utils'
 import { AppShell } from '@/components/layout/AppShell'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
-import { UnsentModal } from '@/components/delivery/unsent-badge'
-import { usePhotoQueue } from '@/hooks/use-photo-queue'
+import { useAssignmentRealtime } from '@/hooks/use-assignment-realtime'
 
 const PAGE_SIZE = 50
 
@@ -41,8 +41,10 @@ export default function DeliverPage() {
   const [useCache, setUseCache] = useState(false)
   const [page, setPage] = useState(0)
   const [filterTab, setFilterTab] = useState<'pending' | 'issues' | 'delivered' | 'all'>('pending')
-  const [unsentOpen, setUnsentOpen] = useState(false)
-  const { queueCount } = usePhotoQueue()
+  const [selectedUc, setSelectedUc] = useState<string>('all')
+  const [ucDropdownOpen, setUcDropdownOpen] = useState(false)
+
+  useAssignmentRealtime(user?.id || null)
 
   const { data, isLoading, refetch } = useStaffAssignment(user?.id || null)
   const isOnline = useOnlineStatus()
@@ -79,12 +81,35 @@ export default function DeliverPage() {
   const issuesCount = useMemo(() => items.filter((i) => i.status === 'processing' || i.status === 'missed').length, [items])
   const deliveredCountPill = useMemo(() => items.filter((i) => i.status === 'delivered').length, [items])
 
+  const ucGroups = useMemo(() => {
+    const groups: Record<string, { items: AssignmentItemWithUnit[]; pending: number; delivered: number; total: number }> = {}
+    for (const item of items) {
+      const uc = item.unit?.uc_name || 'Unknown'
+      if (!groups[uc]) groups[uc] = { items: [], pending: 0, delivered: 0, total: 0 }
+      groups[uc].items.push(item)
+      groups[uc].total++
+      if (item.status === 'pending' || item.status === 'processing') groups[uc].pending++
+      if (item.status === 'delivered') groups[uc].delivered++
+    }
+    return Object.entries(groups).sort(([a], [b]) => compareMC(a, b))
+  }, [items])
+
+  const ucOptions = useMemo(() => {
+    const options: { uc: string; label: string; total: number }[] = []
+    for (const [uc] of ucGroups) {
+      options.push({ uc, label: shortenMCName(uc), total: ucGroups.find(([k]) => k === uc)![1].total })
+    }
+    return options
+  }, [ucGroups])
+
   const filtered = useMemo(() => {
-    if (filterTab === 'pending') return items.filter((i) => i.status === 'pending')
-    if (filterTab === 'issues') return items.filter((i) => i.status === 'processing' || i.status === 'missed')
-    if (filterTab === 'delivered') return items.filter((i) => i.status === 'delivered')
-    return items
-  }, [items, filterTab])
+    let list = items
+    if (selectedUc !== 'all') list = list.filter((i) => (i.unit?.uc_name || 'Unknown') === selectedUc)
+    if (filterTab === 'pending') return list.filter((i) => i.status === 'pending')
+    if (filterTab === 'issues') return list.filter((i) => i.status === 'processing' || i.status === 'missed')
+    if (filterTab === 'delivered') return list.filter((i) => i.status === 'delivered')
+    return list
+  }, [items, filterTab, selectedUc])
 
   const sorted = [...filtered].sort((a, b) => (a.route_seq || 0) - (b.route_seq || 0))
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
@@ -159,12 +184,57 @@ export default function DeliverPage() {
               </div>
             </div>
 
+            {/* UC Dropdown */}
+            <div className="relative px-4 py-2 border-b shrink-0">
+              <button
+                onClick={() => setUcDropdownOpen(!ucDropdownOpen)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border text-sm font-medium"
+              >
+                <span>
+                  {selectedUc === 'all'
+                    ? `All UCs (${totalCount})`
+                    : `${shortenMCName(selectedUc)} (${ucGroups.find(([k]) => k === selectedUc)?.[1].total || 0})`}
+                </span>
+                <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', ucDropdownOpen && 'rotate-180')} />
+              </button>
+              {ucDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setUcDropdownOpen(false)} />
+                  <div className="absolute left-4 right-4 top-full mt-1 z-20 bg-popover border border-border rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                    <button
+                      onClick={() => { setSelectedUc('all'); setPage(0); setUcDropdownOpen(false) }}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-2 text-xs text-left hover:bg-accent transition-colors cursor-pointer',
+                        selectedUc === 'all' && 'bg-accent font-semibold'
+                      )}
+                    >
+                      <span>All UCs</span>
+                      <span className="text-muted-foreground">{totalCount}</span>
+                    </button>
+                    {ucOptions.map((opt) => (
+                      <button
+                        key={opt.uc}
+                        onClick={() => { setSelectedUc(opt.uc); setPage(0); setUcDropdownOpen(false) }}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-2 text-xs text-left hover:bg-accent transition-colors cursor-pointer',
+                          selectedUc === opt.uc && 'bg-accent font-semibold'
+                        )}
+                      >
+                        <span className="truncate">{opt.label}</span>
+                        <span className="text-muted-foreground shrink-0 ml-2">{opt.total}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
             {/* Filter pills */}
-            <div className="flex gap-1.5 px-4 py-2 border-b shrink-0">
+            <div className="flex gap-1.5 px-4 py-2 border-b shrink-0 overflow-x-auto scrollbar-none">
               <button
                 onClick={() => { setFilterTab('pending'); setPage(0) }}
                 className={cn(
-                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  'shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
                   filterTab === 'pending'
                     ? 'bg-blue-500/10 text-blue-600 border border-blue-200'
                     : 'text-muted-foreground hover:text-foreground border border-transparent'
@@ -175,7 +245,7 @@ export default function DeliverPage() {
               <button
                 onClick={() => { setFilterTab('issues'); setPage(0) }}
                 className={cn(
-                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  'shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
                   filterTab === 'issues'
                     ? 'bg-amber-500/10 text-amber-600 border border-amber-200'
                     : 'text-muted-foreground hover:text-foreground border border-transparent'
@@ -186,7 +256,7 @@ export default function DeliverPage() {
               <button
                 onClick={() => { setFilterTab('delivered'); setPage(0) }}
                 className={cn(
-                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  'shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
                   filterTab === 'delivered'
                     ? 'bg-green-500/10 text-green-600 border border-green-200'
                     : 'text-muted-foreground hover:text-foreground border border-transparent'
@@ -197,7 +267,7 @@ export default function DeliverPage() {
               <button
                 onClick={() => { setFilterTab('all'); setPage(0) }}
                 className={cn(
-                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  'shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
                   filterTab === 'all'
                     ? 'bg-muted text-foreground border border-border'
                     : 'text-muted-foreground hover:text-foreground border border-transparent'
@@ -205,87 +275,156 @@ export default function DeliverPage() {
               >
                 All ({items.length})
               </button>
-
-              {/* Unsent queue icon */}
-              <div className="flex-1" />
-              <button
-                onClick={() => setUnsentOpen(true)}
-                className="relative h-7 w-7 flex items-center justify-center rounded-lg hover:bg-muted transition-colors cursor-pointer"
-                aria-label="Unsent photos"
-              >
-                <Image className="h-3.5 w-3.5 text-muted-foreground" />
-                {queueCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 h-3.5 min-w-[14px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[8px] font-bold px-0.5">
-                    {queueCount > 99 ? '99+' : queueCount}
-                  </span>
-                )}
-              </button>
             </div>
 
             {/* List */}
             <div className="flex-1 overflow-y-auto">
-              {pageItems.map((item) => {
-                const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleSelect(item.id)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
-                  >
-                    {/* Route seq */}
-                    <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-                      {item.route_seq || '-'}
-                    </span>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold truncate">
-                          {item.unit?.consumer_name || 'Unknown'}
+              {selectedUc === 'all' ? (
+                /* Grouped by UC */
+                ucGroups.map(([uc, group]) => {
+                  const groupItems = group.items.filter((i) => {
+                    if (filterTab === 'pending') return i.status === 'pending'
+                    if (filterTab === 'issues') return i.status === 'processing' || i.status === 'missed'
+                    if (filterTab === 'delivered') return i.status === 'delivered'
+                    return true
+                  })
+                  if (groupItems.length === 0) return null
+                  const shortName = shortenMCName(uc)
+                  return (
+                    <div key={uc}>
+                      {/* UC header */}
+                      <div className="sticky top-0 z-10 px-4 py-1.5 bg-muted/80 backdrop-blur-sm border-b border-t flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider">{shortName}</span>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">
+                          <span className="text-blue-600">{group.pending}</span>
+                          <span className="mx-1">·</span>
+                          <span className="text-green-600">{group.delivered}</span>
+                          <span className="mx-1">/</span>
+                          {group.total}
                         </span>
-                        <span className={cn('shrink-0 w-1.5 h-1.5 rounded-full', cfg.dot)} />
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                        {item.unit?.address && (
-                          <span className="truncate">{item.unit.address}</span>
-                        )}
-                        {item.status === 'delivered' && item.delivered_at && (
-                          <span className="shrink-0 text-[10px] text-green-600 font-medium">
-                            {formatTime(item.delivered_at)}
+                      {groupItems.map((item) => {
+                        const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending
+                        const sid = item.survey_id || item.psid
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => handleSelect(item.id)}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
+                          >
+                            {/* Route seq */}
+                            <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                              {item.route_seq || '-'}
+                            </span>
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold truncate">
+                                  {item.unit?.consumer_name || 'Unknown'}
+                                </span>
+                                <span className={cn('shrink-0 w-1.5 h-1.5 rounded-full', cfg.dot)} />
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                                {item.unit?.address && (
+                                  <span className="truncate">{item.unit.address}</span>
+                                )}
+                                {item.status === 'delivered' && item.delivered_at && (
+                                  <span className="shrink-0 text-[10px] text-green-600 font-medium">
+                                    {formatTime(item.delivered_at)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Survey ID + status */}
+                            <div className="shrink-0 text-right">
+                              <p className="text-[10px] font-mono font-bold text-muted-foreground/70">
+                                {sid.length > 10 ? sid.slice(-10) : sid}
+                              </p>
+                              <p className={cn(
+                                'text-[10px] font-semibold mt-0.5',
+                                item.status === 'delivered' && 'text-green-600',
+                                item.status === 'missed' && 'text-red-600',
+                                item.status === 'pending' && 'text-blue-600',
+                                item.status === 'processing' && 'text-amber-600',
+                                item.status === 'skipped' && 'text-gray-500',
+                              )}>
+                                {cfg.label}
+                              </p>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                })
+              ) : (
+                /* Single UC — flat list */
+                pageItems.map((item) => {
+                  const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending
+                  const sid = item.survey_id || item.psid
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelect(item.id)}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
+                    >
+                      {/* Route seq */}
+                      <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                        {item.route_seq || '-'}
+                      </span>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold truncate">
+                            {item.unit?.consumer_name || 'Unknown'}
                           </span>
-                        )}
+                          <span className={cn('shrink-0 w-1.5 h-1.5 rounded-full', cfg.dot)} />
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                          {item.unit?.address && (
+                            <span className="truncate">{item.unit.address}</span>
+                          )}
+                          {item.status === 'delivered' && item.delivered_at && (
+                            <span className="shrink-0 text-[10px] text-green-600 font-medium">
+                              {formatTime(item.delivered_at)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Amount + status */}
-                    <div className="shrink-0 text-right">
-                      <p className="text-xs font-bold">
-                        Rs.{((item.unit?.monthly_fee ?? 0) + (item.unit?.arrears ?? 0)).toLocaleString()}
-                      </p>
-                      <p className={cn(
-                        'text-[10px] font-semibold mt-0.5',
-                        item.status === 'delivered' && 'text-green-600',
-                        item.status === 'missed' && 'text-red-600',
-                        item.status === 'pending' && 'text-blue-600',
-                        item.status === 'processing' && 'text-amber-600',
-                        item.status === 'skipped' && 'text-gray-500',
-                      )}>
-                        {cfg.label}
-                      </p>
-                    </div>
-                  </button>
-                )
-              })}
+                      {/* Survey ID + status */}
+                      <div className="shrink-0 text-right">
+                        <p className="text-[10px] font-mono font-bold text-muted-foreground/70">
+                          {sid.length > 10 ? sid.slice(-10) : sid}
+                        </p>
+                        <p className={cn(
+                          'text-[10px] font-semibold mt-0.5',
+                          item.status === 'delivered' && 'text-green-600',
+                          item.status === 'missed' && 'text-red-600',
+                          item.status === 'pending' && 'text-blue-600',
+                          item.status === 'processing' && 'text-amber-600',
+                          item.status === 'skipped' && 'text-gray-500',
+                        )}>
+                          {cfg.label}
+                        </p>
+                      </div>
+                    </button>
+                  )
+                })
+              )}
 
-              {sorted.length === 0 && (
+              {filtered.length === 0 && (
                 <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
                   {filterTab === 'issues' ? 'No issues — all clear!' : 'No items in this view'}
                 </div>
               )}
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
+            {/* Pagination — only for single-UC mode */}
+            {selectedUc !== 'all' && totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-2 border-t bg-card shrink-0">
                 <button
                   onClick={() => setPage(Math.max(0, page - 1))}
@@ -295,7 +434,7 @@ export default function DeliverPage() {
                   <ArrowLeft className="h-3.5 w-3.5" /> Previous
                 </button>
                 <span className="text-[10px] text-muted-foreground">
-                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sorted.length)} of {sorted.length}
+                  {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
                 </span>
                 <button
                   onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
@@ -309,7 +448,6 @@ export default function DeliverPage() {
           </div>
         )}
       </div>
-      <UnsentModal open={unsentOpen} onClose={() => setUnsentOpen(false)} />
     </AppShell>
   )
 }
