@@ -175,7 +175,7 @@ export function OfficeBreakdownChart({ data, title }: { data: TehsilBreakdownRow
             ))}
           </div>
 
-          <div className="mt-4 overflow-x-auto">
+          <div className="mt-4 w-full overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

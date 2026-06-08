@@ -100,7 +100,7 @@ export default function MapPage() {
     <AppShell>
       <FloatingActions />
       <div className="flex flex-col lg:flex-row h-full">
-        <div className="flex-1 relative min-h-0 h-full">
+        <div className="flex-1 relative min-h-0 min-w-0 h-full">
           {activeView === 'map' && (roleName === 'field_staff' ? (
             <StaffMap items={staffItems} userLocation={userLocation} />
           ) : (
@@ -131,12 +131,14 @@ export default function MapPage() {
             />
           )}
 
-          {/* QR scanner — visible on map for staff */}
+          {/* QR scanner — desktop only (mobile uses bottom bar button) */}
           {roleName === 'field_staff' && activeView === 'map' && (
-            <QRScannerButton
-              items={staffItems}
-              onUnitScanned={handleQRScanned}
-            />
+            <div className="hidden lg:block">
+              <QRScannerButton
+                items={staffItems}
+                onUnitScanned={handleQRScanned}
+              />
+            </div>
           )}
 
 

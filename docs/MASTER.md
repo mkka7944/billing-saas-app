@@ -3651,8 +3651,46 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 2. Hard refresh `/deliver` → tap pending → GPS shows distance within 1-2s
 3. GPS dots render based on accuracy (3 green = strong, etc.)
 4. Toast delivery feedback works through all steps
-
 ---
+### 2026-06-08 — Delivery Photo Proxy Hardening + Data Insight Fixes — Location: Home
+
+**Focus:** Fix data insight images, proxy endpoint for delivery photos, refresh cache, dashboard overflow fix
+
+**Done:**
+
+- **Created `/api/delivery/photo/[fileId]` proxy endpoint** — serves delivery photos from `lh3.googleusercontent.com` server-side with 24h cache (no more direct Google Drive URLs)
+- **Changed all `photo_url` formats** — `mark/route.ts`, `sync-photo/route.ts`, `use-photo-queue.ts`, `use-unsent-photos.ts` now store `/api/delivery/photo/{gdrive_file_id}` instead of direct Google thumbnail URLs
+- **Added `survey_id` upload key** — GAS webhook receives `surveyId: survey_id || psid` for consistent Drive image organization matching HDS query
+- **Fixed HDS thumbnail grid** — `flex overflow-x-auto` → `grid grid-cols-3 gap-2 aspect-square` for natural mobile wrapping
+- **Preserved photos on revoke** — removed `delivery_photos.delete()` from revoke handler; photos persist across revoke-test cycles
+- **Split delivery timestamps** — `startedAt` (before upload) vs `deliveredAt` (after upload) for accurate admin table duration
+- **Added `image_urls` to Data Insight drill-down** — `data-insight-repository.ts` `.select()` and `UnitRow` type now include `image_urls`; portal images show in HDS when opened from Data Insight
+- **Fixed Data Insight `selectHouse` call** — passes full `unitRows` instead of stripped `{ survey_id }` objects (was discarding all fields)
+- **Created `POST /api/data-insight/refresh`** — calls `refresh_hierarchy_summary()` RPC via admin client; admin-only endpoint
+- **Added "Refresh Cache" button** — in Data Insight toolbar with spinner + toast feedback; placed in same row as Active/Archived/Duplicates filter tabs
+- **Regrouped toolbar layout** — Back button on its own row above; filter tabs + Refresh button in `justify-between` row
+- **Fixed Dashboard/Office Breakdown overflow** — added `overflow-x-auto min-w-0` to Dashboard wrapper, `min-w-0` to map content flex parent, `w-full overflow-x-auto` to table wrapper
+- **Added `overflow-x-auto` to Dashboard loading skeleton** — consistent overflow behavior during loading state
+
+**Key decisions:**
+- Proxy endpoint over direct Google URLs — images served from same domain eliminate all browser auth/cookie/CORS issues
+- Google Drive stays as source of truth — app fetches server-side and caches for 24h
+- Always INSERT delivery_photos (never UPSERT) — preserves full history across months
+- Revoke keeps photos — only resets assignment_item status, historical record preserved
+- Data Insight cache requires manual "Refresh Cache" after payment imports
+
+**Testing Verification:**
+1. Staff `/deliver` → tap pending → take photo → toast stack shows progress → auto-advance
+2. Admin `/map` → Data Insight → drill into MC → "Open" shows portal images in HDS
+3. Data Insight → "Refresh Cache" → spinner → toast → KPI numbers update
+4. Dashboard → Office Breakdown tab → horizontal scrollbar on wide table
+5. Revoke delivery → re-test → old photos persist in HDS gallery
+6. Offline → capture photo → amber "Processing" overlay → syncs when online
+
+**Next session:**
+- Delivery hardening end-to-end testing protocol
+- Apply `037-notifications.sql` migration
+- Fix remaining P0/P1 items from Section 25 (unsent mode queue, sync-photo promote, redelivery photo drop)
 
 
 ## 19. Data Model Rules (Comprehensive Reference)
@@ -4819,25 +4857,32 @@ Items that need to be fixed before the next session or are deferred from this se
 | 14 | INFO | Stale MASTER.md GPS dots documentation — says `sharedLocation.accuracy`, should be local `gpsAccuracy` | `MASTER.md:3570` | Update text to match current code. |
 | 15 | INFO | Two separate unsent queues (photo-queue + unsent-photo-queue) — confusing UX | Both queue lib files | Consider merging into one queue. Deferred. |
 
-### 25.1 Next Session Kickoff — Office (2026-06-08)
+### 25.1 Next Session Agenda — Home (2026-06-08)
 
-When returning to the office, the first tasks are:
+**P0 — Delivery hardening testing (est. 30 min):**
+Run the full testing protocol (Section 24) end-to-end to verify all today's changes work:
+1. Normal delivery: toast stack, GPS, photo proxy URL, auto-advance, HDS hero images, admin table thumbnail + duration
+2. Revoke + re-deliver: old photos persist in HDS gallery
+3. Offline delivery: unsent queue syncs when back online
+4. QR scanner: mobile pill opens scanner, scan navigates correctly
+5. Data Insight: portal images in HDS when clicking "Open", Refresh Cache button
+6. Dashboard: Office Breakdown tab horizontal scroll
+7. Multi-photo per delivery check
 
-**P0 — Fix delivery blocking bugs (est. 15 min):**
-1. **Fix unsent mode queue** (`unit-delivery-sheet.tsx`): Change `enqueuePhoto(...)` → `enqueueUnsent({...})` in unsent mode path
-2. **Fix sync-photo promote** (`sync-photo/route.ts`): Add `assignment_items` status update to 'delivered' after successful Drive upload
-3. **Fix redelivery photo drop** (`mark/route.ts`): Insert delivery_photos record before early-return for delivered/missed items
-4. **Add processing guard** (`mark/route.ts`): Early-return for 'processing' items to prevent duplicate photos
+**P1 — Fix delivery blocking bugs (est. 20 min):**
+8. **Fix unsent mode queue** (`unit-delivery-sheet.tsx`): Change `enqueuePhoto(...)` → `enqueueUnsent({...})` in unsent mode path
+9. **Fix sync-photo promote** (`sync-photo/route.ts`): Add `assignment_items` status update to 'delivered' after successful Drive upload
+10. **Fix redelivery photo drop** (`mark/route.ts`): Insert delivery_photos record before early-return for delivered/missed items
+11. **Add processing guard** (`mark/route.ts`): Early-return for 'processing' items to prevent duplicate photos
 
-**P1 — UI fixes (est. 20 min):**
-5. **Move unsent icon** from deliver filter bar → FloatingActions (4th button)
-6. **Add offline toast** in handleFile fallback path
+**P2 — UI fixes (est. 20 min):**
+12. **Move unsent icon** from deliver filter bar → FloatingActions (4th button)
+13. **Add offline toast** in handleFile fallback path
 
-**Data cleanup before testing:**
-7. Apply `037-notifications.sql` migration to Supabase (requires PAT token from office PC)
-8. Clear stale IndexedDB + DB records from prior testing:
-   - SQL: `UPDATE assignment_items SET status='pending' WHERE status='processing' AND delivered_at IS NOT NULL`
-   - SQL: `DELETE FROM delivery_photos WHERE photo_url LIKE 'pending://%'`
-   - DevTools: Clear IndexedDB → delete `billing-saas-photo-queue` and unsent-photo-queue databases
-9. Run through the full testing protocol (Section 24) from step 1
+**Data cleanup:**
+14. Apply `037-notifications.sql` migration to Supabase (requires PAT token from office PC)
+15. Clear stale IndexedDB + DB records from prior testing:
+    - SQL: `UPDATE assignment_items SET status='pending' WHERE status='processing' AND delivered_at IS NOT NULL`
+    - SQL: `DELETE FROM delivery_photos WHERE photo_url LIKE 'pending://%'`
+    - DevTools: Clear IndexedDB → delete `billing-saas-photo-queue` and unsent-photo-queue databases
 

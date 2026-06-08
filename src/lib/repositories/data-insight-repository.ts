@@ -29,7 +29,7 @@ export async function getDrillDownUnits(sup: SupabaseClient, p: DrillDownParams)
 
   let unitQuery = sup
     .from('survey_units')
-    .select('survey_id, psid, consumer_name, status, surveyor_name, survey_date, survey_time, monthly_fee, arrears', { count: 'exact' })
+    .select('survey_id, psid, consumer_name, status, surveyor_name, survey_date, survey_time, monthly_fee, arrears, image_urls', { count: 'exact' })
     .eq('uc_name', p.drillUC)
 
   if (p.dbStatus === 'ACTIVE') {
@@ -72,6 +72,7 @@ export async function getDrillDownUnits(sup: SupabaseClient, p: DrillDownParams)
     amount_paid: 0,
     monthly_fee: u.monthly_fee ?? 0,
     arrears: u.arrears ?? 0,
+    image_urls: u.image_urls,
   }))
 
   const psids = (units || []).map(u => u.psid)

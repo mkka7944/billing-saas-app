@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
 import { useDataInsight } from '@/hooks/use-data-insight'
 import { useSurveyPayments } from '@/hooks/use-survey-data'
@@ -18,10 +19,11 @@ import {
 } from '@/components/ui/table'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ChevronDown, Flag } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Flag, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PaginationBar } from '@/components/pagination-bar'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
+import { useToast } from '@/hooks/use-toast'
 
 const kpiConfig: { key: string; label: string; dot: string; accent: string }[] = [
   { key: 'total_units', label: 'Total', dot: 'bg-blue-500 dark:bg-blue-400', accent: 'text-blue-500 dark:text-blue-300' },
@@ -269,9 +271,12 @@ export function DataInsight() {
   const sharedFilters = useBillingStore((s) => s.filters)
   const selectedCity = useBillingStore((s) => s.selectedCity)
   const selectHouse = useBillingStore((s) => s.selectHouse)
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
   const [page, setPage] = useState(1)
   const [drillUC, setDrillUC] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'duplicates'>('active')
+  const [refreshing, setRefreshing] = useState(false)
 
   const insightFilters = useMemo(() => {
     const cityCfg = selectedCity ? CITY_CONFIG[selectedCity] : null
@@ -341,17 +346,20 @@ export function DataInsight() {
         <div className="p-4 space-y-4">
           {kpis && <KpiCards data={kpis as Record<string, number>} />}
 
-          {level === 'unit' && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={handleBack} className="h-9 gap-1.5">
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back to MC/UC View
-              </Button>
-              <span className="text-xs text-muted-foreground font-mono">{drillUC}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {level === 'unit' && (
+              <>
+                <Button variant="outline" size="sm" onClick={handleBack} className="h-9 gap-1.5">
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back
+                </Button>
+                <span className="text-xs text-muted-foreground font-mono">{drillUC}</span>
+              </>
+            )}
+          </div>
 
-          <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
             <button
               onClick={() => { setStatusFilter('active'); setPage(1) }}
               className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${statusFilter === 'active' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
@@ -373,13 +381,39 @@ export function DataInsight() {
               </button>
             )}
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              if (refreshing) return
+              setRefreshing(true)
+              try {
+                const res = await fetch('/api/data-insight/refresh', { method: 'POST' })
+                if (res.ok) {
+                  queryClient.invalidateQueries({ queryKey: ['data-insight'] })
+                  toast('Cache refreshed', 'success')
+                } else {
+                  const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+                  toast(err.error || 'Refresh failed', 'error')
+                }
+              } finally {
+                setRefreshing(false)
+              }
+            }}
+            disabled={refreshing}
+            className="h-9 gap-1.5"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh Cache'}
+          </Button>
+        </div>
 
-          {level === 'unit' ? (
+        {level === 'unit' ? (
             <>
               <UnitTable
                 unitRows={unitRows}
                 onOpen={(row) => {
-                  const items = unitRows.map(u => ({ survey_id: u.survey_id })) as SurveyUnit[]
+                  const items = unitRows as unknown as SurveyUnit[]
                   selectHouse(row.survey_id, items, totalRecords)
                 }}
                 showFlag={statusFilter !== 'active'}

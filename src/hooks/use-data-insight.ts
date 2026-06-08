@@ -35,6 +35,7 @@ export interface UnitRow {
   amount_paid: number
   monthly_fee: number
   arrears: number
+  image_urls: string[] | null
   flagged_reason?: string | null
   flagged_notes?: string | null
   flagged_at?: string | null
