@@ -6,13 +6,15 @@ import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronL
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
-import { useUnsentPhotos } from '@/hooks/use-unsent-photos'
 import { useAuthStore } from '@/stores/auth-store'
 import { compressImage } from '@/lib/image/compress'
 import { useToast } from '@/hooks/use-toast'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
+import { haversine } from '@/lib/geo'
 import type { AssignmentItemUnit, AssignmentItemWithUnit } from '@/types'
+
+const TOAST_DURATION = 12000
 
 interface UnitDeliverySheetProps {
   unit: AssignmentItemUnit | null
@@ -49,47 +51,27 @@ export default function UnitDeliverySheet({
   const [userLng, setUserLng] = useState<number | null>(null)
   const [forceCompleting, setForceCompleting] = useState(false)
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
-  const [unsentModeEnabled, setUnsentModeEnabled] = useState(false)
-  const [unsentMaxLimit, setUnsentMaxLimit] = useState(50)
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
   const touchXRef = useRef<number | null>(null)
   const watchIdRef = useRef<number | null>(null)
-  const stepStartRef = useRef<Record<string, number>>({})
 
   const queryClient = useQueryClient()
   const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
-  const { deliver, deliverNoPhoto } = useDeliverUnit()
+  const { mark } = useDeliverUnit()
   const { enqueuePhoto, queueCount } = usePhotoQueue()
-  const { enqueueUnsent } = useUnsentPhotos()
 
   useEffect(() => {
     fetch('/api/settings')
       .then(r => r.json())
-      .then(data => {
-        setAllowNoPhoto(data?.allow_no_photo === true)
-        const um = data?.unsent_mode || { enabled: false, max_limit: 50 }
-        setUnsentModeEnabled(um.enabled)
-        setUnsentMaxLimit(um.max_limit ?? 50)
-      })
+      .then(data => setAllowNoPhoto(data?.allow_no_photo === true))
       .catch(() => {})
   }, [])
+
   const userId = useAuthStore((s) => s.user?.id)
-  const email = useAuthStore((s) => s.user?.email)
   const roleName = useAuthStore((s) => s.roleName)
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
   const { toast } = useToast()
   const confirm = useConfirm()
-
-  function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    const R = 6371000
-    const toRad = (d: number) => (d * Math.PI) / 180
-    const dLat = toRad(lat2 - lat1)
-    const dLng = toRad(lng2 - lng1)
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  }
 
   useEffect(() => {
     setDeliveryStatus('idle')
@@ -99,7 +81,8 @@ export default function UnitDeliverySheet({
     setDeliveryGpsLng(null)
     setUserLat(initialLat ?? null)
     setUserLng(initialLng ?? null)
-  }, [unit?.psid, initialLat, initialLng])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unit?.psid])
 
   // Fast initial GPS fix — getCurrentPosition fires immediately
   useEffect(() => {
@@ -113,19 +96,23 @@ export default function UnitDeliverySheet({
           setUserLng(pos.coords.longitude)
           setLiveGpsStatus('ready')
         },
-        () => { /* silent — watchPosition will retry */ },
+        () => {},
         { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
       )
-    }, 100) // tiny delay to let effects settle
+    }, 100)
     return () => clearTimeout(timer)
   }, [unit?.lat, unit?.lng, unit?.psid])
 
-  // Live GPS tracking — watch position while sheet is idle
+  // Live GPS tracking — watch position, restart only on unit change
   useEffect(() => {
-    if (!unit?.lat || !unit?.lng || deliveryStatus !== 'idle' || !navigator.geolocation) {
+    if (!unit?.lat || !unit?.lng || !navigator.geolocation) {
       setLiveDistance(null)
       setLiveGpsStatus('idle')
       return
+    }
+
+    if (watchIdRef.current != null) {
+      navigator.geolocation.clearWatch(watchIdRef.current)
     }
 
     setLiveGpsStatus('locating')
@@ -138,19 +125,18 @@ export default function UnitDeliverySheet({
         setGpsAccuracy(pos.coords.accuracy)
         setLiveGpsStatus('ready')
       },
-      () => {
-        setLiveGpsStatus('unavailable')
-      },
+      () => setLiveGpsStatus('unavailable'),
       { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
     )
     watchIdRef.current = id
     return () => {
-      navigator.geolocation.clearWatch(id)
-      watchIdRef.current = null
+      if (watchIdRef.current != null) {
+        navigator.geolocation.clearWatch(watchIdRef.current)
+        watchIdRef.current = null
+      }
     }
-  }, [unit?.lat, unit?.lng, unit?.psid, deliveryStatus])
+  }, [unit?.lat, unit?.lng, unit?.psid])
 
-  // Cleanup watch on unmount
   useEffect(() => {
     return () => {
       if (watchIdRef.current != null) {
@@ -165,7 +151,7 @@ export default function UnitDeliverySheet({
       const timer = setTimeout(() => {
         setIsDelivering(false)
         onNext?.()
-      }, 2000)
+      }, 3000)
       return () => clearTimeout(timer)
     }
   }, [deliveryStatus, onNext])
@@ -181,93 +167,30 @@ export default function UnitDeliverySheet({
     const file = e.target.files?.[0]
     if (!file || !file.type.startsWith('image/') || !assignmentItemId || !unit?.psid) return
 
-    const gpsOverride = userLat != null && userLng != null ? { lat: userLat, lng: userLng } : null
-
-    if (unsentModeEnabled && queueCount >= unsentMaxLimit) {
-      toast(`Clear unsent queue first (${queueCount}/${unsentMaxLimit})`, 'warning')
+    if (queueCount >= 50) {
+      toast(`Queue full (${queueCount}/50) — sync before delivering more`, 'warning', TOAST_DURATION)
       return
     }
 
-    if (unsentModeEnabled) {
-      setIsDelivering(true)
-      toast('Saving to queue...', 'info')
-      try {
-        const markRes = await fetch('/api/deliveries/mark-processing', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            assignmentItemId,
-            psid: unit.psid,
-            gpsLat: gpsOverride?.lat,
-            gpsLng: gpsOverride?.lng,
-          }),
-        })
-        if (!markRes.ok) {
-          const err = await markRes.json().catch(() => ({ error: 'Mark failed' }))
-          throw new Error(err.error || 'Mark failed')
-        }
+    setIsDelivering(true)
 
-        toast('Compressing photo...', 'info')
-        const compressed = await compressImage(file)
-        await enqueueUnsent({
-          assignmentItemId,
-          psid: unit.psid,
-          surveyId: unit.survey_id,
-          photoBlob: compressed,
-          gpsLat: gpsOverride?.lat,
-          gpsLng: gpsOverride?.lng,
-        })
-        setDeliveryStatus('processing')
-        toast('Saved to queue ✓', 'success')
-        queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
-        queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
-        queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
-        setTimeout(() => {
-          setIsDelivering(false)
-          onClose?.()
-        }, 1500)
-        return
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'Failed to save photo'
-        toast(msg, 'error')
+    try {
+      const result = await mark(
+        assignmentItemId,
+        unit.psid,
+        userLat,
+        userLng,
+        unit.lat,
+        unit.lng,
+        false,
+      )
+
+      if (!result) {
+        toast('Network error — tap again to retry', 'error', TOAST_DURATION)
         setIsDelivering(false)
         return
       }
-    }
 
-    // 1. Try online delivery (uses pre-warmed GPS from live tracking if available)
-    let result: Awaited<ReturnType<typeof deliver>> = null
-    stepStartRef.current = { compressing: Date.now() }
-    try {
-      result = await deliver(
-        assignmentItemId,
-        unit.psid,
-        file,
-        unit.lat,
-        unit.lng,
-        gpsOverride,
-        (step) => {
-          const now = Date.now()
-          const prevStep = step === 'idle' || step === 'compressing' ? null : step
-          const elapsed = now - (stepStartRef.current[prevStep || 'compressing'] || now)
-          stepStartRef.current[step] = now
-          const msgs: Record<string, string> = {
-            compressing: `Compressing photo${step === 'compressing' ? '...' : ` (${elapsed}ms)`}`,
-            uploading: `Uploading to Drive (${elapsed}ms)...`,
-            saving: `Recording delivery (${elapsed}ms)...`,
-          }
-          if (msgs[step]) toast(msgs[step], 'info')
-        },
-        unit.survey_id || undefined,
-      )
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Server error'
-      toast(msg, 'error', 10000)
-      setIsDelivering(false)
-      return
-    }
-
-    if (result) {
       setDeliveryStatus(result.status)
       setDeliveryDistance(result.distance)
       setDeliveryGpsLat(result.gps_lat)
@@ -276,12 +199,12 @@ export default function UnitDeliverySheet({
       toast(
         result.status === 'delivered'
           ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`
-          : 'Processing — awaiting review',
+          : 'GPS out of range — sent for review',
         result.status === 'delivered' ? 'success' : 'warning',
-        10000,
+        TOAST_DURATION,
       )
 
-      // Optimistic cache update — flip status immediately
+      // Optimistic cache update
       if (userId) {
         queryClient.setQueryData<{ data: unknown; items: AssignmentItemWithUnit[] }>(
           ['staff-assignment', userId],
@@ -303,44 +226,28 @@ export default function UnitDeliverySheet({
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
       queryClient.invalidateQueries({ queryKey: ['delivery-photos'] })
 
-      // If GAS upload failed, save to unsent queue for later retry
-      if (result.photo_url?.startsWith('pending://')) {
-        try {
-          const compressed = await compressImage(file)
-          enqueueUnsent({
-            assignmentItemId,
-            psid: unit.psid,
-            surveyId: unit.survey_id,
-            photoBlob: compressed,
-            gpsLat: result.gps_lat,
-            gpsLng: result.gps_lng,
-          })
-        } catch {
-          // Best-effort — don't block delivery on unsent queue failure
+      // Compress photo and add to sync queue
+      if (result.delivery_photo_id) {
+        const compressed = await compressImage(file)
+        await enqueuePhoto({
+          deliveryPhotoId: result.delivery_photo_id,
+          assignmentItemId,
+          psid: unit.psid,
+          photoBlob: compressed,
+          gpsLat: userLat,
+          gpsLng: userLng,
+        })
+
+        if (queueCount + 1 >= 50) {
+          toast(`Queue nearly full — tap Sync on deliver page`, 'info', TOAST_DURATION)
         }
       }
-
-      return
-    }
-
-    // 2. Offline fallback — compress + enqueue to IndexedDB
-    try {
-      const compressed = await compressImage(file)
-      await enqueuePhoto({
-        assignmentItemId,
-        psid: unit.psid,
-        surveyId: unit.survey_id,
-        photoBlob: compressed,
-        email: email || '',
-      })
-      setDeliveryStatus('processing')
-      setIsDelivering(false)
-      toast('Photo saved offline — will sync automatically', 'info')
-    } catch {
-      toast('Failed to save photo offline', 'error')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
+    } finally {
       setIsDelivering(false)
     }
-  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, email, deliver, enqueuePhoto, enqueueUnsent, toast, userLat, userLng, queryClient, unsentModeEnabled, unsentMaxLimit, queueCount])
+  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, userLat, userLng, mark, enqueuePhoto, queueCount, toast, queryClient, userId])
 
   const handleSkipPhoto = useCallback(async () => {
     if (!assignmentItemId || !unit?.psid) return
@@ -352,58 +259,62 @@ export default function UnitDeliverySheet({
     })
     if (!ok) return
 
-    const gpsOverride = userLat != null && userLng != null ? { lat: userLat, lng: userLng } : null
     setIsDelivering(true)
     try {
-      const result = await deliverNoPhoto(
+      const result = await mark(
         assignmentItemId,
         unit.psid,
+        userLat,
+        userLng,
         unit.lat,
         unit.lng,
-        gpsOverride,
+        true,
       )
 
-      if (result) {
-        setDeliveryStatus(result.status)
-        setDeliveryDistance(result.distance)
-        setDeliveryGpsLat(result.gps_lat)
-        setDeliveryGpsLng(result.gps_lng)
-
-        toast(
-          result.status === 'delivered'
-            ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`
-            : 'Processing — awaiting review',
-          result.status === 'delivered' ? 'success' : 'warning',
-        )
-
-        if (userId) {
-          queryClient.setQueryData<{ data: unknown; items: AssignmentItemWithUnit[] }>(
-            ['staff-assignment', userId],
-            (old) => {
-              if (!old) return old
-              return {
-                ...old,
-                items: old.items.map((item) =>
-                  item.id === assignmentItemId
-                    ? { ...item, status: result.status, delivered_at: new Date().toISOString() }
-                    : item
-                ),
-              }
-            }
-          )
-        }
-        queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
-        queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
-        queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
+      if (!result) {
+        toast('Network error — tap again to retry', 'error', TOAST_DURATION)
+        setIsDelivering(false)
         return
       }
+
+      setDeliveryStatus(result.status)
+      setDeliveryDistance(result.distance)
+      setDeliveryGpsLat(result.gps_lat)
+      setDeliveryGpsLng(result.gps_lng)
+
+      toast(
+        result.status === 'delivered'
+          ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`
+          : 'GPS out of range — sent for review',
+        result.status === 'delivered' ? 'success' : 'warning',
+        TOAST_DURATION,
+      )
+
+      if (userId) {
+        queryClient.setQueryData<{ data: unknown; items: AssignmentItemWithUnit[] }>(
+          ['staff-assignment', userId],
+          (old) => {
+            if (!old) return old
+            return {
+              ...old,
+              items: old.items.map((item) =>
+                item.id === assignmentItemId
+                  ? { ...item, status: result.status, delivered_at: new Date().toISOString() }
+                  : item
+              ),
+            }
+          }
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
+      queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
+      queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Server error'
-      toast(msg, 'error')
+      toast(e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
     } finally {
       setIsDelivering(false)
     }
-  }, [assignmentItemId, unit, userLat, userLng, deliverNoPhoto, confirm, toast, queryClient, userId, onClose])
+  }, [assignmentItemId, unit, userLat, userLng, mark, confirm, toast, queryClient, userId])
 
   const handleForceComplete = useCallback(async () => {
     if (!unit?.psid) return

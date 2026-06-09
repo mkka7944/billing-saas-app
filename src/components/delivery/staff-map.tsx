@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, useMap, Marker } from 'react-leaflet'
 import L from 'leaflet'
 import StaffMapMarkers from './staff-map-markers'
 import { useBillingStore } from '@/stores/billing-store'
 import { useUserLocation } from '@/hooks/use-user-location'
+import { useMapZoom } from '@/hooks/use-map-zoom'
 import type { AssignmentItemWithUnit } from '@/types'
 import type { UserLocation } from '@/hooks/use-user-location'
 
@@ -34,13 +35,23 @@ function UserMarker({ location: propLocation }: { location?: UserLocation | null
 function FlyToTarget({ items }: { items: AssignmentItemWithUnit[] }) {
   const map = useMap()
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
+  const { data: mapZoom = 18 } = useMapZoom()
+  const lastFlyRef = useRef<{ target: string | null; zoom: number }>({ target: null, zoom: 18 })
 
   useEffect(() => {
-    if (!deliverTargetId) return
+    if (!deliverTargetId) {
+      lastFlyRef.current = { target: null, zoom: mapZoom }
+      return
+    }
     const item = items.find((i) => i.psid === deliverTargetId)
     if (!item?.unit?.lat || !item.unit?.lng) return
-    map.flyTo([item.unit.lat, item.unit.lng], 18, { duration: 1 })
-  }, [deliverTargetId, items, map])
+
+    const last = lastFlyRef.current
+    if (last.target === deliverTargetId && last.zoom === mapZoom) return
+    lastFlyRef.current = { target: deliverTargetId, zoom: mapZoom }
+
+    map.flyTo([item.unit.lat, item.unit.lng], mapZoom, { duration: 0.5 })
+  }, [deliverTargetId, items, map, mapZoom])
 
   return null
 }
@@ -53,12 +64,13 @@ interface StaffMapProps {
 export default function StaffMap({ items, userLocation }: StaffMapProps) {
   const mapType = useBillingStore((s) => s.mapType)
   const tileUrl = TILE_URLS[mapType]
+  const { data: mapZoom = 18 } = useMapZoom()
 
   return (
     <div className="w-full h-full">
       <MapContainer
         center={[32.0836, 72.6712]}
-        zoom={12}
+        zoom={mapZoom}
         className="w-full h-full"
         zoomControl={false}
       >

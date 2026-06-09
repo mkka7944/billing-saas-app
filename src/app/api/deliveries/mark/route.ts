@@ -1,93 +1,88 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { haversine } from '@/lib/geo'
 
-const WEBHOOK_URL = process.env.NEXT_PUBLIC_DRIVE_WEBHOOK_URL
-
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-function stripDataPrefix(dataUrl: string): string {
-  const idx = dataUrl.indexOf(',')
-  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl
-}
-
-function extractFileId(res: Record<string, unknown>): string | null {
-  return (
-    (res.fileId as string) ||
-    (res.id as string) ||
-    (res.file_id as string) ||
-    ((res.data as Record<string, unknown>)?.id as string) ||
-    ((res.data as Record<string, unknown>)?.fileId as string) ||
-    null
-  )
-}
+const ALLOWED_STATUSES = ['pending', 'processing', 'delivered']
 
 export async function POST(request: Request) {
-  const form = await request.formData()
-  const photo = form.get('photo') as File | null
-  const gpsLatStr = form.get('gps_lat') as string | null
-  const gpsLngStr = form.get('gps_lng') as string | null
-  const assignmentItemId = form.get('assignment_item_id') as string | null
-  const psid = form.get('psid') as string | null
-  const surveyId = form.get('survey_id') as string | null
-  const targetLatStr = form.get('target_lat') as string | null
-  const targetLngStr = form.get('target_lng') as string | null
-  const skipPhoto = form.get('skip_photo') === 'true'
-
-  if (!assignmentItemId || !psid) {
-    return NextResponse.json({ error: 'assignment_item_id and psid required' }, { status: 400 })
-  }
-
-  const gps_lat = gpsLatStr ? parseFloat(gpsLatStr) : null
-  const gps_lng = gpsLngStr ? parseFloat(gpsLngStr) : null
-  const target_lat = targetLatStr ? parseFloat(targetLatStr) : null
-  const target_lng = targetLngStr ? parseFloat(targetLngStr) : null
-
-  // Auth
-  const sup = await createClient()
-
-  const { data: { user }, error: authError } = await sup.auth.getUser()
-  if (!user || authError) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const { data: profile } = await sup
-    .from('profiles')
-    .select('roles!inner(name)')
-    .eq('id', user.id)
-    .single()
-
-  const role = profile?.roles as { name: string } | undefined
-  if (!role || role.name !== 'field_staff') {
-    return NextResponse.json({ error: `Forbidden — role "${role?.name ?? '(none)'}" is not field_staff` }, { status: 403 })
-  }
-
-  const { data: ownership } = await sup
-    .from('assignment_items')
-    .select('id, status, daily_assignments!inner(staff_id)')
-    .eq('id', assignmentItemId)
-    .eq('daily_assignments.staff_id', user.id)
-    .maybeSingle()
-
-  if (!ownership) {
-    return NextResponse.json({ error: 'Forbidden — assignment item does not belong to this user' }, { status: 403 })
-  }
-
-  const email = user.email
-
   try {
-    const startedAt = new Date().toISOString()
+    const body = await request.json()
+    const { assignmentItemId, psid, gpsLat, gpsLng, targetLat, targetLng, skipPhoto } = body as {
+      assignmentItemId: string
+      psid: string
+      gpsLat?: number | null
+      gpsLng?: number | null
+      targetLat?: number | null
+      targetLng?: number | null
+      skipPhoto?: boolean
+    }
 
-    // Check skip_photo permission
-    if (skipPhoto || !photo) {
+    if (!assignmentItemId || !psid) {
+      return NextResponse.json({ error: 'assignmentItemId and psid required' }, { status: 400 })
+    }
+
+    const gps_lat = gpsLat ?? null
+    const gps_lng = gpsLng ?? null
+    const hasPhoto = !skipPhoto
+
+    // Auth
+    const sup = await createClient()
+    const { data: { user }, error: authError } = await sup.auth.getUser()
+    if (!user || authError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Role check
+    const { data: profile } = await sup
+      .from('profiles')
+      .select('roles!inner(name)')
+      .eq('id', user.id)
+      .single()
+
+    const role = profile?.roles as { name: string } | undefined
+    if (!role || role.name !== 'field_staff') {
+      return NextResponse.json({ error: `Forbidden — role "${role?.name ?? '(none)'}"` }, { status: 403 })
+    }
+
+    // Ownership check
+    const { data: ownership } = await sup
+      .from('assignment_items')
+      .select('id, status, daily_assignments!inner(staff_id)')
+      .eq('id', assignmentItemId)
+      .eq('daily_assignments.staff_id', user.id)
+      .maybeSingle()
+
+    if (!ownership) {
+      return NextResponse.json({ error: 'Forbidden — assignment item does not belong to this user' }, { status: 403 })
+    }
+
+    // Block missed items from being re-delivered
+    if (ownership.status === 'missed') {
+      return NextResponse.json({ error: 'Item was marked as missed' }, { status: 409 })
+    }
+
+    // Only allow allowed statuses to be updated
+    if (!ALLOWED_STATUSES.includes(ownership.status)) {
+      return NextResponse.json({ error: `Cannot mark item with status "${ownership.status}"` }, { status: 409 })
+    }
+
+    // Resolve authoritative target coordinates from survey_units, fall back to client-provided
+    let target_lat = targetLat ?? null
+    let target_lng = targetLng ?? null
+    if (psid) {
+      const { data: su } = await sup
+        .from('survey_units')
+        .select('lat, lng')
+        .eq('psid', psid)
+        .maybeSingle()
+      if (su?.lat != null && su?.lng != null) {
+        target_lat = su.lat
+        target_lng = su.lng
+      }
+    }
+
+    // Validate no-photo setting if skipping photo
+    if (!hasPhoto) {
       const { data: noPhotoSetting } = await sup
         .from('app_settings')
         .select('value')
@@ -95,133 +90,62 @@ export async function POST(request: Request) {
         .maybeSingle()
 
       if (!noPhotoSetting?.value) {
-        return NextResponse.json({ error: 'Photo required — no-photo delivery not enabled' }, { status: 400 })
+        return NextResponse.json({ error: 'Photo required — no-photo delivery not enabled by admin' }, { status: 400 })
       }
     }
 
-    let gdrive_file_id: string | null = null
-    let photo_url: string | null = null
+    const startedAt = new Date().toISOString()
+    const deliveredAt = startedAt
 
-    // 1. Upload photo to GAS webhook (only when photo provided)
-    if (photo && !skipPhoto) {
-      const buffer = Buffer.from(await photo.arrayBuffer())
-      const base64 = buffer.toString('base64')
-      const fileKey = surveyId || psid
-      const filename = `${fileKey}_${Date.now()}.webp`
-
-      if (WEBHOOK_URL) {
-        const ac = new AbortController()
-        const timeout = setTimeout(() => ac.abort(), 8000)
-        try {
-          const webhookRes = await fetch(WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            signal: ac.signal,
-            body: JSON.stringify({
-              action: 'upload',
-              name: filename,
-              data: stripDataPrefix(base64),
-              surveyId: fileKey,
-              survey_id: fileKey,
-              email: email || 'staff@billing.local',
-              timestamp: new Date().toISOString(),
-            }),
-          })
-
-          if (webhookRes.ok) {
-            const result: Record<string, unknown> = await webhookRes.json()
-            if (result.status === 'success') {
-              gdrive_file_id = extractFileId(result)
-            }
-          }
-        } catch {
-          // Timeout or network error — continue without Drive file
-        } finally {
-          clearTimeout(timeout)
-        }
-      }
-
-      photo_url = gdrive_file_id
-        ? `/api/delivery/photo/${gdrive_file_id}`
-        : `pending://delivery/${assignmentItemId}`
-    }
-
-    // 2. Save delivery_photos record (always INSERT — preserve full history)
-    const { error: photoErr } = await sup.from('delivery_photos').insert({
-      assignment_item_id: assignmentItemId,
-      photo_url,
-      gdrive_file_id,
-      gps_lat,
-      gps_lng,
-      synced_to_drive: !!gdrive_file_id,
-    })
-
-    if (photoErr) {
-      return NextResponse.json({ error: `Failed to save photo: ${photoErr.message}` }, { status: 500 })
-    }
-
-    if (ownership.status === 'delivered' || ownership.status === 'missed') {
-      return NextResponse.json({
-        status: ownership.status,
-        distance: null,
-        photo_url,
-        already_delivered: true,
-      })
-    }
-
-    const deliveredAt = new Date().toISOString()
-
-    if (ownership.status === 'processing') {
-      const { error: promoteErr } = await sup
-        .from('assignment_items')
-        .update({
-          status: 'delivered',
-          started_at: startedAt,
-          delivered_at: deliveredAt,
-          gps_lat,
-          gps_lng,
-        })
-        .eq('id', assignmentItemId)
-
-      if (promoteErr) {
-        return NextResponse.json({ error: `Failed to promote processing item: ${promoteErr.message}` }, { status: 500 })
-      }
-
-      return NextResponse.json({
-        status: 'delivered',
-        distance: null,
-        photo_url,
-        gdrive_file_id,
-        gps_lat,
-        gps_lng,
-      })
-    }
-
-    // 3. Read GPS enforcement settings
+    // Read GPS enforcement settings
     let enforceGps = true
     let gpsThreshold = 50
-    const { data: setting } = await sup
+    const { data: gpsSetting } = await sup
       .from('app_settings')
       .select('value')
       .eq('key', 'gps_enforcement')
       .maybeSingle()
-    if (setting?.value) {
-      enforceGps = setting.value.enforce !== false
-      gpsThreshold = typeof setting.value.threshold === 'number' ? setting.value.threshold : 50
+    if (gpsSetting?.value) {
+      enforceGps = gpsSetting.value.enforce !== false
+      gpsThreshold = typeof gpsSetting.value.threshold === 'number' ? gpsSetting.value.threshold : 50
     }
 
-    // 4. Calculate distance and determine status
+    // Calculate distance and determine status
     let distance: number | null = null
-    let status: 'delivered' | 'processing' = 'processing'
+    let status: 'delivered' | 'processing' = 'delivered'
 
-    if (gps_lat != null && gps_lng != null && target_lat != null && target_lng != null) {
+    if (ownership.status === 'processing') {
+      status = 'delivered'
+    } else if (gps_lat != null && gps_lng != null && target_lat != null && target_lng != null) {
       distance = Math.round(haversine(gps_lat, gps_lng, target_lat, target_lng))
-      if (!enforceGps || distance <= gpsThreshold) {
-        status = 'delivered'
+      if (enforceGps && distance > gpsThreshold) {
+        status = 'processing'
       }
     }
 
-    // 5. Update assignment_items status
+    // Create delivery_photos placeholder if photo expected
+    let deliveryPhotoId: string | null = null
+    if (hasPhoto) {
+      const { data: photoRecord, error: photoErr } = await sup
+        .from('delivery_photos')
+        .insert({
+          assignment_item_id: assignmentItemId,
+          photo_url: null,
+          gdrive_file_id: null,
+          gps_lat,
+          gps_lng,
+          synced_to_drive: false,
+        })
+        .select('id')
+        .single()
+
+      if (photoErr) {
+        return NextResponse.json({ error: `Failed to create photo record: ${photoErr.message}` }, { status: 500 })
+      }
+      deliveryPhotoId = photoRecord.id
+    }
+
+    // Update assignment_items status
     const update: Record<string, unknown> = {
       status,
       started_at: startedAt,
@@ -242,12 +166,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       status,
       distance,
-      photo_url,
-      gdrive_file_id,
       gps_lat,
       gps_lng,
-      target_lat,
-      target_lng,
+      delivery_photo_id: deliveryPhotoId,
     })
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 })

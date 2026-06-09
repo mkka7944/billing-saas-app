@@ -72,9 +72,9 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
     src: string
     thumb: string
     source: 'portal' | 'drive' | 'delivery'
+    synced?: boolean
   }
 
-  // Compute before effects so allImages is accessible
   const surveyImages = (survey?.image_urls)?.filter(Boolean) || []
   const driveImageList = (drivePhotos || []).map((p) => ({
     src: p.photo_url,
@@ -87,6 +87,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
       src: p.photo_url!,
       thumb: p.photo_url!,
       source: 'delivery' as const,
+      synced: p.synced_to_drive,
     }))
   const noPhotoDeliveries = (deliveryPhotos || []).filter((p) => !p.photo_url).length
 
@@ -233,8 +234,15 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                 </div>
               </button>
               {currentImage && (
-                <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm z-10 uppercase tracking-wider">
-                  {currentImage.source === 'drive' ? 'Drive' : currentImage.source === 'portal' ? 'Portal' : 'Delivery'}
+                <div className="absolute bottom-2 right-2 flex gap-1 z-10">
+                  <div className="bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm uppercase tracking-wider">
+                    {currentImage.source === 'drive' ? 'Drive' : currentImage.source === 'portal' ? 'Portal' : 'Delivery'}
+                  </div>
+                  {currentImage.source === 'delivery' && currentImage.synced === false && (
+                    <div className="bg-amber-500/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm whitespace-nowrap">
+                      Syncing...
+                    </div>
+                  )}
                 </div>
               )}
               {allImages.length > 1 && (

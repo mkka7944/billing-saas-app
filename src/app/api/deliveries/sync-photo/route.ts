@@ -1,61 +1,61 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { stripDataPrefix, extractFileId } from '@/lib/drive'
 
 const WEBHOOK_URL = process.env.NEXT_PUBLIC_DRIVE_WEBHOOK_URL
 
-function stripDataPrefix(dataUrl: string): string {
-  const idx = dataUrl.indexOf(',')
-  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl
-}
-
-function extractFileId(res: Record<string, unknown>): string | null {
-  return (
-    (res.fileId as string) ||
-    (res.id as string) ||
-    (res.file_id as string) ||
-    ((res.data as Record<string, unknown>)?.id as string) ||
-    ((res.data as Record<string, unknown>)?.fileId as string) ||
-    null
-  )
-}
-
 export async function POST(request: Request) {
-  const sup = await createClient()
-  const { data: { user } } = await sup.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const body = await request.json()
-  const { assignmentItemId, psid, dataUrl, gpsLat, gpsLng, survey_id } = body
-
-  if (!assignmentItemId || !psid || !dataUrl) {
-    return NextResponse.json({ error: 'assignmentItemId, psid, and dataUrl required' }, { status: 400 })
-  }
-
-  const { data: ownership } = await sup
-    .from('assignment_items')
-    .select('id, status, daily_assignments!inner(staff_id)')
-    .eq('id', assignmentItemId)
-    .single()
-
-  if (!ownership) {
-    return NextResponse.json({ error: 'Assignment item not found' }, { status: 404 })
-  }
-
-  if (ownership.status !== 'processing') {
-    return NextResponse.json({ error: 'Item is not in processing state' }, { status: 409 })
-  }
-
-  if (!WEBHOOK_URL) {
-    return NextResponse.json({ error: 'Webhook URL not configured' }, { status: 500 })
-  }
-
   try {
-    const rawBase64 = stripDataPrefix(dataUrl)
-    const fileKey = survey_id || psid
+    if (!WEBHOOK_URL) {
+      return NextResponse.json({ error: 'Drive webhook not configured' }, { status: 500 })
+    }
+
+    const body = await request.json()
+    const { deliveryPhotoId, dataUrl } = body as {
+      deliveryPhotoId: string
+      dataUrl: string
+    }
+
+    if (!deliveryPhotoId || !dataUrl) {
+      return NextResponse.json({ error: 'deliveryPhotoId and dataUrl required' }, { status: 400 })
+    }
+
+    const sup = await createClient()
+    const { data: { user } } = await sup.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify the record exists and is not already synced — with ownership check
+    const { data: photoRecord, error: fetchErr } = await sup
+      .from('delivery_photos')
+      .select('id, assignment_item_id, synced_to_drive, assignment_items!inner(daily_assignments!inner(staff_id))')
+      .eq('id', deliveryPhotoId)
+      .eq('assignment_items.daily_assignments.staff_id', user.id)
+      .single()
+
+    if (fetchErr || !photoRecord) {
+      return NextResponse.json({ error: 'Delivery photo record not found or does not belong to you' }, { status: 404 })
+    }
+
+    if (photoRecord.synced_to_drive) {
+      return NextResponse.json({ success: true, already_synced: true })
+    }
+
+    // Look up the assignment item for survey_id / email context
+    const { data: item } = await sup
+      .from('assignment_items')
+      .select('psid, daily_assignments!inner(staff_id, staff:staff_id(email))')
+      .eq('id', photoRecord.assignment_item_id)
+      .single()
+
+    const psid = item?.psid || ''
+    const email = (item as any)?.daily_assignments?.staff?.email
+    const fileKey = psid
     const filename = `${fileKey}_${Date.now()}.webp`
 
+    // Upload to GAS webhook
+    const rawBase64 = stripDataPrefix(dataUrl)
     const ac = new AbortController()
     const timeout = setTimeout(() => ac.abort(), 8000)
 
@@ -71,7 +71,7 @@ export async function POST(request: Request) {
           data: rawBase64,
           surveyId: fileKey,
           survey_id: fileKey,
-          email: user.email || 'staff@billing.local',
+          email,
           timestamp: new Date().toISOString(),
         }),
       })
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
         }
       }
     } catch {
-      // GAS failed — will retry later
+      // GAS failed — will retry from queue
     } finally {
       clearTimeout(timeout)
     }
@@ -94,28 +94,18 @@ export async function POST(request: Request) {
 
     const photo_url = `/api/delivery/photo/${gdrive_file_id}`
 
+    // Update the delivery_photos record
     const { error: updateErr } = await sup
       .from('delivery_photos')
       .update({
         photo_url,
         gdrive_file_id,
         synced_to_drive: true,
-        gps_lat: gpsLat ?? null,
-        gps_lng: gpsLng ?? null,
       })
-      .eq('assignment_item_id', assignmentItemId)
+      .eq('id', deliveryPhotoId)
 
     if (updateErr) {
-      return NextResponse.json({ error: `Failed to update photo: ${updateErr.message}` }, { status: 500 })
-    }
-
-    const { error: promoteErr } = await sup
-      .from('assignment_items')
-      .update({ status: 'delivered' })
-      .eq('id', assignmentItemId)
-
-    if (promoteErr) {
-      return NextResponse.json({ error: `Photo saved but failed to promote: ${promoteErr.message}` }, { status: 500 })
+      return NextResponse.json({ error: `Failed to update photo record: ${updateErr.message}` }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, photo_url, gdrive_file_id })

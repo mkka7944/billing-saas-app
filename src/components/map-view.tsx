@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { useMap } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyData } from '@/hooks/use-survey-data'
+import { useMapZoom } from '@/hooks/use-map-zoom'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const MapContainer = dynamic(
@@ -30,10 +31,11 @@ const TILE_URLS = {
 function MapFollower() {
   const map = useMap()
   const mapCenter = useBillingStore((s) => s.mapCenter)
+  const { data: mapZoom = 18 } = useMapZoom()
 
   useEffect(() => {
-    map.flyTo(mapCenter, map.getZoom(), { duration: 1.2 })
-  }, [map, mapCenter])
+    map.flyTo(mapCenter, mapZoom, { duration: 1.2 })
+  }, [map, mapCenter, mapZoom])
 
   return null
 }
@@ -42,6 +44,7 @@ export function MapView() {
   const filters = useBillingStore((s) => s.filters)
   const mapType = useBillingStore((s) => s.mapType)
   const { data, isLoading } = useSurveyData(filters)
+  const { data: mapZoom = 18 } = useMapZoom()
 
   const mapRef = useRef<HTMLDivElement>(null)
 
@@ -63,7 +66,7 @@ export function MapView() {
     <div ref={mapRef} className="w-full h-full">
       <MapContainer
         center={[32.0836, 72.6712]}
-        zoom={12}
+        zoom={mapZoom}
         className="w-full h-full"
         zoomControl={false}
       >

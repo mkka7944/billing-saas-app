@@ -60,6 +60,7 @@ export const CITY_CONFIG: Record<string, { district: string; tehsil: string; lat
   Sargodha: { ...CITY_TEHSIL_MAP.Sargodha, lat: 32.0836, lng: 72.6712 },
   Bhalwal: { ...CITY_TEHSIL_MAP.Bhalwal, lat: 32.265, lng: 72.905 },
   Khushab: { ...CITY_TEHSIL_MAP.Khushab, lat: 32.295, lng: 72.352 },
+  TestCity: { ...CITY_TEHSIL_MAP.TestCity, lat: 32.0716, lng: 72.6577 },
 }
 
 export const useBillingStore = create<BillingState>()(

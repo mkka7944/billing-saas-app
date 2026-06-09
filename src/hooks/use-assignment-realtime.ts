@@ -3,20 +3,13 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { getAllQueued, removeFromQueue } from '@/lib/photo-queue'
-import { getAllUnsent, removeUnsent } from '@/lib/unsent-photo-queue'
 
 async function cleanOrphanedEntries(validItemIds: Set<string>) {
-  const [photoQueue, unsentQueue] = await Promise.all([getAllQueued(), getAllUnsent()])
-
+  const queue = await getAllQueued()
   const removals: Promise<void>[] = []
-  for (const entry of photoQueue) {
+  for (const entry of queue) {
     if (entry.id && !validItemIds.has(entry.assignmentItemId)) {
       removals.push(removeFromQueue(entry.id))
-    }
-  }
-  for (const entry of unsentQueue) {
-    if (entry.id && !validItemIds.has(entry.assignmentItemId)) {
-      removals.push(removeUnsent(entry.id))
     }
   }
   if (removals.length > 0) {

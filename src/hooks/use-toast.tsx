@@ -35,7 +35,7 @@ const VARIANT_STYLES: Record<ToastVariant, { icon: string; border: string; ring:
   info:    { icon: 'i', border: 'border-blue-500', ring: 'ring-blue-500/20' },
 }
 
-const DEFAULT_DURATION = 8000
+const DEFAULT_DURATION = 4000
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])

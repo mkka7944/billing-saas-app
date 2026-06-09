@@ -1,22 +1,18 @@
 export interface QueuedPhoto {
   id?: number
+  deliveryPhotoId: string
   assignmentItemId: string
   psid: string
-  surveyId?: string
-  dataUrl?: string
-  photoBlob?: Blob
-  capturedAt: string
-  email: string
+  photoBlob: Blob
   gpsLat?: number | null
   gpsLng?: number | null
+  createdAt: string
   retryCount: number
-  status: 'queued' | 'uploading' | 'synced' | 'failed'
-  lastError?: string
 }
 
 const DB_NAME = 'billing-saas-photo-queue'
 const STORE_NAME = 'photo_queue'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -28,7 +24,7 @@ function openDB(): Promise<IDBDatabase> {
           keyPath: 'id',
           autoIncrement: true,
         })
-        store.createIndex('status', 'status', { unique: false })
+        store.createIndex('deliveryPhotoId', 'deliveryPhotoId', { unique: false })
         store.createIndex('assignmentItemId', 'assignmentItemId', { unique: false })
       }
     }
@@ -37,79 +33,15 @@ function openDB(): Promise<IDBDatabase> {
   })
 }
 
-export async function addToQueue(photo: Omit<QueuedPhoto, 'id' | 'retryCount' | 'status'>): Promise<number> {
+export async function addToQueue(photo: Omit<QueuedPhoto, 'id' | 'retryCount' | 'createdAt'>): Promise<number> {
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
-    const req = store.add({ ...photo, retryCount: 0, status: 'queued' })
+    const req = store.add({ ...photo, retryCount: 0, createdAt: new Date().toISOString() })
     req.onsuccess = () => resolve(req.result as number)
     req.onerror = () => reject(req.error)
     tx.oncomplete = () => db.close()
-  })
-}
-
-export async function getQueuedPhotos(): Promise<QueuedPhoto[]> {
-  const db = await openDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly')
-    const store = tx.objectStore(STORE_NAME)
-    const index = store.index('status')
-    const range = IDBKeyRange.only('queued')
-    const req = index.getAll(range)
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-    tx.oncomplete = () => db.close()
-  })
-}
-
-export async function markSynced(id: number): Promise<void> {
-  const db = await openDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite')
-    const store = tx.objectStore(STORE_NAME)
-    const req = store.get(id)
-    req.onsuccess = () => {
-      const photo = req.result
-      if (photo) {
-        photo.status = 'synced'
-        store.put(photo)
-      }
-    }
-    req.onerror = () => reject(req.error)
-    tx.oncomplete = () => db.close()
-    resolve()
-  })
-}
-
-export async function incrementRetry(id: number): Promise<void> {
-  const db = await openDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite')
-    const store = tx.objectStore(STORE_NAME)
-    const req = store.get(id)
-    req.onsuccess = () => {
-      const photo = req.result
-      if (photo) {
-        photo.retryCount++
-        photo.status = 'queued'
-        store.put(photo)
-      }
-    }
-    req.onerror = () => reject(req.error)
-    tx.oncomplete = () => db.close()
-    resolve()
-  })
-}
-
-export async function removeFromQueue(id: number): Promise<void> {
-  const db = await openDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite')
-    const store = tx.objectStore(STORE_NAME)
-    store.delete(id)
-    tx.oncomplete = () => { db.close(); resolve() }
-    tx.onerror = () => reject(tx.error)
   })
 }
 
@@ -137,21 +69,31 @@ export async function getQueueCount(): Promise<number> {
   })
 }
 
-export async function clearSynced(): Promise<void> {
+export async function removeFromQueue(id: number): Promise<void> {
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
-    const index = store.index('status')
-    const req = index.getAllKeys(IDBKeyRange.only('synced'))
+    store.delete(id)
+    tx.oncomplete = () => { db.close(); resolve() }
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+export async function incrementRetry(id: number): Promise<void> {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    const req = store.get(id)
     req.onsuccess = () => {
-      const keys = req.result
-      for (const key of keys) {
-        store.delete(key)
+      const photo = req.result
+      if (photo) {
+        photo.retryCount++
+        store.put(photo)
       }
     }
     req.onerror = () => reject(req.error)
-    tx.oncomplete = () => db.close()
-    resolve()
+    tx.oncomplete = () => { db.close(); resolve() }
   })
 }

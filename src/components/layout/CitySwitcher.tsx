@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { useTestMode } from '@/hooks/use-test-mode'
 import { cn } from '@/lib/utils'
 import { ChevronDown } from 'lucide-react'
 
@@ -16,16 +17,17 @@ interface CityIdentity {
   subtitle: string
 }
 
-const CITY_OPTIONS: CityIdentity[] = [
+const ALL_CITY_OPTIONS: CityIdentity[] = [
   { city: 'Sargodha', district: 'SARGODHA', tehsil: 'SARGODHA', color: 'text-emerald-500 dark:text-emerald-300', gradient: 'from-emerald-500/20 dark:from-emerald-400/20 to-emerald-500/5', label: 'SGD', subtitle: 'Headquarters' },
   { city: 'Bhalwal', district: 'SARGODHA', tehsil: 'BHALWAL', color: 'text-blue-500 dark:text-blue-300', gradient: 'from-blue-500/20 dark:from-blue-400/20 to-blue-500/5', label: 'BHL', subtitle: 'Branch Office' },
   { city: 'Khushab', district: 'KHUSHAB', tehsil: 'KHUSHAB', color: 'text-amber-500 dark:text-amber-300', gradient: 'from-amber-500/20 dark:from-amber-400/20 to-amber-500/5', label: 'KHB', subtitle: 'Regional Office' },
   { city: null, district: null, tehsil: null, color: 'text-primary', gradient: 'from-primary/20 via-blue-500/10 to-emerald-500/10', label: 'ALL', subtitle: 'Global Context' },
+  { city: 'TestCity', district: 'TEST', tehsil: 'TEST', color: 'text-purple-500 dark:text-purple-300', gradient: 'from-purple-500/20 dark:from-purple-400/20 to-purple-500/5', label: 'TST', subtitle: 'Test Environment' },
 ]
 
 function currentIdentity(city: string | null): CityIdentity {
-  if (!city) return CITY_OPTIONS[3]
-  return CITY_OPTIONS.find((c) => c.city === city) || CITY_OPTIONS[3]
+  if (!city) return ALL_CITY_OPTIONS[3]
+  return ALL_CITY_OPTIONS.find((c) => c.city === city) || ALL_CITY_OPTIONS[3]
 }
 
 function CityAvatar({ identity, size }: { identity: CityIdentity; size: 'sm' | 'md' }) {
@@ -46,12 +48,23 @@ export function CitySwitcher({ isCollapsed }: { isCollapsed?: boolean }) {
   const setCity = useBillingStore((s) => s.setCity)
   const roleName = useAuthStore((s) => s.roleName)
   const assignedCity = useAuthStore((s) => s.assignedCity)
+  const { data: testMode } = useTestMode()
   const [open, setOpen] = useState(false)
 
-  // Staff with assigned city: only show their city
-  const visibleOptions = (roleName === 'field_staff' && assignedCity)
-    ? CITY_OPTIONS.filter((o) => o.city === assignedCity)
-    : CITY_OPTIONS
+  const isAdmin = roleName === 'admin' || roleName === 'super_admin'
+
+  const visibleOptions = useMemo(() => {
+    let opts = ALL_CITY_OPTIONS
+    // Hide TestCity unless admin + test mode enabled
+    if (!isAdmin || !testMode?.enabled) {
+      opts = opts.filter((o) => o.city !== 'TestCity')
+    }
+    // Staff with assigned city: only show their city
+    if (roleName === 'field_staff' && assignedCity) {
+      opts = opts.filter((o) => o.city === assignedCity)
+    }
+    return opts
+  }, [roleName, assignedCity, isAdmin, testMode?.enabled])
 
   const current = currentIdentity(selectedCity)
 

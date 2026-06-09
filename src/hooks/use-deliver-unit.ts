@@ -1,42 +1,15 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { compressImage } from '@/lib/image/compress'
 
-const MIN_STEP_MS = 500
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-function captureGPS(timeout = 3000): Promise<{ lat: number; lng: number } | null> {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve(null)
-      return
-    }
-    const timer = setTimeout(() => resolve(null), timeout)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        clearTimeout(timer)
-        resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-      },
-      () => {
-        clearTimeout(timer)
-        resolve(null)
-      },
-      { enableHighAccuracy: false, timeout, maximumAge: 5000 }
-    )
-  })
-}
-
-export type DeliveryProgress = 'idle' | 'compressing' | 'uploading' | 'saving' | 'done'
+export type DeliveryProgress = 'idle' | 'saving' | 'done'
 
 export interface DeliveryResult {
   status: 'delivered' | 'processing'
   distance: number | null
-  photo_url: string | null
   gps_lat: number | null
   gps_lng: number | null
-  target_lat: number | null
-  target_lng: number | null
+  delivery_photo_id: string | null
 }
 
 export function useDeliverUnit() {
@@ -44,118 +17,56 @@ export function useDeliverUnit() {
   const [lastResult, setLastResult] = useState<DeliveryResult | null>(null)
   const [progress, setProgress] = useState<DeliveryProgress>('idle')
 
-  const resetProgress = useCallback(() => {
+  const reset = useCallback(() => {
     setProgress('idle')
     setIsDelivering(false)
+    setLastResult(null)
   }, [])
 
-  const deliver = useCallback(async (
+  const mark = useCallback(async (
     assignmentItemId: string,
     psid: string,
-    photoFile: File,
+    gpsLat: number | null,
+    gpsLng: number | null,
     targetLat: number | null,
     targetLng: number | null,
-    gpsOverride?: { lat: number; lng: number } | null,
-    onProgress?: (p: DeliveryProgress) => void,
-    surveyId?: string | null,
+    skipPhoto: boolean,
   ): Promise<DeliveryResult | null> => {
     setIsDelivering(true)
-    setLastResult(null)
-    setProgress('compressing')
-    onProgress?.('compressing')
-    await sleep(MIN_STEP_MS)
+    setProgress('saving')
 
     try {
-      const gps = gpsOverride ?? await captureGPS()
-
-      const compressed = await compressImage(photoFile)
-
-      onProgress?.('uploading')
-      setProgress('uploading')
-      await sleep(MIN_STEP_MS)
-
-      const form = new FormData()
-      form.append('photo', compressed, `${surveyId || psid}_delivery.webp`)
-      form.append('assignment_item_id', assignmentItemId)
-      form.append('psid', psid)
-      if (surveyId) form.append('survey_id', surveyId)
-      if (gps) {
-        form.append('gps_lat', String(gps.lat))
-        form.append('gps_lng', String(gps.lng))
-      }
-      if (targetLat != null) form.append('target_lat', String(targetLat))
-      if (targetLng != null) form.append('target_lng', String(targetLng))
-
-      const res = await fetch('/api/deliveries/mark', { method: 'POST', body: form })
+      const res = await fetch('/api/deliveries/mark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentItemId,
+          psid,
+          gpsLat,
+          gpsLng,
+          targetLat,
+          targetLng,
+          skipPhoto,
+        }),
+      })
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}))
         throw new Error(errBody.error || `HTTP ${res.status}`)
       }
 
-      onProgress?.('saving')
-      setProgress('saving')
-
       const result: DeliveryResult = await res.json()
       setLastResult(result)
       setProgress('done')
       return result
     } catch (e) {
-      resetProgress()
+      reset()
       if (e instanceof TypeError) {
         return null
       }
       throw e
     }
-  }, [resetProgress])
+  }, [reset])
 
-  const deliverNoPhoto = useCallback(async (
-    assignmentItemId: string,
-    psid: string,
-    targetLat: number | null,
-    targetLng: number | null,
-    gpsOverride?: { lat: number; lng: number } | null,
-  ): Promise<DeliveryResult | null> => {
-    setIsDelivering(true)
-    setLastResult(null)
-    setProgress('uploading')
-    await sleep(300)
-
-    try {
-      const gps = gpsOverride ?? await captureGPS()
-
-      const form = new FormData()
-      form.append('skip_photo', 'true')
-      form.append('assignment_item_id', assignmentItemId)
-      form.append('psid', psid)
-      if (gps) {
-        form.append('gps_lat', String(gps.lat))
-        form.append('gps_lng', String(gps.lng))
-      }
-      if (targetLat != null) form.append('target_lat', String(targetLat))
-      if (targetLng != null) form.append('target_lng', String(targetLng))
-
-      const res = await fetch('/api/deliveries/mark', { method: 'POST', body: form })
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}))
-        throw new Error(errBody.error || `HTTP ${res.status}`)
-      }
-
-      setProgress('saving')
-
-      const result: DeliveryResult = await res.json()
-      setLastResult(result)
-      setProgress('done')
-      return result
-    } catch (e) {
-      resetProgress()
-      if (e instanceof TypeError) {
-        return null
-      }
-      throw e
-    }
-  }, [resetProgress])
-
-  return { deliver, deliverNoPhoto, isDelivering, lastResult, progress }
+  return { mark, isDelivering, lastResult, progress }
 }

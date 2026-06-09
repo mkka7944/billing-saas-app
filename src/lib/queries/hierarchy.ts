@@ -2,6 +2,7 @@ export const CITY_TEHSIL_MAP: Record<string, { district: string; tehsil: string 
   Sargodha: { district: 'SARGODHA', tehsil: 'SARGODHA' },
   Bhalwal: { district: 'SARGODHA', tehsil: 'BHALWAL' },
   Khushab: { district: 'KHUSHAB', tehsil: 'KHUSHAB' },
+  TestCity: { district: 'TEST', tehsil: 'TEST' },
 }
 
 export const UC_HIERARCHY_COLS = [

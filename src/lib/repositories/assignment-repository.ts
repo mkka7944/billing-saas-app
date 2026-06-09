@@ -98,9 +98,8 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
     const { data: ucRows } = await hsQuery
 
     const ucNames = [...new Set((ucRows || []).map(r => r.uc_name))]
-    if (ucNames.length) {
-      query = query.in('uc_name', ucNames)
-    }
+    if (!ucNames.length) return { data: [] }
+    query = query.in('uc_name', ucNames)
   }
 
   const { data: assignments } = await query.order('created_at', { ascending: false })

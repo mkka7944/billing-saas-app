@@ -5,7 +5,7 @@ import { useBillingStore } from '@/stores/billing-store'
 import { Search, SlidersHorizontal, Layers, Image, X } from 'lucide-react'
 import { MobileFilterSheet } from '@/components/filter-panel'
 import { UnsentModal } from '@/components/delivery/unsent-badge'
-import { useUnsentPhotos } from '@/hooks/use-unsent-photos'
+import { usePhotoQueue } from '@/hooks/use-photo-queue'
 
 export function FloatingActions() {
   const [open, setOpen] = useState(false)
@@ -17,7 +17,7 @@ export function FloatingActions() {
   const setMapType = useBillingStore((s) => s.setMapType)
   const search = useBillingStore((s) => s.filters.search)
   const setPendingFilter = useBillingStore((s) => s.setPendingFilter)
-  const { count: unsentCount } = useUnsentPhotos(5000)
+  const { queueCount: unsentCount } = usePhotoQueue()
 
   useEffect(() => {
     if (selectedHouseId) {
@@ -59,7 +59,7 @@ export function FloatingActions() {
               <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} />
               <ActionButton icon={Layers} label={mapType === 'streets' ? 'Satellite' : 'Street'} onClick={handleSatellite} active={mapType === 'satellite'} />
               <div className="relative">
-                <ActionButton icon={Image} label="Unsent" onClick={handleUnsent} />
+                <ActionButton icon={Image} label="Photos" onClick={handleUnsent} />
                 {unsentCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 h-3.5 min-w-[14px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[8px] font-bold px-0.5 pointer-events-none">
                     {unsentCount > 99 ? '99+' : unsentCount}

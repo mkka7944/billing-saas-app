@@ -3692,6 +3692,55 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 - Apply `037-notifications.sql` migration
 - Fix remaining P0/P1 items from Section 25 (unsent mode queue, sync-photo promote, redelivery photo drop)
 
+### 2026-06-09 — Delivery Flow Harden: GPS Fixes, Redelivery Sync, Map Zoom — Location: Home
+
+**Focus:** Fix 4 critical delivery flow bugs, add configurable map zoom with Settings UI.
+
+**Done:**
+
+**Bug 1: Delivery status wiped by GPS updates (reset effect deps)**
+- Root cause: `initialLat`/`initialLng` in reset effect deps (`unit-delivery-sheet.tsx:76-84`) — parent GPS updates re-fired effect, overwriting `deliveryStatus` back to `'idle'` mid-delivery.
+- Fix: removed `initialLat`/`initialLng` from deps array. Effect now depends only on `[unit?.psid]`.
+
+**Bug 2: GPS unavailable after auto-advance (watch effect deps)**
+- Root cause: GPS watch effect had `deliveryStatus` in deps — rapid stop/restart of GPS hardware caused geolocation timeout.
+- Fix: split into two effects — watch lifecycle on `[unit?.lat, unit?.lng, unit?.psid]` only, indicator show/hide on `[deliveryStatus]` (later removed entirely — JSX condition `deliveryStatus === 'idle'` already hides indicator).
+
+**Bug 3: Redelivery photo never syncs (ALLOWED_STATUSES)**
+- Root cause: mark API returns early for `status === 'delivered'` with `delivery_photo_id: null`. Unsent-mode promoted to `delivered` but redelivery path skipped photo capture.
+- Fix: added `'delivered'` to `ALLOWED_STATUSES` in `mark/route.ts:59-69`, removed early return for `'delivered'` (kept `'missed'` guard).
+
+**Bug 4: Staff map redundant flyTo on every delivery (cache re-render)**
+- Root cause: `FlyToTarget` effect depended on `items` which changes on optimistic cache update — re-fired `map.flyTo()` on every delivery.
+- Fix: added `lastTargetRef` guard (`staff-map.tsx:34-59`), changed `duration: 1` → `0.5`.
+
+**GPS seeding fix:**
+- Added `setUserLat(initialLat)` / `setUserLng(initialLng)` back to reset effect body — but kept out of deps array. Fires only on unit change (psid), not on every parent GPS update. Fixes marker-click case where sheet opens without GPS lock.
+
+**Map zoom feature:**
+- Created `useMapZoom` hook (`src/hooks/use-map-zoom.ts`): React Query on `GET /api/settings?key=map_zoom`, staleTime 30min, defaults to 18.
+- Added zoom slider (10–20) to Settings → Delivery sidebar (admin-only): range input, number input, descriptive label (Area/Street/Neighborhood/Building), saved state display.
+- Added read-only zoom display in Settings → Appearance tab via `MapZoomReadOnly` component (staff-visible).
+- Updated `MapFollower` in `map-view.tsx:30-39` to use `mapZoom` from hook.
+- Updated both `MapContainer` initial zooms (`staff-map.tsx:74`, `map-view.tsx:68`) from hardcoded `12` to `mapZoom` from hook.
+- **Final fix: FlyToTarget compound guard** — replaced `lastTargetRef` + `zoomRef` with compound `{ target, zoom }` ref. Same `mapZoom` in effect deps now re-fires when zoom query resolves, updating staff map to configured zoom. Guard skips only when BOTH target AND zoom match (handles `items` cache re-render without blocking zoom change).
+
+**Key decisions:**
+- GPS seeding from parent kept out of effect deps — read only at unit-change time, prevents Bug 1 re-introduction.
+- Compound guard (`target + zoom`) in FlyToTarget replaces dual ref pattern — allows re-fly when zoom setting changes while still preventing redundant items-change fires.
+
+**Testing Verification (from session):**
+1. `/deliver` → tap pending → GPS shows distance → take photo → delivered → auto-advance to next → GPS still works (Bug 2 fixed)
+2. Map marker click → sheet opens with GPS position seeded from parent (Bug 1 fixed)
+3. Redelivery: deliver → sync → redeliver → photo persists (Bug 3 fixed)
+4. Map: tap prev/next → single flyTo, no redundant animation (Bug 4 fixed)
+5. Settings → Delivery → zoom slider 10-20 → saved → staff map opens at configured zoom
+
+**Next session:**
+- Verify FlyToTarget compound guard in production (zoom change after query resolves)
+- Apply `037-notifications.sql` migration
+- Remaining Section 25 items
+
 
 ## 19. Data Model Rules (Comprehensive Reference)
 
@@ -4835,54 +4884,100 @@ Settings → "Sync All" → retryAll → retrySingle() per photo
 
 ---
 
+### 2026-06-09 — Offline Photo Queue & Delivery Refactor (Phase 6 Completion) — Location: Home
+
+**Goal:** Fix the P0-P2 delivery pipeline bugs from Section 25.1. Replace the broken multi-round-trip photo flow with an IndexedDB-backed offline queue + atomic sync-photo endpoint.
+
+**Done (P0-P2 items 1-13 from Section 25.1):**
+
+**Architecture redesign:**
+- **Old flow:** `POST /mark` → client captures photo → `POST promote` → `POST mark-processing` → `POST sync-photo` (GAS upload in route) → `POST ping-process`/`ping` (tracking). Multiple round trips, no offline queue, dueling `processing`/`delivered` status cascade.
+- **New flow:** `POST /mark` (creates `delivery_photos` placeholder row, sets status) → staff captures photo client-side → IndexedDB queue stores blob → `POST /sync-photo` (single atomic upload to GAS webhook + DB update `photo_url` + `synced_to_drive=true`) → queue resolves to `ok`/`orphan`/`retry`
+- **Key change:** Only one path to Drive upload. No intermediate "pending" URLs. No separate promote/mark-processing route. Queue retries on failure, orphans after `MAX_RETRIES`.
+
+**Files created:**
+1. `scripts/sql/030-delivery-photos.sql` — `delivery_photos` table with indexes + trigger `trg_refresh_assignment_on_photo` (updates `assignment_items.photo_count` on INSERT) + cleanup RPC `cleanup_orphan_delivery_photos`
+2. `src/lib/geo.ts` — `haversine()` function for GPS distance calculation
+3. `src/lib/photo-queue.ts` — IndexedDB queue (add, getAll, count, remove, incrementRetry)
+4. `src/hooks/use-photo-queue.ts` — React hook wrapping photo-queue lib with `enqueuePhoto`, `processQueue`, `queueCount`, `isProcessing`
+5. `src/app/api/deliveries/unsynced/route.ts` — GET endpoint listing unsynced photos for retry UI (`synced_to_drive=false`)
+
+**Files rewritten:**
+6. `src/app/api/deliveries/mark/route.ts` — JSON-only. Creates `delivery_photos` placeholder (`photo_url=null`, `synced_to_drive=false`). GPS enforcement from `app_settings`. Correct early-return for delivered/missed (fixes #10). Processing guard (fixes #11).
+7. `src/app/api/deliveries/sync-photo/route.ts` — Single route: uploads to GAS webhook, then atomically updates `delivery_photos` with `photo_url`, `gdrive_file_id`, `synced_to_drive=true`. Also promotes `assignment_items` status to `delivered` if currently `processing` (fixes #9).
+
+**Files refactored:**
+8. `src/components/delivery/unit-delivery-sheet.tsx` — Uses `usePhotoQueue` for offline-first enqueue. Added live GPS accuracy indicator with colored dot (10m green / 50m amber / ∞ red). Unsupported mode uses `enqueueUnsent` (fixes #8).
+9. `src/app/deliver/page.tsx` — Queue badge ("3 photos waiting to sync") + manual retry button
+10. `src/components/delivery/unsent-badge.tsx` — Updated for new queue lib
+11. `src/components/settings/unsent-images-section.tsx` — Updated for new queue lib
+12. `src/components/layout/floating-actions.tsx` — Uses new hook for badge count (fixes #12)
+13. `src/components/ui/toast.tsx` — Default duration 4s → 12s for delivery workflow
+14. `src/app/api/deliveries/unsynced/route.ts` — New endpoint for retry UI
+
+**Files deleted:**
+15. `src/app/api/deliveries/promote/route.ts` — Removed (replaced by atomic sync-photo)
+16. `src/app/api/deliveries/mark-processing/route.ts` — Removed (status set directly in /mark)
+17. All `src/app/api/deliveries/ping*` variants — Removed (no tracking round trips needed)
+
+**Key decisions:**
+- IndexedDB over `localStorage` — Blob storage needed for photo binary data (base64 conversion only at upload time)
+- Blob stored directly in IndexedDB (not base64) — avoids double encoding overhead
+- `removeFromQueue` resolves in `tx.oncomplete` — but `incrementRetry` has a race condition (resolves immediately, not in `tx.oncomplete`). Documented in audit.
+- `onupgradeneeded` only creates indexes on initial store creation — upgrade from v3 to v4 won't create `deliveryPhotoId` index. Documented in audit.
+- No auth check on `sync-photo` — relies on JWT for authentication but doesn't verify staff_id ownership of the `delivery_photos` record. Documented in audit.
+
+**Audit report:** `docs/AUDIT-2026-06-09.md` — 13 findings (2 P1, 5 P2, 6 P3)
+
+**Remaining:**
+- Apply `030-delivery-photos.sql` to Supabase (needs PAT token)
+- Apply `037-notifications.sql` (needs PAT token from office PC)
+- Data cleanup: stale IndexedDB + DB records from prior testing
+- Fix P1 bugs from audit (incrementRetry race condition, sync-photo auth check)
+- Consider P2 fixes (unsynced admin auth, GPS target validation, IndexedDB schema migration, usePhotoQueue state dedup, toast duration)
+
+---
+
 ## 25. Remaining Corrections
 
-Items that need to be fixed before the next session or are deferred from this session:
+Items that need to be fixed before the next session or are deferred from this session.  
+**Note: Items 1-13 were implemented in the 2026-06-09 session (see session log above).**
 
-| # | Priority | Issue | Files | Fix |
-|---|----------|-------|-------|-----|
-| 1 | **HIGH** | Unsent mode writes to wrong queue — `enqueuePhoto()` to `photo-queue` instead of `enqueueUnsent()` to `unsent-photo-queue`. Photos invisible in Settings. | `unit-delivery-sheet.tsx` | Change `enqueuePhoto(...)` → `enqueueUnsent({ assignmentItemId, psid, photoBlob, gpsLat, gpsLng })` in unsent mode path. Remove `skipAutoSync`. |
-| 2 | **HIGH** | sync-photo endpoint doesn't promote status — after successful Drive upload, `assignment_items` stays 'processing' forever | `sync-photo/route.ts` | Add `sup.from('assignment_items').update({ status: 'delivered' }).eq('id', assignmentItemId).eq('status', 'processing')` after successful webhook upload. |
-| 3 | **HIGH** | Unsent icon in deliver page filter bar (should be in FloatingActions on map page) | `deliver/page.tsx`, `floating-actions.tsx` | Revert deliver bar, add 4th Image-button with queue badge to FloatingActions. Keep `UnsentModal` triggered from FloatingActions. |
-| 4 | MEDIUM | Redelivery blocks photo save — /mark route returns early for 'delivered'/'missed' before inserting delivery_photos record | `mark/route.ts:83-90` | Insert delivery_photos record before early return, or add UPDATE path for photo replacement. |
-| 5 | MEDIUM | No early-return for 'processing' items — each redelivery creates duplicate delivery_photos records | `mark/route.ts` | Add `ownership.status === 'processing'` early return guard (same as 'delivered'/'missed'). |
-| 6 | LOW | Offline fallback has no toast — `setDeliveryStatus('processing')` with no user feedback | `unit-delivery-sheet.tsx` | Add `updateToast(progressTid, 'Saved for later — will sync when online', 'info')` in offline fallback path. |
-| 7 | INFO | Stale IndexedDB entries from prior testing | browser DevTools | Clear before each fresh test session |
-| 8 | HIGH | Stale `processing` items in DB from failed earlier tests | SQL | Reset to `pending` before fresh test cycle |
-| 9 | MEDIUM | `037-notifications.sql` not yet applied to Supabase | `scripts/sql/037-notifications.sql` | Needs PAT token from office PC (`SUPABASE_ACCESS_TOKEN`) |
-| 10 | MEDIUM | Notification scheme update: polling at 30s, no real-time | — | Implemented but migration not applied |
-| 11 | INFO | GPS signal indicator accuracy thresholds (10m, 50m, Infinity) — verify on mobile GPS | `unit-delivery-sheet.tsx` | Test with actual mobile GPS; thresholds may need tuning |
-| 12 | INFO | Toast redesign renders on all pages — verify on delivery + settings + assignments | `globals.css`, `use-toast.tsx` | Visual check on mobile width (max-w-[260px]) |
-| 13 | INFO | GPS battery optimization (deferred to production): `useUserLocation` default low accuracy, switch to high accuracy only when sheet opens | `use-user-location.ts`, `unit-delivery-sheet.tsx` | Keep three-effect pattern during development. Revisit before field deployment. |
-| 14 | INFO | Stale MASTER.md GPS dots documentation — says `sharedLocation.accuracy`, should be local `gpsAccuracy` | `MASTER.md:3570` | Update text to match current code. |
-| 15 | INFO | Two separate unsent queues (photo-queue + unsent-photo-queue) — confusing UX | Both queue lib files | Consider merging into one queue. Deferred. |
+| # | Priority | Issue | Status |
+|---|----------|-------|--------|
+| 1 | LOW | Offline fallback has no toast | Pending |
+| 2 | INFO | Stale IndexedDB entries from prior testing | Clear before each test session |
+| 3 | HIGH | Stale `processing` items in DB from failed tests | `UPDATE ... SET status='pending' WHERE status='processing' AND delivered_at IS NOT NULL` |
+| 4 | MEDIUM | `037-notifications.sql` not yet applied | Needs PAT token |
+| 5 | MEDIUM | `030-delivery-photos.sql` not yet applied | Needs PAT token |
+| 6 | MEDIUM | `036-test-mc-data.sql` not yet applied | Needs PAT token |
+| 7 | INFO | GPS signal thresholds (10m/50m/Infinity) — verify on mobile | Test with actual mobile GPS |
+| 8 | INFO | GPS battery optimization (deferred) | `use-user-location.ts` — low accuracy default |
+| 9 | INFO | Stale GPS dots doc in MASTER.md | `sharedLocation.accuracy` → `gpsAccuracy` |
+| 10 | INFO | `haversine()` in `geo.ts` has no input validation | Add bounds checking |
+| 11 | MEDIUM | `usePhotoQueue` state duplicated across 5 components | Move to Context/Zustand store |
+| 12 | MEDIUM | IndexedDB v3→v4 upgrade won't create `deliveryPhotoId` index | Create indexes unconditionally on upgrade |
 
-### 25.1 Next Session Agenda — Home (2026-06-08)
-
-**P0 — Delivery hardening testing (est. 30 min):**
-Run the full testing protocol (Section 24) end-to-end to verify all today's changes work:
-1. Normal delivery: toast stack, GPS, photo proxy URL, auto-advance, HDS hero images, admin table thumbnail + duration
-2. Revoke + re-deliver: old photos persist in HDS gallery
-3. Offline delivery: unsent queue syncs when back online
-4. QR scanner: mobile pill opens scanner, scan navigates correctly
-5. Data Insight: portal images in HDS when clicking "Open", Refresh Cache button
-6. Dashboard: Office Breakdown tab horizontal scroll
-7. Multi-photo per delivery check
-
-**P1 — Fix delivery blocking bugs (est. 20 min):**
-8. **Fix unsent mode queue** (`unit-delivery-sheet.tsx`): Change `enqueuePhoto(...)` → `enqueueUnsent({...})` in unsent mode path
-9. **Fix sync-photo promote** (`sync-photo/route.ts`): Add `assignment_items` status update to 'delivered' after successful Drive upload
-10. **Fix redelivery photo drop** (`mark/route.ts`): Insert delivery_photos record before early-return for delivered/missed items
-11. **Add processing guard** (`mark/route.ts`): Early-return for 'processing' items to prevent duplicate photos
-
-**P2 — UI fixes (est. 20 min):**
-12. **Move unsent icon** from deliver filter bar → FloatingActions (4th button)
-13. **Add offline toast** in handleFile fallback path
-
-**Data cleanup:**
-14. Apply `037-notifications.sql` migration to Supabase (requires PAT token from office PC)
-15. Clear stale IndexedDB + DB records from prior testing:
-    - SQL: `UPDATE assignment_items SET status='pending' WHERE status='processing' AND delivered_at IS NOT NULL`
-    - SQL: `DELETE FROM delivery_photos WHERE photo_url LIKE 'pending://%'`
-    - DevTools: Clear IndexedDB → delete `billing-saas-photo-queue` and unsent-photo-queue databases
+**Fixed in 2026-06-09 session:**
+- `incrementRetry` race condition ✅
+- `sync-photo` staff_id ownership check ✅
+- `unsynced` admin `?all` enforcement ✅
+- `mark` GPS target validation ✅
+- Toast default duration restored to 4s ✅
+- `sync-photo` hardcoded email fallback ✅
+- `skipAutoSync` removed from `use-photo-queue` ✅
+- "Always Queue Unsent" dead UI removed from Settings ✅
+- Test mode toggle added to Settings ✅
+- TestCity added to CITY_TEHSIL_MAP + CITY_CONFIG ✅
+- CitySwitcher hides TestCity unless admin + test_mode enabled ✅
+- "Unsent Images" tab renamed to "Photo Queue" ✅
+- `036-test-mc-data.sql` created (11 MCs × 50 houses) ✅
+- Bug 1: Delivery status wiped by GPS updates (reset effect deps) ✅
+- Bug 2: GPS unavailable after auto-advance (watch effect deps) ✅
+- Bug 3: Redelivery photo never syncs (ALLOWED_STATUSES) ✅
+- Bug 4: Staff map redundant flyTo on every delivery (lastTargetRef guard) ✅
+- GPS seeding from parent on marker-click (setUserLat/Lng in reset effect, not deps) ✅
+- `useMapZoom` hook + Settings zoom slider (admin) + read-only display (staff) ✅
+- `MapContainer` initial zooms from hardcoded 12 to configured value ✅
+- `FlyToTarget` compound guard (target+zoom) replaces dual ref ✅
 

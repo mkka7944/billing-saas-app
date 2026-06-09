@@ -7,13 +7,14 @@ import { useBillingStore } from '@/stores/billing-store'
 import { useStaffAssignment } from '@/hooks/use-assignments'
 import { useOnlineStatus } from '@/hooks/use-online-status'
 import { cacheAssignment, getCachedAssignment } from '@/lib/offline-cache'
-import { Loader2, WifiOff, CheckCircle2, ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react'
+import { Loader2, WifiOff, CheckCircle2, ArrowLeft, ArrowRight, ChevronDown, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AssignmentItemWithUnit } from '@/types'
 import { shortenMCName, compareMC } from '@/lib/mc-utils'
 import { AppShell } from '@/components/layout/AppShell'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { useAssignmentRealtime } from '@/hooks/use-assignment-realtime'
+import { usePhotoQueue } from '@/hooks/use-photo-queue'
 
 const PAGE_SIZE = 50
 
@@ -45,6 +46,7 @@ export default function DeliverPage() {
   const [ucDropdownOpen, setUcDropdownOpen] = useState(false)
 
   useAssignmentRealtime(user?.id || null)
+  const { queueCount, isProcessing, processQueue } = usePhotoQueue()
 
   const { data, isLoading, refetch } = useStaffAssignment(user?.id || null)
   const isOnline = useOnlineStatus()
@@ -183,6 +185,27 @@ export default function DeliverPage() {
                 />
               </div>
             </div>
+
+            {/* Queue badge */}
+            {queueCount > 0 && (
+              <div className="px-4 py-1.5 border-b shrink-0 flex items-center justify-between bg-amber-50 dark:bg-amber-950/10">
+                <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                  {queueCount} photo{queueCount !== 1 ? 's' : ''} waiting to sync
+                </span>
+                <button
+                  onClick={() => processQueue()}
+                  disabled={isProcessing}
+                  className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-800 cursor-pointer disabled:opacity-50"
+                >
+                  {isProcessing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Upload className="h-3 w-3" />
+                  )}
+                  Sync
+                </button>
+              </div>
+            )}
 
             {/* UC Dropdown */}
             <div className="relative px-4 py-2 border-b shrink-0">

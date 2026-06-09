@@ -18,6 +18,7 @@ import { Building2, ChevronDown, ChevronRight, Sun, Moon, Plus, MoreHorizontal, 
 import { cn } from '@/lib/utils'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
+import { useMapZoom } from '@/hooks/use-map-zoom'
 import { UnsentImagesSection } from '@/components/settings/unsent-images-section'
 import { DeliveryTable } from '@/components/settings/delivery-table'
 
@@ -29,7 +30,7 @@ const THEMES = [
 const tabs = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'account', label: 'Account' },
-  { id: 'unsent', label: 'Unsent Images' },
+  { id: 'unsent', label: 'Photo Queue' },
   { id: 'delivery', label: 'Delivery', adminOnly: true },
   { id: 'users', label: 'Users', adminOnly: true },
 ] as const
@@ -59,6 +60,20 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
         {title}
       </button>
       {open && <div className="animate-in slide-in-from-top-1 duration-200">{children}</div>}
+    </div>
+  )
+}
+
+function MapZoomReadOnly() {
+  const { data: mapZoom = 18, isLoading } = useMapZoom()
+  const label = mapZoom <= 12 ? 'Area' : mapZoom <= 15 ? 'Street' : mapZoom <= 17 ? 'Neighborhood' : 'Building'
+  return (
+    <div className="text-xs text-muted-foreground space-y-1">
+      <div className="flex items-center gap-3">
+        <span className="font-medium text-foreground">{isLoading ? '...' : mapZoom}</span>
+        <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded">{label}</span>
+      </div>
+      <p>The default zoom level used when navigating to a delivery target on the map. Configured by admin in Delivery settings.</p>
     </div>
   )
 }
@@ -138,9 +153,10 @@ export default function SettingsPage() {
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
   const [savedAllowNoPhoto, setSavedAllowNoPhoto] = useState(false)
   const [deliverySaving, setDeliverySaving] = useState(false)
-  const [unsentModeEnabled, setUnsentModeEnabled] = useState(false)
-  const [unsentMaxLimit, setUnsentMaxLimit] = useState(50)
-  const [savedUnsentMode, setSavedUnsentMode] = useState<{ enabled: boolean; max_limit: number } | null>(null)
+  const [testModeEnabled, setTestModeEnabled] = useState(false)
+  const [savedTestMode, setSavedTestMode] = useState(false)
+  const [mapZoom, setMapZoom] = useState(18)
+  const [savedMapZoom, setSavedMapZoom] = useState(18)
 
   // Staff notification form
   const [notifyUserId, setNotifyUserId] = useState('')
@@ -187,10 +203,11 @@ export default function SettingsPage() {
           setDeliverySettings({ enforce: gps.enforce !== false, threshold: typeof gps.threshold === 'number' ? gps.threshold : 50 })
           setAllowNoPhoto(data?.allow_no_photo === true)
           setSavedAllowNoPhoto(data?.allow_no_photo === true)
-          const um = data?.unsent_mode || { enabled: false, max_limit: 50 }
-          setUnsentModeEnabled(um.enabled)
-          setUnsentMaxLimit(um.max_limit ?? 50)
-          setSavedUnsentMode({ enabled: um.enabled, max_limit: um.max_limit ?? 50 })
+          setTestModeEnabled(data?.test_mode?.enabled === true)
+          setSavedTestMode(data?.test_mode?.enabled === true)
+          const z = data?.map_zoom
+          setMapZoom(typeof z === 'number' ? z : 18)
+          setSavedMapZoom(typeof z === 'number' ? z : 18)
         })
         .catch(() => toast('Failed to load settings', 'error'))
     }
@@ -219,17 +236,27 @@ export default function SettingsPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          key: 'unsent_mode',
-          value: { enabled: unsentModeEnabled, max_limit: unsentMaxLimit },
+          key: 'test_mode',
+          value: { enabled: testModeEnabled },
         }),
       })
-      if (res1.ok && res2.ok && res3.ok) {
+      const res4 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'map_zoom',
+          value: mapZoom,
+        }),
+      })
+      if (res1.ok && res2.ok && res3.ok && res4.ok) {
         setDeliverySettings({ enforce: deliveryEnforce, threshold: deliveryThreshold })
         setSavedAllowNoPhoto(allowNoPhoto)
-        setSavedUnsentMode({ enabled: unsentModeEnabled, max_limit: unsentMaxLimit })
+        setSavedTestMode(testModeEnabled)
+        setSavedMapZoom(mapZoom)
         toast('Delivery settings saved', 'success')
       } else {
-        const j = await (res1.ok ? (res2.ok ? res3 : res2) : res1).json()
+        const failures = [res1, res2, res3, res4].find(r => !r.ok)!
+        const j = await failures.json()
         toast(j.error || 'Failed to save', 'error')
       }
     } catch {
@@ -367,15 +394,15 @@ export default function SettingsPage() {
       deliveryEnforce !== deliverySettings.enforce ||
       deliveryThreshold !== deliverySettings.threshold ||
       allowNoPhoto !== savedAllowNoPhoto ||
-      unsentModeEnabled !== (savedUnsentMode?.enabled ?? false) ||
-      unsentMaxLimit !== (savedUnsentMode?.max_limit ?? 50)
+      testModeEnabled !== savedTestMode ||
+      mapZoom !== savedMapZoom
     )
 
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
   const visibleTabs = tabs.filter(t => !('adminOnly' in t && t.adminOnly) || isAdmin)
 
   const sortedUsers = useMemo(() => {
-    const cityOrder: Record<string, number> = { Sargodha: 0, Bhalwal: 1, Khushab: 2 }
+    const cityOrder: Record<string, number> = { Sargodha: 0, Bhalwal: 1, Khushab: 2, TestCity: 3 }
     return [...users].sort((a, b) => {
       const roleOrder: Record<string, number> = { super_admin: 0, admin: 1, field_staff: 2 }
       const aRole = roleOrder[a.roleName] ?? 99
@@ -440,6 +467,10 @@ export default function SettingsPage() {
                   })}
                 </div>
               </CollapsibleSection>
+
+              <CollapsibleSection title="Map">
+                <MapZoomReadOnly />
+              </CollapsibleSection>
             </CardContent>
           </Card>
         )}
@@ -474,8 +505,8 @@ export default function SettingsPage() {
           <div className="space-y-3">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base font-bold">Unsent Images</CardTitle>
-                <CardDescription className="text-xs">Photos that failed to sync to Google Drive. Retry individually or all at once.</CardDescription>
+                <CardTitle className="text-base font-bold">Photo Queue</CardTitle>
+                <CardDescription className="text-xs">Delivery photos waiting to sync to Google Drive.</CardDescription>
               </CardHeader>
             </Card>
             <UnsentImagesSection />
@@ -523,25 +554,53 @@ export default function SettingsPage() {
 
                   <Separator />
 
-                  {/* Always Unsent Mode */}
+                  {/* Test Mode */}
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="text-xs font-medium">Always Queue Unsent</span>
-                        {unsentModeEnabled && (
-                          <p className="text-[10px] text-muted-foreground mt-0.5">Photos stored locally, upload later</p>
+                        <span className="text-xs font-medium">Test Mode</span>
+                        {testModeEnabled && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Test city visible in CitySwitcher</p>
                         )}
                       </div>
-                      <Switch checked={unsentModeEnabled} onCheckedChange={setUnsentModeEnabled} />
+                      <Switch checked={testModeEnabled} onCheckedChange={setTestModeEnabled} />
                     </div>
-                    {unsentModeEnabled && (
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-medium text-muted-foreground">Max unsent limit</label>
-                        <Input type="number" min={1} max={200} value={unsentMaxLimit}
-                          onChange={(e) => setUnsentMaxLimit(Number(e.target.value))}
-                          className="h-8 text-xs" />
-                      </div>
-                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Default Zoom Level */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Default Zoom Level</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground">10</span>
+                      <input
+                        type="range"
+                        min={10}
+                        max={20}
+                        step={1}
+                        value={mapZoom}
+                        onChange={(e) => setMapZoom(Number(e.target.value))}
+                        className="flex-1 h-1.5 accent-primary cursor-pointer"
+                      />
+                      <span className="text-[10px] text-muted-foreground">20</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Input
+                        type="number"
+                        min={10}
+                        max={20}
+                        value={mapZoom}
+                        onChange={(e) => {
+                          const v = Math.min(20, Math.max(10, Number(e.target.value)))
+                          setMapZoom(v)
+                        }}
+                        className="h-7 text-xs w-[60px]"
+                      />
+                      <span className="text-[10px] text-muted-foreground">
+                        {mapZoom <= 12 ? 'Area' : mapZoom <= 15 ? 'Street' : mapZoom <= 17 ? 'Neighborhood' : 'Building'}
+                      </span>
+                    </div>
                   </div>
 
                   <Separator />
@@ -555,7 +614,8 @@ export default function SettingsPage() {
                     <div className="text-[10px] text-muted-foreground space-y-0.5">
                       <p>GPS: {deliverySettings.enforce ? `${deliverySettings.threshold}m` : 'Off'}</p>
                       <p>No-Photo: {savedAllowNoPhoto ? 'On' : 'Off'}</p>
-                      <p>Unsent: {savedUnsentMode?.enabled ? `On (max ${savedUnsentMode.max_limit})` : 'Off'}</p>
+                      <p>Test Mode: {savedTestMode ? 'On' : 'Off'}</p>
+                      <p>Map Zoom: {savedMapZoom}</p>
                     </div>
                   )}
                 </CardContent>
@@ -676,6 +736,7 @@ export default function SettingsPage() {
                                 <SelectItem value="Sargodha"><span className="text-emerald-600 dark:text-emerald-400">Sargodha</span></SelectItem>
                                 <SelectItem value="Bhalwal"><span className="text-blue-600 dark:text-blue-400">Bhalwal</span></SelectItem>
                                 <SelectItem value="Khushab"><span className="text-amber-600 dark:text-amber-400">Khushab</span></SelectItem>
+                                <SelectItem value="TestCity"><span className="text-purple-600 dark:text-purple-400">TestCity</span></SelectItem>
                                 <SelectItem value="">— None —</SelectItem>
                               </SelectGroup>
                             </SelectContent>
@@ -748,10 +809,11 @@ export default function SettingsPage() {
                                   g.label === 'Sargodha' && 'text-emerald-600 dark:text-emerald-400',
                                   g.label === 'Bhalwal' && 'text-blue-600 dark:text-blue-400',
                                   g.label === 'Khushab' && 'text-amber-600 dark:text-amber-400',
+                                  g.label === 'TestCity' && 'text-purple-600 dark:text-purple-400',
                                   g.label === '★ Super Admin' && 'text-foreground',
                                   g.label === 'Admin' && 'text-foreground',
                                   g.label === 'Unassigned' && 'text-muted-foreground',
-                                  !['Sargodha','Bhalwal','Khushab','★ Super Admin','Admin','Unassigned'].includes(g.label) && 'text-muted-foreground'
+                                  !['Sargodha','Bhalwal','Khushab','TestCity','★ Super Admin','Admin','Unassigned'].includes(g.label) && 'text-muted-foreground'
                                 )}>{g.label}</span>
                               </TableCell>
                             </TableRow>,
@@ -832,6 +894,7 @@ export default function SettingsPage() {
                         <SelectItem value="Sargodha"><span className="text-emerald-600 dark:text-emerald-400">Sargodha</span></SelectItem>
                         <SelectItem value="Bhalwal"><span className="text-blue-600 dark:text-blue-400">Bhalwal</span></SelectItem>
                         <SelectItem value="Khushab"><span className="text-amber-600 dark:text-amber-400">Khushab</span></SelectItem>
+                        <SelectItem value="TestCity"><span className="text-purple-600 dark:text-purple-400">TestCity</span></SelectItem>
                         <SelectItem value="">— None —</SelectItem>
                       </SelectGroup>
                     </SelectContent>
