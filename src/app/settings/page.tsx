@@ -159,6 +159,8 @@ export default function SettingsPage() {
   const [savedTestMode, setSavedTestMode] = useState(false)
   const [mapZoom, setMapZoom] = useState(18)
   const [savedMapZoom, setSavedMapZoom] = useState(18)
+  const [unsentModeEnabled, setUnsentModeEnabled] = useState(false)
+  const [savedUnsentModeEnabled, setSavedUnsentModeEnabled] = useState(false)
 
   // Staff notification form
   const [notifyUserId, setNotifyUserId] = useState('')
@@ -207,6 +209,8 @@ export default function SettingsPage() {
           setSavedAllowNoPhoto(data?.allow_no_photo === true)
           setTestModeEnabled(data?.test_mode?.enabled === true)
           setSavedTestMode(data?.test_mode?.enabled === true)
+          setUnsentModeEnabled(data?.unsent_mode?.enabled === true)
+          setSavedUnsentModeEnabled(data?.unsent_mode?.enabled === true)
           const z = data?.map_zoom
           setMapZoom(typeof z === 'number' ? z : 18)
           setSavedMapZoom(typeof z === 'number' ? z : 18)
@@ -250,14 +254,23 @@ export default function SettingsPage() {
           value: mapZoom,
         }),
       })
-      if (res1.ok && res2.ok && res3.ok && res4.ok) {
+      const res5 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'unsent_mode',
+          value: { enabled: unsentModeEnabled, max_limit: 50 },
+        }),
+      })
+      if (res1.ok && res2.ok && res3.ok && res4.ok && res5.ok) {
         setDeliverySettings({ enforce: deliveryEnforce, threshold: deliveryThreshold })
         setSavedAllowNoPhoto(allowNoPhoto)
         setSavedTestMode(testModeEnabled)
         setSavedMapZoom(mapZoom)
+        setSavedUnsentModeEnabled(unsentModeEnabled)
         toast('Delivery settings saved', 'success')
       } else {
-        const failures = [res1, res2, res3, res4].find(r => !r.ok)!
+        const failures = [res1, res2, res3, res4, res5].find(r => !r.ok)!
         const j = await failures.json()
         toast(j.error || 'Failed to save', 'error')
       }
@@ -397,7 +410,8 @@ export default function SettingsPage() {
       deliveryThreshold !== deliverySettings.threshold ||
       allowNoPhoto !== savedAllowNoPhoto ||
       testModeEnabled !== savedTestMode ||
-      mapZoom !== savedMapZoom
+      mapZoom !== savedMapZoom ||
+      unsentModeEnabled !== savedUnsentModeEnabled
     )
 
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
@@ -586,6 +600,21 @@ export default function SettingsPage() {
 
                   <Separator />
 
+                  {/* Manual Sync Mode */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-medium">Manual Sync</span>
+                        {unsentModeEnabled && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Photos queue locally. Staff must tap Sync to upload.</p>
+                        )}
+                      </div>
+                      <Switch checked={unsentModeEnabled} onCheckedChange={setUnsentModeEnabled} />
+                    </div>
+                  </div>
+
+                  <Separator />
+
                   {/* Default Zoom Level */}
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Default Zoom Level</label>
@@ -633,6 +662,7 @@ export default function SettingsPage() {
                       <p>No-Photo: {savedAllowNoPhoto ? 'On' : 'Off'}</p>
                       <p>Test Mode: {savedTestMode ? 'On' : 'Off'}</p>
                       <p>Map Zoom: {savedMapZoom}</p>
+                      <p>Manual Sync: {savedUnsentModeEnabled ? 'On' : 'Off'}</p>
                     </div>
                   )}
                 </CardContent>

@@ -52,6 +52,7 @@ export default function UnitDeliverySheet({
   const [forceCompleting, setForceCompleting] = useState(false)
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
+  const [manualSync, setManualSync] = useState(false)
   const touchXRef = useRef<number | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
@@ -63,7 +64,10 @@ export default function UnitDeliverySheet({
   useEffect(() => {
     fetch('/api/settings')
       .then(r => r.json())
-      .then(data => setAllowNoPhoto(data?.allow_no_photo === true))
+      .then(data => {
+        setAllowNoPhoto(data?.allow_no_photo === true)
+        setManualSync(data?.unsent_mode?.enabled === true)
+      })
       .catch(() => {})
   }, [])
 
@@ -235,6 +239,7 @@ export default function UnitDeliverySheet({
           photoBlob: compressed,
           gpsLat: userLat,
           gpsLng: userLng,
+          skipAutoSync: manualSync,
         })
 
         if (queueCount + 1 >= 50) {
@@ -243,11 +248,12 @@ export default function UnitDeliverySheet({
       }
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
+      setIsDelivering(false)  // reset on error so staff can retry
     } finally {
       if (inputRef.current) inputRef.current.value = ''
-      setIsDelivering(false)
+      // isDelivering stays true on success — auto-advance timer (line 148-157) resets it at 3s
     }
-  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, userLat, userLng, mark, enqueuePhoto, queueCount, toast, queryClient, userId])
+  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, userLat, userLng, mark, enqueuePhoto, queueCount, toast, queryClient, userId, manualSync])
 
   const handleSkipPhoto = useCallback(async () => {
     if (!assignmentItemId || !unit?.psid) return
@@ -311,8 +317,9 @@ export default function UnitDeliverySheet({
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
+      setIsDelivering(false)  // reset on error
     } finally {
-      setIsDelivering(false)
+      // isDelivering stays true on success — auto-advance timer handles it
     }
   }, [assignmentItemId, unit, userLat, userLng, mark, confirm, toast, queryClient, userId])
 

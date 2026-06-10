@@ -48,10 +48,10 @@ function FitStaffBounds({ items }: { items: AssignmentItemWithUnit[] }) {
 
     if (coords.length >= 2) {
       const bounds = L.latLngBounds(coords)
-      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 })
+      map.flyToBounds(bounds, { padding: [60, 60], maxZoom: 20, duration: 1.2 })
       hasFittedRef.current = true
     } else if (coords.length === 1) {
-      map.setView(coords[0], 15)
+      map.flyTo(coords[0], 15, { duration: 1.2 })
       hasFittedRef.current = true
     }
   }, [items, map])

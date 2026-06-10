@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
+import { usePhotoQueueStore } from '@/stores/photo-queue-store'
 import {
   addToQueue,
   getAllQueued,
@@ -24,10 +25,12 @@ async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 export function usePhotoQueue() {
-  const [queueCount, setQueueCount] = useState(0)
+  const queueCount = usePhotoQueueStore((s) => s.queueCount)
+  const setQueueCount = usePhotoQueueStore((s) => s.setQueueCount)
   const [isProcessing, setIsProcessing] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
   const processingRef = useRef(false)
+  const manualSyncRef = useRef(false)
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -131,6 +134,7 @@ export function usePhotoQueue() {
     photoBlob: Blob
     gpsLat?: number | null
     gpsLng?: number | null
+    skipAutoSync?: boolean
   }) => {
     await addToQueue({
       deliveryPhotoId: opts.deliveryPhotoId,
@@ -143,7 +147,7 @@ export function usePhotoQueue() {
 
     await refreshCount()
 
-    if (navigator.onLine) {
+    if (!opts.skipAutoSync && navigator.onLine) {
       processQueue()
     }
   }, [refreshCount, processQueue])
@@ -151,7 +155,14 @@ export function usePhotoQueue() {
   useEffect(() => {
     refreshCount()
 
-    const handleOnline = () => processQueue()
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(data => { manualSyncRef.current = data?.unsent_mode?.enabled === true })
+      .catch(() => { /* defaults to false */ })
+
+    const handleOnline = () => {
+      if (!manualSyncRef.current) processQueue()
+    }
     window.addEventListener('online', handleOnline)
     return () => window.removeEventListener('online', handleOnline)
   }, [refreshCount, processQueue])
