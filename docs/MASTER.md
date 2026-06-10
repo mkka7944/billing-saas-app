@@ -2119,6 +2119,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-07 | 29.0 | **Corrections: Progress overlay → sequential toasts + GPS dots.** Removed progress step checklist from sheet (overlaid action buttons). Added `updateToast(id, msg, variant?)` to toast system. Added `onProgress` callback to `useDeliverUnit.deliver()`. Online path: "Compressing..."→"Uploading..."→"Recording..."→final result as sequential toast updates. Unsent path: "Saving..."→"Compressing..."→"Saved ✓". Added 3-dot GPS signal indicator after live distance text (accuracy-based green/gray dots). 3 files changed. Part 11 doc corrected (removed incorrect GPS claims). Part 12 added. |
 | 2026-06-08 | 30.0 | **Delivery hardening + started_at KPI column.** A1-A4: unsent queue destination, sync-photo promotion, mark route photo order, processing guard. B1-B2: unsent icon moved to FloatingActions, desktop visibility. C1-C4: offline toast, auth check, orphan cleanup (useAssignmentRealtime hook). D1: 037-notifications migration applied. `started_at` column added to `assignment_items` (migration 040), written by mark + mark-processing routes, displayed as Duration column in admin delivery table. See Section 26 for KPI query. |
 | 2026-06-10 | 31.0 | **Photo upload reliability investigation + simplified direct-upload plan.** Studied working routing station reference (12_drive_sync.js — direct browser→GAS upload). Identified root cause: SSR proxy (promote route) causes 85% failure rate via Vercel 10s timeout + GAS rate limits. Agreed to rewrite: remove SSR proxy, upload directly from browser to GAS (matching proven old app approach). Session log added. Section 27 created with detailed implementation plan. Section 25 updated: item #1 = CRITICAL photo upload rewrite. |
+| 2026-06-11 | 32.0 | **Direct browser-to-GAS photo upload implemented.** Created `src/lib/drive-upload.ts` (client-side GAS upload matching Routing Station pattern). Rewrote `usePhotoQueue` with direct upload (no promote), added progress tracking (index/total, KB/s, file size). Rewrote `unit-delivery-sheet.tsx` — mark-first flow, toast chain with `updateToast`, `processingStep` overlay, 2s button cooldown. Simplified `sync-photo/route.ts` to DB-update only. Added progress display to UnsentModal, deliver page Sync banner, and UnsentImagesSection (progress bar + KB/s). Deleted `mark-processing`, `promote`, `use-unsynced-photos`. Fixed HDS 500 error — added `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` to Vercel env and `.env.local`. Upload tags with `survey_id` (not psid) for HDS gallery compatibility. Build verified: zero errors. Full rewrite of Section 27 with actual architecture. |
 
 ---
 
@@ -5030,67 +5031,230 @@ Items that need to be fixed before the next session or are deferred from this se
 
 ---
 
-## 27. Photo Upload Priority: Direct Browser-to-GAS (Replace SSR Proxy)
+## 27. Photo Upload Architecture: Direct Browser-to-GAS (2026-06-11 Implementation)
 
-### 27.1 The Problem
+### 27.1 Problem (Before)
 
-Current flow has **85% failure rate**:
+The old flow had an **85% failure rate**:
 ```
-Browser → POST /api/deliveries/promote (SSR) → GAS webhook → Drive
-           ↑                              ↗ 404/timeout
-         3-step DB flow (mark-processing → enqueue → promote)
+Browser → SSR /api/deliveries/promote → GAS webhook → Drive
+           ↑                             ↗ 404/timeout
+         3-step: mark-processing → enqueue → promote
 ```
-- SSR proxy adds an extra hop with Vercel 10s timeout (Hobby)
-- GAS rate-limits when photos arrive in bursts (auto-sync sends 3+ concurrent)
-- 3-step DB flow (mark-processing → enqueue → promote) creates orphaned `processing` items
-- IndexedDB queue drops blobs after 3 retries → data permanently lost
+- SSR proxy added an extra Vercel hop with 10s timeout (Hobby plan)
+- GAS rate-limited when photos arrived in bursts (auto-sync sent 3+ concurrent)
+- 3-step flow created orphaned `processing` items
+- IndexedDB queue dropped blobs after 3 retries → data permanently lost
+- Photos tagged with `psid` but HDS queried by `survey_id` → new uploads never appeared in gallery
 
-### 27.2 Target Flow (matches old routing station app, proven working)
+### 27.2 Actual Architecture (Mark-First + Direct GAS Upload)
 
+Two operational modes controlled by `manualSync` setting:
+
+**Mode 1: Manual Sync OFF (default) — Immediate GAS upload**
 ```
-Staff takes photo
+Staff takes photo → compress WebP
   ↓
-Compress to WebP (same as now)
+POST /api/deliveries/mark (creates delivery_photos + sets status via GPS: 50m→delivered, else→processing)
   ↓
-Online? ─YES─→ Upload directly to GAS from browser (1 hop, no SSR)
-  │              ↓ Success → POST /api/deliveries/mark { gdriveFileId, gpsLat, gpsLng }
-  │                          → endpoint just creates delivery_photos row + sets status
-  │              ↓ Fail    → Toast + retry button
-  │
-  └─NO─→ Store in IndexedDB queue → badge shows count
-          → Staff taps "Sync" when online → direct GAS upload (no promote)
+fetch Upload to GAS directly from browser (uploadToGAS(dataUrl, surveyId, email))
+  ↓ Success → POST /api/deliveries/sync-photo { deliveryPhotoId, gdriveFileId }
+               → updates delivery_photos.photo_url, gdrive_file_id, synced_to_drive = true
+  ↓ Fail    → Queue photo in IndexedDB for later retry + toast error
 ```
 
-### 27.3 Files to Change
+**Mode 2: Manual Sync ON — Always queue**
+```
+Staff takes photo → compress WebP
+  ↓
+POST /api/deliveries/mark (creates delivery_photos + sets status)
+  ↓
+Queue photo in IndexedDB immediately
+  ↓
+Staff taps "Sync" when ready → processQueue() → for each queued photo:
+    uploadToGAS(dataUrl, surveyId, email)
+    → POST /api/deliveries/sync-photo { deliveryPhotoId, gdriveFileId }
+```
+
+**Key decision: Mark-first, not upload-first.** The delivery record (GPS coordinates, timestamp, status) is created FIRST by the `mark` endpoint. Photo upload happens as a second, independent step. This ensures:
+- GPS enforcement (50m threshold → 'delivered'/'processing') is never lost
+- No orphan GAS file without a corresponding DB row
+- Staff can always see the delivery record even if photo upload fails
+- The `mark` endpoint is the single entry point for all deliveries (photo and skip-photo)
+
+### 27.3 Files Changed
 
 | Action | File | What |
 |--------|------|------|
-| **CREATE** | `src/lib/drive-upload.ts` | Client-side `uploadToGAS(base64, surveyId, email): Promise<string>` — direct fetch to GAS webhook, same payload as old app |
-| **MODIFY** | `unit-delivery-sheet.tsx` | `handleFile` simplified: compress → uploadToGAS → POST /api/deliveries/mark. No mark-processing, no enqueue. On upload fail → toast + retry. |
-| **MODIFY** | `mark/route.ts` | Accept `{ assignmentItemId, gdriveFileId, gpsLat, gpsLng }`. Create `delivery_photos` row with real `photo_url = /api/delivery/photo/{gdriveFileId}`, set `assignment_items.status = delivered`. **No GPS distance eval** (causes more issues than it solves — remove from mark). |
-| **MODIFY** | `use-photo-queue.ts` | Remove promote dependency. Queue only for offline fallback — uploads directly to GAS from browser when online. |
-| **DELETE** | `mark-processing/route.ts` | No longer needed — mark creates row directly |
-| **DELETE** | `promote/route.ts` | No longer needed — upload is client-side |
-| **DELETE** | `sync-photo/route.ts` | No longer needed — replaced by direct upload |
-| **MODIFY** | `use-deliver-unit.ts` | Simplified — just calls POST /api/deliveries/mark with gdriveFileId |
+| **CREATE** | `src/lib/drive-upload.ts` | Client-side `uploadToGAS(dataUrl, surveyId, email): Promise<string>` — direct `fetch('mode:cors', 'Content-Type:text/plain', no preflight)`. Tags images with `survey_id` for HDS compatibility. |
+| **REWRITTEN** | `src/hooks/use-photo-queue.ts` | `processSingle` calls `uploadToGAS()` then `fetch('/api/deliveries/sync-photo')`. No `promote` dependency. Added progress tracking: `processingIndex`, `totalToProcess`, `currentFileSize`, `uploadSpeed`. |
+| **REWRITTEN** | `src/components/delivery/unit-delivery-sheet.tsx` | `handleFile` calls `mark()` instead of `mark-processing`. Toast chain via `updateToast` across phases (Saving→Uploading→Done). `processingStep` overlay in sheet. `inputCooldown` 2s button guard on unit change. |
+| **REWRITTEN** | `src/app/api/deliveries/sync-photo/route.ts` | Accepts `{ deliveryPhotoId, gdriveFileId }`, updates DB (`photo_url`, `gdrive_file_id`, `synced_to_drive=true`). No GAS upload, no status promotion. ~142→~50 lines. |
+| **MODIFIED** | `src/lib/photo-queue.ts` | Added `surveyId` and `email` fields to `QueuedPhoto` type. |
+| **MODIFIED** | `src/app/deliver/page.tsx` | Sync banner shows "Syncing 2/5 (45 KB) · 12 KB/s" during queue processing. |
+| **MODIFIED** | `src/components/delivery/unsent-badge.tsx` | Real progress bar (`width%`), index/total, KB/s, current item amber highlight. |
+| **MODIFIED** | `src/components/settings/unsent-images-section.tsx` | Same progress display + progress bar, KB/s. |
+| **DELETED** | `src/app/api/deliveries/mark-processing/route.ts` | Replaced by `mark()`. |
+| **DELETED** | `src/app/api/deliveries/promote/route.ts` | Replaced by `uploadToGAS()` browser-side + `sync-photo`. |
+| **DELETED** | `src/hooks/use-unsynced-photos.ts` | Replaced by `usePhotoQueue` progress tracking. |
 
-### 27.4 Why This Will Work
+### 27.4 Why This Works
 
-1. **Matching proven implementation** — old routing station app uses identical pattern (browser → GAS) and works reliably
-2. **No SSR timeout risk** — browser handles the upload directly with no 10s Vercel limit
-3. **Staff-paced uploads** — each photo is uploaded when staff taps "Take Picture" (1 at a time, natural pacing)
-4. **No orphan data** — DB row only created AFTER successful upload (no `pending://` placeholders)
-5. **Queue only for offline** — IndexedDB is fallback, not primary path
-6. **GAS URL is already public** — `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` exposed to client, same as old app hardcoding it
+1. **Direct browser→GAS matches proven pattern** — old routing station app uses identical `fetch` to same webhook
+2. **No SSR timeout** — browser handles upload with no 10s Vercel limit
+3. **Staff-paced** — natural single-photo pacing (1 per delivery), no burst rate-limiting
+4. **Mark-first ensures data integrity** — delivery record always persisted before upload
+5. **Queue only for offline/retry** — IndexedDB is fallback, not primary path
+6. **GAS URL is public CORS endpoint** — `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` safe client-side
+7. **survey_id tagging** — `uploadToGAS` passes `survey_id` (not `psid`), matching HDS Drive Images query (which searches by `survey_id`)
+8. **Progress tracking** — all consumers (`usePhotoQueue`) share same progress state: index/total, KB/s, file size, progress bar
 
-### 27.5 Edge Cases
+### 27.5 Env Fix: HDS Drive Images 500
+
+The HDS Drive Images tab was returning `{"error":"DRIVE_WEBHOOK_URL not configured"}` (500) because `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` was missing from:
+- **Vercel env vars** — added via Vercel Dashboard
+- **`.env.local`** — added locally
+
+After fix: old Routing Station images (tagged with `survey_id`) appear in HDS gallery. New uploads also tag with `survey_id` (code fix in `uploadToGAS`).
+
+### 27.6 Edge Cases
 
 | Scenario | Handling |
 |----------|----------|
-| **GAS returns 404** | Show error toast with retry button. Staff can retry immediately. |
-| **Offline** | Store blob in IndexedDB queue, show badge count. Staff taps "Sync" when online. |
-| **GPS failure** | Deliver with null GPS (photo timestamp alone is sufficient proof, tracked as metric). |
-| **Multiple photos** | Each photo = separate upload + separate mark call. Always INSERT (never UPSERT). |
-| **Revoke** | Revoke only resets `assignment_items.status`. `delivery_photos` rows preserved. |
-| **Browser closes during upload** | If close during GAS upload → no DB row created. Staff retakes photo next session. |
+| **GAS unreachable** | Toast error, photo queued in IndexedDB for retry (max 3 attempts). Staff taps Sync when online. |
+| **Offline during capture** | `mark` fails → toast error. After reconnect, staff retakes photo. |
+| **GPS > 50m** | `mark` sets status='processing' (amber). Photo uploaded normally. No auto-promote to 'delivered'. |
+| **Manual Sync ON** | Photos always queued. No GAS upload during delivery. Sync button shows count + progress. |
+| **Queue retry (3x failure)** | Photo orphaned in IndexedDB. Error logged via `toast('error')`. Staff can manually retry. |
+| **Redelivery** | Same flow, new `delivery_photos` row. `mark` always INSERTs. |
+| **Revoke** | Revoke resets `assignment_items.status`. `delivery_photos` rows preserved. |
+| **Browser closes mid-upload** | If close during GAS upload → DB row exists (from `mark`) but `photo_url` is null. Staff sees pending badge next session. |
+| **HDS Drive Images** | Old Routing Station images + new app images both visible (all tagged with `survey_id`). |
+
+### 27.7 Operational Notes
+
+- Queue limit: 50 photos, 3 retries max per photo
+- `staleTime` for photo queue queries: 30s (real-time badge updates)
+- GAS webhook is a public CORS endpoint — no auth header, `Content-Type: text/plain` avoids preflight
+- `uploadToGAS` converts WebP blob → base64 `dataUrl` same as old code
+- `sync-photo` endpoint uses service_role key via `createAdminClient()` to write `delivery_photos`
+
+---
+## Session Log — 2026-06-11 (Direct Browser-to-GAS Photo Upload)
+
+### Summary
+Implemented the direct browser-to-GAS photo upload system that was planned on 2026-06-10. The implementation differed from the original plan in one key way: **mark-first instead of upload-first**. The delivery record (GPS + timestamp + status) is created FIRST by the `mark` endpoint; photo upload happens as a second independent step. This ensures GPS enforcement is never lost and no orphan GAS files exist without DB rows.
+
+### Changes Made
+1. **New: `src/lib/drive-upload.ts`** — Client-side `uploadToGAS(dataUrl, surveyId, email)` matching old Routing Station pattern. Uses `mode: 'cors'`, `Content-Type: text/plain` (avoids preflight). Tags images with `survey_id` for HDS gallery compatibility.
+
+2. **Rewritten: `src/hooks/use-photo-queue.ts`** — `processSingle` now calls `uploadToGAS()` then `fetch('/api/deliveries/sync-photo')`. No promote dependency. Added progress tracking (`processingIndex`, `totalToProcess`, `currentFileSize`, `uploadSpeed`) returned from hook.
+
+3. **Rewritten: `src/components/delivery/unit-delivery-sheet.tsx`** — `handleFile` calls `mark()` instead of `mark-processing`. Toast chain with `updateToast` across phases (Saving→Uploading→Done). `processingStep` overlay in sheet. `inputCooldown` 2s button guard on unit change.
+
+4. **Simplified: `sync-photo/route.ts`** — Now accepts `{ deliveryPhotoId, gdriveFileId }`, just updates `delivery_photos` row (photo_url, gdrive_file_id, synced_to_drive=true). ~142→~50 lines.
+
+5. **Modified: `src/lib/photo-queue.ts`** — Added `surveyId` and `email` to `QueuedPhoto`.
+
+6. **Modified: `src/app/deliver/page.tsx`** — Sync banner shows "Syncing 2/5 (45 KB) · 12 KB/s".
+
+7. **Modified: `src/components/delivery/unsent-badge.tsx`** — Real progress bar (`width%`), index/total, KB/s, current item amber highlight.
+
+8. **Modified: `src/components/settings/unsent-images-section.tsx`** — Same progress display + progress bar.
+
+9. **Deleted:** `mark-processing/route.ts`, `promote/route.ts`, `use-unsynced-photos.ts`.
+
+10. **Env fix:** Added `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` to Vercel env + `.env.local`. HDS drive images 500 resolved.
+
+### Key Design Decisions
+- **Mark-first (not upload-first):** Delivery record always created before photo upload. GPS enforcement is set once by `mark` at capture time. Photo upload does not re-evaluate GPS.
+- **Manual Sync ON/OFF toggle:** ON → always queue (never upload during delivery). OFF → immediate GAS upload, queue only for retry on failure.
+- **Upload tags with `survey_id` (not `psid`):** HDS queries Drive images by `survey_id`. Using `psid` was why new uploads didn't appear in HDS gallery.
+- **No status promotion in `sync-photo`:** Status is set by `mark` — upload should not change it.
+- **Queue progress shared:** `usePhotoQueue` consumers (UnsentModal, deliver page, UnsentImagesSection) all show real-time index/total, KB/s, file size.
+- **2s button cooldown:** Prevents accidental double-tap during unit transition without blocking deliberate quick taps.
+
+### Build Verification
+- `npm run build` — compiled successfully, TypeScript zero errors, all 45 pages generated.
+- No leftover references to `mark-processing`, `promote`, or `useUnsyncedPhotos` detected.
+
+### Next Steps
+1. **PRIORITY:** Execute systematic testing protocol (see below) — must complete before deploy.
+2. Deploy to Vercel.
+
+### Discovery: HDS 500 Error Root Cause
+The HDS Drive Images tab returned `{"error":"DRIVE_WEBHOOK_URL not configured"}` because `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` was never set on Vercel. Found the GAS webhook URL in old Routing Station source `12_drive_sync.js:7`. Added to `.env.local` and Vercel Dashboard. Old Routing Station images now visible in HDS.
+
+---
+
+## Testing Protocol — Direct Browser-to-GAS Photo Upload (PRIORITY)
+
+**Status:** Not yet executed. **Must run through these scenarios before deploying to Vercel.**
+
+### PREREQUISITE: Deploy to Vercel first
+The code changes are local. Deploy via `git push` to trigger Vercel deploy. Then test on live URL with a real mobile device.
+
+### T1: Normal delivery (Manual Sync OFF, GPS OK)
+1. Open `/deliver` → tap a pending assignment → tap "Take Picture & Deliver"
+2. Toast chain: "Saving..." → "Uploading photo (45 KB)..." → "Delivered (14m from target)" (green)
+3. Sheet shows "Saved ✓" → "Uploading photo..." → checkmark
+4. Auto-advances to next unit. Buttons show spinner for 2s then re-enable.
+5. DB: `SELECT * FROM delivery_photos WHERE assignment_item_id = '<id>'` → has `photo_url`, `gdrive_file_id`, `synced_to_drive=true`
+
+### T2: GPS out of range (>50m)
+1. Stand >50m from target → tap "Take Picture & Deliver"
+2. Toast: "Out of range — Awaiting Review" (amber). Status shows 'processing'.
+3. DB: `assignment_items.status = 'processing'`
+
+### T3: Manual Sync ON (always queue)
+1. Settings → Delivery → toggle "Manual Photo Sync" ON
+2. Take 2-3 pictures → FloatingActions badge shows count
+3. Open UnsentBadge modal → shows list with camera icon per item
+4. Tap "Sync All" → progress bar fills, text reads "Syncing 1/3 (45 KB)" → "Syncing 2/3 (52 KB)"
+5. Deliver page Sync banner shows "Syncing 2/3 (45 KB · 12 KB/s)"
+6. Settings → Delivery → UnsentImagesSection shows same progress + KB/s
+7. After sync completes → queue count resets to 0, badge hidden
+
+### T4: Offline → recovery
+1. Airplane mode → take picture → `mark` fails → error toast ("Delivery failed — check connection")
+2. Disable airplane mode → retake photo → normal flow (both toast chain + DB write)
+3. No orphan state left behind
+
+### T5: Queue retry (3x failure)
+1. Enable Manual Sync → take picture → disable WiFi
+2. Tap Sync → upload fails → auto-retries 3 times → toast error after 3rd failure
+3. Photo remains in IndexedDB queue (can retry manually)
+4. DB: delivery_photos row exists but `photo_url` and `gdrive_file_id` are null
+
+### T6: Redelivery
+1. Unit already delivered → tap "Redeliver" → same flow
+2. DB: new `delivery_photos` row (old row preserved)
+3. HDS shows both photos under Delivery badge
+
+### T7: HDS gallery — Drive images
+1. Open HDS for any unit with old Routing Station images (e.g., survey_id that was in Sargodha May 2026 batch)
+2. "DRIVE" badge shows old images (these were tagged with `survey_id` by Routing Station)
+3. Take a new delivery photo → after upload completes, refresh HDS → new photo also visible under DRIVE
+
+### T8: Settings toggles
+1. **GPS OFF:** Delivery proceeds without GPS, status = 'delivered', `delivery_gps_lat/lng` = null
+2. **No Photo ON:** "Skip Photo" button appears below main buttons → tap → mark called with no photo → status set normally
+3. **Manual Sync ON → OFF:** Toggle off → next delivery uploads immediately to GAS instead of queueing
+
+### T9: Button cooldown
+1. After delivery auto-advance → both "Take Picture" and "Details" buttons show spinner
+2. Wait ~2s → buttons re-enable, tap works normally
+3. Rapid tapping during cooldown → only first tap registers
+
+### T10: Admin view — no breakage
+1. `/map` → click any marker → sheet opens → "View Details" works (no delivery buttons)
+2. `/assignments` → manage tab → force complete works
+3. `/stats` → staff stats load normally
+
+### Ripple effects to verify
+- `FloatingActions` badge updates in real-time during queue processing
+- `useToast` updateToast path works across all components (not just delivery sheet)
+- QR scanner → `/deliver` redirect → sheet works with same photo flow
+- No console errors on page navigation (deliver → map → settings → deliver)
+- UnsentBadge modal dismiss (X button + tapping outside) both work
 

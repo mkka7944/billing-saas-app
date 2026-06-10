@@ -3,6 +3,8 @@ export interface QueuedPhoto {
   deliveryPhotoId: string
   assignmentItemId: string
   psid: string
+  surveyId: string
+  email: string
   photoBlob: Blob
   gpsLat?: number | null
   gpsLng?: number | null

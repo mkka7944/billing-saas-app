@@ -5,12 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, Upload, ImageOff } from 'lucide-react'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
-import { useUnsyncedPhotos } from '@/hooks/use-unsynced-photos'
 import { useToast } from '@/hooks/use-toast'
 
 export function UnsentImagesSection() {
-  const { queueCount, isProcessing, processQueue } = usePhotoQueue()
-  const { count: dbUnsyncedCount } = useUnsyncedPhotos()
+  const { queueCount, isProcessing, processQueue, processingIndex, totalToProcess, currentFileSize, uploadSpeed } = usePhotoQueue()
   const { toast } = useToast()
 
   const handleSyncAll = useCallback(async () => {
@@ -18,7 +16,9 @@ export function UnsentImagesSection() {
     toast('Sync completed', 'success')
   }, [processQueue, toast])
 
-  if (queueCount === 0 && dbUnsyncedCount === 0) {
+  const progressPct = totalToProcess > 0 ? Math.round(((processingIndex) / totalToProcess) * 100) : 0
+
+  if (queueCount === 0 && !isProcessing) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
@@ -35,12 +35,13 @@ export function UnsentImagesSection() {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground">
-            {queueCount} photo{queueCount !== 1 ? 's' : ''} in queue
+            {isProcessing
+              ? `Syncing ${processingIndex + 1}/${totalToProcess}${currentFileSize ? ` (${currentFileSize})` : ''}`
+              : `${queueCount} photo${queueCount !== 1 ? 's' : ''} in queue`
+            }
           </p>
-          {dbUnsyncedCount > 0 && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {dbUnsyncedCount} pending in database
-            </p>
+          {isProcessing && uploadSpeed && (
+            <p className="text-[11px] text-muted-foreground mt-0.5">{uploadSpeed}</p>
           )}
         </div>
         <Button size="sm" onClick={handleSyncAll} disabled={isProcessing || queueCount === 0}>
@@ -49,9 +50,14 @@ export function UnsentImagesSection() {
           ) : (
             <Upload className="h-4 w-4 mr-1" />
           )}
-          Sync All
+          {isProcessing ? 'Syncing...' : 'Sync All'}
         </Button>
       </div>
+      {isProcessing && (
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+          <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${progressPct}%` }} />
+        </div>
+      )}
     </div>
   )
 }

@@ -46,7 +46,7 @@ export default function DeliverPage() {
   const [ucDropdownOpen, setUcDropdownOpen] = useState(false)
 
   useAssignmentRealtime(user?.id || null)
-  const { queueCount, isProcessing, processQueue } = usePhotoQueue()
+  const { queueCount, isProcessing, processQueue, processingIndex, totalToProcess, currentFileSize, uploadSpeed } = usePhotoQueue()
 
   const { data, isLoading, refetch } = useStaffAssignment(user?.id || null)
   const isOnline = useOnlineStatus()
@@ -190,7 +190,10 @@ export default function DeliverPage() {
             {queueCount > 0 && (
               <div className="px-4 py-1.5 border-b shrink-0 flex items-center justify-between bg-amber-50 dark:bg-amber-950/10">
                 <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                  {queueCount} photo{queueCount !== 1 ? 's' : ''} waiting to sync
+                  {isProcessing
+                    ? `Syncing ${processingIndex + 1}/${totalToProcess}${currentFileSize ? ` (${currentFileSize})` : ''}`
+                    : `${queueCount} photo${queueCount !== 1 ? 's' : ''} waiting to sync`
+                  }
                 </span>
                 <button
                   onClick={() => processQueue()}
@@ -198,11 +201,14 @@ export default function DeliverPage() {
                   className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-800 cursor-pointer disabled:opacity-50"
                 >
                   {isProcessing ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      {uploadSpeed ? ` ${uploadSpeed}` : ''}
+                    </>
                   ) : (
                     <Upload className="h-3 w-3" />
                   )}
-                  Sync
+                  {!isProcessing && 'Sync'}
                 </button>
               </div>
             )}

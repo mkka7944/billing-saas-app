@@ -12,7 +12,7 @@ interface UnsentModalProps {
 }
 
 export function UnsentModal({ open, onClose }: UnsentModalProps) {
-  const { queueCount, isProcessing, processQueue, refreshCount } = usePhotoQueue()
+  const { queueCount, isProcessing, processQueue, refreshCount, processingIndex, totalToProcess, currentFileSize, uploadSpeed } = usePhotoQueue()
   const [photos, setPhotos] = useState<QueuedPhoto[]>([])
 
   const loadPhotos = useCallback(async () => {
@@ -27,6 +27,8 @@ export function UnsentModal({ open, onClose }: UnsentModalProps) {
 
   if (!open) return null
 
+  const progressPct = totalToProcess > 0 ? Math.round(((processingIndex) / totalToProcess) * 100) : 0
+
   return (
     <div className="fixed inset-0 z-[1000] flex items-end justify-center sm:items-center" onClick={onClose}>
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" />
@@ -37,7 +39,12 @@ export function UnsentModal({ open, onClose }: UnsentModalProps) {
         <div className="flex items-center justify-between mb-4 shrink-0">
           <div>
             <h3 className="text-sm font-bold">Photo Queue</h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{queueCount} photo{queueCount !== 1 ? 's' : ''} waiting</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {isProcessing
+                ? `Syncing ${processingIndex + 1}/${totalToProcess}`
+                : `${queueCount} photo${queueCount !== 1 ? 's' : ''} waiting`
+              }
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -49,15 +56,32 @@ export function UnsentModal({ open, onClose }: UnsentModalProps) {
 
         {photos.length > 0 && (
           <div className="flex-1 overflow-y-auto mb-4 space-y-1.5 -mx-1 px-1">
-            {photos.map((p) => (
-              <div key={p.id} className="flex items-center gap-2.5 p-2 rounded-lg bg-muted/50 text-xs">
-                <Image className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="font-mono text-[10px] truncate flex-1">{p.psid}</span>
-                <span className="text-[10px] text-muted-foreground shrink-0">
-                  {p.retryCount > 0 ? `${p.retryCount}x retry` : 'pending'}
-                </span>
-              </div>
-            ))}
+            {photos.map((p, i) => {
+              const isCurrent = isProcessing && i === processingIndex
+              return (
+                <div
+                  key={p.id}
+                  className={`flex items-center gap-2.5 p-2 rounded-lg text-xs ${
+                    isCurrent ? 'bg-amber-100 dark:bg-amber-900/20 ring-1 ring-amber-400' : 'bg-muted/50'
+                  }`}
+                >
+                  {isCurrent ? (
+                    <Loader2 className="h-3.5 w-3.5 text-amber-600 animate-spin shrink-0" />
+                  ) : (
+                    <Image className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  )}
+                  <span className="font-mono text-[10px] truncate flex-1">{p.psid}</span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {isCurrent && currentFileSize
+                      ? currentFileSize
+                      : p.retryCount > 0
+                        ? `${p.retryCount}x retry`
+                        : 'pending'
+                    }
+                  </span>
+                </div>
+              )
+            })}
           </div>
         )}
 
@@ -65,10 +89,14 @@ export function UnsentModal({ open, onClose }: UnsentModalProps) {
           <div className="mb-4 shrink-0">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Syncing...
+              <span>
+                Syncing {processingIndex + 1}/{totalToProcess}
+                {currentFileSize && ` \u00B7 ${currentFileSize}`}
+                {uploadSpeed && ` \u00B7 ${uploadSpeed}`}
+              </span>
             </div>
             <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-              <div className="h-full rounded-full bg-blue-500 animate-pulse" style={{ width: '60%' }} />
+              <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${progressPct}%` }} />
             </div>
           </div>
         )}

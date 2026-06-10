@@ -11,6 +11,7 @@ import {
   getQueueCount,
   incrementRetry,
 } from '@/lib/photo-queue'
+import { uploadToGAS } from '@/lib/drive-upload'
 import type { QueuedPhoto } from '@/lib/photo-queue'
 
 const MAX_RETRIES = 3
@@ -29,6 +30,10 @@ export function usePhotoQueue() {
   const setQueueCount = usePhotoQueueStore((s) => s.setQueueCount)
   const [isProcessing, setIsProcessing] = useState(false)
   const [lastError, setLastError] = useState<string | null>(null)
+  const [processingIndex, setProcessingIndex] = useState(0)
+  const [totalToProcess, setTotalToProcess] = useState(0)
+  const [currentFileSize, setCurrentFileSize] = useState('')
+  const [uploadSpeed, setUploadSpeed] = useState('')
   const processingRef = useRef(false)
   const manualSyncRef = useRef(false)
   const queryClient = useQueryClient()
@@ -43,12 +48,14 @@ export function usePhotoQueue() {
     try {
       const dataUrl = await blobToBase64(photo.photoBlob)
 
-      const res = await fetch('/api/deliveries/promote', {
+      const gdriveFileId = await uploadToGAS(dataUrl, photo.surveyId, photo.email)
+
+      const res = await fetch('/api/deliveries/sync-photo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deliveryPhotoId: photo.deliveryPhotoId,
-          dataUrl,
+          gdriveFileId,
         }),
       })
 
@@ -102,13 +109,30 @@ export function usePhotoQueue() {
     setLastError(null)
 
     try {
-      // Loop in case new items were added while we were processing
       while (true) {
         const photos = await getAllQueued()
         if (!photos.length) break
 
-        for (const photo of photos) {
+        setTotalToProcess(photos.length)
+
+        for (let i = 0; i < photos.length; i++) {
+          const photo = photos[i]
+          setProcessingIndex(i)
+
+          const sizeKB = Math.round(photo.photoBlob.size / 1024)
+          setCurrentFileSize(sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`)
+
+          const startTime = Date.now()
           const result = await processSingle(photo)
+          const elapsed = Date.now() - startTime
+
+          if (elapsed > 0 && photo.photoBlob.size > 0) {
+            const speed = (photo.photoBlob.size / 1024) / (elapsed / 1000)
+            setUploadSpeed(speed >= 1024 ? `${(speed / 1024).toFixed(1)} MB/s` : `${speed.toFixed(1)} KB/s`)
+          } else {
+            setUploadSpeed('')
+          }
+
           if (result === 'orphan') {
             setLastError(`Photo ${photo.psid} skipped (no longer valid)`)
           }
@@ -116,6 +140,10 @@ export function usePhotoQueue() {
       }
 
       await refreshCount()
+      setProcessingIndex(0)
+      setTotalToProcess(0)
+      setCurrentFileSize('')
+      setUploadSpeed('')
 
       queryClient.invalidateQueries({ queryKey: ['delivery-photos'] })
       queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
@@ -131,6 +159,8 @@ export function usePhotoQueue() {
     deliveryPhotoId: string
     assignmentItemId: string
     psid: string
+    surveyId: string
+    email: string
     photoBlob: Blob
     gpsLat?: number | null
     gpsLng?: number | null
@@ -140,6 +170,8 @@ export function usePhotoQueue() {
       deliveryPhotoId: opts.deliveryPhotoId,
       assignmentItemId: opts.assignmentItemId,
       psid: opts.psid,
+      surveyId: opts.surveyId,
+      email: opts.email,
       photoBlob: opts.photoBlob,
       gpsLat: opts.gpsLat,
       gpsLng: opts.gpsLng,
@@ -158,7 +190,7 @@ export function usePhotoQueue() {
     fetch('/api/settings')
       .then(r => r.json())
       .then(data => { manualSyncRef.current = data?.unsent_mode?.enabled === true })
-      .catch(() => { /* defaults to false */ })
+      .catch(() => {})
 
     const handleOnline = () => {
       if (!manualSyncRef.current) processQueue()
@@ -171,6 +203,10 @@ export function usePhotoQueue() {
     queueCount,
     isProcessing,
     lastError,
+    processingIndex,
+    totalToProcess,
+    currentFileSize,
+    uploadSpeed,
     enqueuePhoto,
     processQueue,
     refreshCount,

@@ -8,6 +8,7 @@ import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
 import { useAuthStore } from '@/stores/auth-store'
 import { compressImage } from '@/lib/image/compress'
+import { uploadToGAS } from '@/lib/drive-upload'
 import { useToast } from '@/hooks/use-toast'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
@@ -53,6 +54,8 @@ export default function UnitDeliverySheet({
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
   const [manualSync, setManualSync] = useState(false)
+  const [inputCooldown, setInputCooldown] = useState(false)
+  const [processingStep, setProcessingStep] = useState<string | null>(null)
   const touchXRef = useRef<number | null>(null)
   const watchIdRef = useRef<number | null>(null)
 
@@ -72,20 +75,29 @@ export default function UnitDeliverySheet({
   }, [])
 
   const userId = useAuthStore((s) => s.user?.id)
+  const userEmail = useAuthStore((s) => s.user?.email) || ''
   const roleName = useAuthStore((s) => s.roleName)
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
-  const { toast } = useToast()
+  const { toast, updateToast } = useToast()
   const confirm = useConfirm()
 
   useEffect(() => {
     setDeliveryStatus('idle')
     setIsDelivering(false)
+    setProcessingStep(null)
     setDeliveryDistance(null)
     setDeliveryGpsLat(null)
     setDeliveryGpsLng(null)
     setUserLat(initialLat ?? null)
     setUserLng(initialLng ?? null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unit?.psid])
+
+  // Cooldown on unit change — prevents accidental taps during transition
+  useEffect(() => {
+    setInputCooldown(true)
+    const timer = setTimeout(() => setInputCooldown(false), 2000)
+    return () => clearTimeout(timer)
   }, [unit?.psid])
 
   // Fast initial GPS fix — getCurrentPosition fires immediately
@@ -177,35 +189,32 @@ export default function UnitDeliverySheet({
     }
 
     setIsDelivering(true)
+    const progressToastId = toast('Saving delivery...', 'info', 30000)
+    setProcessingStep('Saving...')
 
     try {
-      // Step 1: Mark as processing (creates placeholder delivery_photos row)
-      const procRes = await fetch('/api/deliveries/mark-processing', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          assignmentItemId,
-          psid: unit.psid,
-          gpsLat: userLat,
-          gpsLng: userLng,
-          targetLat: unit.lat,
-          targetLng: unit.lng,
-        }),
-      })
+      // Step 1: Mark delivery (creates placeholder + GPS check)
+      const result = await mark(
+        assignmentItemId,
+        unit.psid,
+        userLat,
+        userLng,
+        unit.lat,
+        unit.lng,
+        false,
+      )
 
-      if (!procRes.ok) {
-        const errBody = await procRes.json().catch(() => ({}))
-        throw new Error(errBody.error || `mark-processing returned ${procRes.status}`)
+      if (!result) {
+        updateToast(progressToastId, 'Network error — tap again to retry', 'error', 8000)
+        setIsDelivering(false)
+        return
       }
 
-      const { delivery_photo_id } = await procRes.json()
-
-      setDeliveryStatus('processing')
-      setDeliveryDistance(null)
-      setDeliveryGpsLat(userLat)
-      setDeliveryGpsLng(userLng)
-
-      toast('Processing — photo will sync', 'info', TOAST_DURATION)
+      setDeliveryStatus(result.status)
+      setDeliveryDistance(result.distance)
+      setDeliveryGpsLat(result.gps_lat)
+      setDeliveryGpsLng(result.gps_lng)
+      setProcessingStep('Delivery saved')
 
       // Optimistic cache update
       if (userId) {
@@ -217,7 +226,7 @@ export default function UnitDeliverySheet({
               ...old,
               items: old.items.map((item) =>
                 item.id === assignmentItemId
-                  ? { ...item, status: 'processing', delivered_at: new Date().toISOString() }
+                  ? { ...item, status: result.status, delivered_at: new Date().toISOString() }
                   : item
               ),
             }
@@ -229,31 +238,95 @@ export default function UnitDeliverySheet({
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
       queryClient.invalidateQueries({ queryKey: ['delivery-photos'] })
 
-      // Step 2: Compress photo and add to sync queue
-      if (delivery_photo_id) {
+      // Step 2: Handle photo upload
+      if (result.delivery_photo_id) {
         const compressed = await compressImage(file)
-        await enqueuePhoto({
-          deliveryPhotoId: delivery_photo_id,
-          assignmentItemId,
-          psid: unit.psid,
-          photoBlob: compressed,
-          gpsLat: userLat,
-          gpsLng: userLng,
-          skipAutoSync: manualSync,
-        })
+
+        if (!manualSync && navigator.onLine && unit?.survey_id) {
+          // Direct upload to Google Drive
+          setProcessingStep('Uploading photo...')
+          updateToast(progressToastId, 'Uploading photo...', 'info', 30000)
+
+          const sizeKB = Math.round(compressed.size / 1024)
+          const sizeLabel = sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`
+
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onloadend = () => resolve(reader.result as string)
+            reader.onerror = reject
+            reader.readAsDataURL(compressed)
+          })
+
+          try {
+            updateToast(progressToastId, `Uploading (${sizeLabel})...`, 'info', 30000)
+            const gdriveFileId = await uploadToGAS(dataUrl, unit.survey_id, userEmail)
+            setProcessingStep('Syncing to Drive...')
+            updateToast(progressToastId, 'Photo uploaded! Finalizing...', 'info', 30000)
+            await fetch('/api/deliveries/sync-photo', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                deliveryPhotoId: result.delivery_photo_id,
+                gdriveFileId,
+              }),
+            })
+            updateToast(
+              progressToastId,
+              result.status === 'delivered'
+                ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`
+                : 'GPS out of range — sent for review',
+              result.status === 'delivered' ? 'success' : 'warning',
+              TOAST_DURATION,
+            )
+          } catch {
+            setProcessingStep('Photo queued for sync')
+            updateToast(progressToastId, 'Auto-upload failed — photo queued for sync', 'warning', TOAST_DURATION)
+            await enqueuePhoto({
+              deliveryPhotoId: result.delivery_photo_id,
+              assignmentItemId,
+              psid: unit.psid,
+              surveyId: unit.survey_id,
+              email: userEmail,
+              photoBlob: compressed,
+              gpsLat: userLat,
+              gpsLng: userLng,
+              skipAutoSync: false,
+            })
+          }
+        } else {
+          setProcessingStep('Photo queued for sync')
+          updateToast(
+            progressToastId,
+            manualSync
+              ? 'Photo queued — tap Sync when ready'
+              : 'Photo queued for sync',
+            'info',
+            TOAST_DURATION,
+          )
+          await enqueuePhoto({
+            deliveryPhotoId: result.delivery_photo_id,
+            assignmentItemId,
+            psid: unit.psid,
+            surveyId: unit.survey_id || '',
+            email: userEmail,
+            photoBlob: compressed,
+            gpsLat: userLat,
+            gpsLng: userLng,
+            skipAutoSync: manualSync,
+          })
+        }
 
         if (queueCount + 1 >= 50) {
           toast(`Queue nearly full — tap Sync on deliver page`, 'info', TOAST_DURATION)
         }
       }
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
-      setIsDelivering(false)  // reset on error so staff can retry
+      updateToast(progressToastId, e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
+      setIsDelivering(false)
     } finally {
       if (inputRef.current) inputRef.current.value = ''
-      // isDelivering stays true on success — auto-advance timer (line 148-157) resets it at 3s
     }
-  }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, userLat, userLng, mark, enqueuePhoto, queueCount, toast, queryClient, userId, manualSync])
+  }, [assignmentItemId, unit?.psid, unit?.survey_id, unit?.lat, unit?.lng, userLat, userLng, userEmail, mark, enqueuePhoto, queueCount, manualSync, toast, updateToast, queryClient, userId])
 
   const handleSkipPhoto = useCallback(async () => {
     if (!assignmentItemId || !unit?.psid) return
@@ -457,6 +530,9 @@ export default function UnitDeliverySheet({
                   {deliveryGpsLat.toFixed(4)}, {deliveryGpsLng.toFixed(4)}
                 </span>
               )}
+              {processingStep && (
+                <span className="text-[10px] text-white/70 mt-0.5">{processingStep}</span>
+              )}
             </div>
           </div>
         )}
@@ -528,20 +604,21 @@ export default function UnitDeliverySheet({
                 {assignmentItemId ? (
                   <button
                     onClick={openCamera}
-                    disabled={isDelivering}
+                    disabled={isDelivering || inputCooldown}
                     className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
                   >
-                    {isDelivering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                    {isDelivering ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Take Picture & Deliver'}
+                    {(isDelivering || inputCooldown) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                    {(isDelivering || inputCooldown) ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Take Picture & Deliver'}
                   </button>
                 ) : null}
                 {onViewDetails && (
                   <button
                     onClick={() => onViewDetails()}
+                    disabled={isDelivering || inputCooldown}
                     className={
                       assignmentItemId
-                        ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm"
-                        : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md"
+                        ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm disabled:opacity-50"
+                        : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md disabled:opacity-50"
                     }
                   >
                     {assignmentItemId ? (
@@ -555,11 +632,11 @@ export default function UnitDeliverySheet({
               {allowNoPhoto && assignmentItemId && (
                 <button
                   onClick={handleSkipPhoto}
-                  disabled={isDelivering}
+                  disabled={isDelivering || inputCooldown}
                   className='w-full h-8 text-[11px] font-medium rounded-lg bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors'
                 >
-                  {isDelivering ? <Loader2 className='h-3 w-3 animate-spin' /> : <Crosshair className='h-3 w-3' />}
-                  {isDelivering ? 'Processing...' : 'Photo not working? Tap to deliver without photo'}
+                  {(isDelivering || inputCooldown) ? <Loader2 className='h-3 w-3 animate-spin' /> : <Crosshair className='h-3 w-3' />}
+                  {(isDelivering || inputCooldown) ? 'Processing...' : 'Photo not working? Tap to deliver without photo'}
                 </button>
               )}
               {isAdmin && !assignmentItemId && (
