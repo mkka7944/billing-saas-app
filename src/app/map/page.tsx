@@ -13,6 +13,7 @@ import { DataInsight } from '@/components/data-insight'
 import { AppShell } from '@/components/layout/AppShell'
 import { FloatingActions } from '@/components/layout/floating-actions'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
+import { cn } from '@/lib/utils'
 import UnitDeliverySheet from '@/components/delivery/unit-delivery-sheet'
 import QRScannerButton from '@/components/delivery/qr-scanner-button'
 import { useUserLocation } from '@/hooks/use-user-location'
@@ -101,16 +102,29 @@ export default function MapPage() {
       <FloatingActions />
       <div className="flex flex-col lg:flex-row h-full">
         <div className="flex-1 relative min-h-0 min-w-0 h-full">
-          {activeView === 'map' && (roleName === 'field_staff' ? (
-            <StaffMap items={staffItems} userLocation={userLocation} />
-          ) : (
-            <MapView />
-          ))}
-          {activeView === 'list' && <SurveyList />}
-          {activeView === 'stats' && <Dashboard />}
-          <div className={activeView !== 'data-insight' ? 'hidden' : 'absolute inset-0'}>
-            <DataInsight />
+          {/* Map layer — always rendered, stays hidden via opacity (Leaflet needs layout) */}
+          <div className={cn(activeView !== 'map' && 'invisible pointer-events-none', 'absolute inset-0')}>
+            {roleName === 'field_staff' ? (
+              <StaffMap items={staffItems} userLocation={userLocation} />
+            ) : (
+              <MapView />
+            )}
           </div>
+          {activeView === 'list' && (
+            <div className="absolute inset-0 bg-background z-10 overflow-auto">
+              <SurveyList />
+            </div>
+          )}
+          {activeView === 'stats' && (
+            <div className="absolute inset-0 bg-background z-10 overflow-auto">
+              <Dashboard />
+            </div>
+          )}
+          {activeView === 'data-insight' && (
+            <div className="absolute inset-0 bg-background z-10 overflow-auto">
+              <DataInsight />
+            </div>
+          )}
 
           {/* UnitDeliverySheet overlay — universal action sheet (staff + admin) */}
           {activeView === 'map' && deliverTargetId && deliveryUnit && (

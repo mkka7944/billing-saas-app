@@ -4,7 +4,7 @@ import L from 'leaflet'
 if (typeof document !== 'undefined' && !document.getElementById('marker-pulse-style')) {
   const style = document.createElement('style')
   style.id = 'marker-pulse-style'
-  style.textContent = `@keyframes marker-pulse{0%{transform:translate(-50%,-50%) scale(0.6);opacity:0.5}100%{transform:translate(-50%,-50%) scale(2.5);opacity:0}}`
+  style.textContent = `@keyframes marker-pulse{0%{transform:translate(-50%,-50%) scale(0.6);opacity:0.9}100%{transform:translate(-50%,-50%) scale(2.5);opacity:0}}`
   document.head.appendChild(style)
 }
 
@@ -21,7 +21,7 @@ export function createMarkerIcon(color: string, opts?: MarkerOptions): L.DivIcon
 
   let html: string
   if (opts?.selected) {
-    html = `<div style="position:relative;width:${size}px;height:${size}px"><div style="position:absolute;top:50%;left:50%;width:${size * 3}px;height:${size * 3}px;border-radius:50%;border:2px solid ${color}66;animation:marker-pulse 1.5s ease-in-out infinite;pointer-events:none"></div><div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${border};position:relative;z-index:1"></div></div>`
+    html = `<div style="position:relative;width:${size}px;height:${size}px"><div style="position:absolute;top:50%;left:50%;width:${size * 3}px;height:${size * 3}px;border-radius:50%;border:2px solid rgba(255,255,255,0.85);box-shadow:0 0 8px rgba(0,0,0,0.4);animation:marker-pulse 1.5s ease-in-out infinite;pointer-events:none"></div><div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${border};position:relative;z-index:1"></div></div>`
   } else {
     html = `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${border}"></div>`
   }

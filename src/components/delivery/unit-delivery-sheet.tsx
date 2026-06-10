@@ -175,34 +175,33 @@ export default function UnitDeliverySheet({
     setIsDelivering(true)
 
     try {
-      const result = await mark(
-        assignmentItemId,
-        unit.psid,
-        userLat,
-        userLng,
-        unit.lat,
-        unit.lng,
-        false,
-      )
+      // Step 1: Mark as processing (creates placeholder delivery_photos row)
+      const procRes = await fetch('/api/deliveries/mark-processing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignmentItemId,
+          psid: unit.psid,
+          gpsLat: userLat,
+          gpsLng: userLng,
+          targetLat: unit.lat,
+          targetLng: unit.lng,
+        }),
+      })
 
-      if (!result) {
-        toast('Network error — tap again to retry', 'error', TOAST_DURATION)
-        setIsDelivering(false)
-        return
+      if (!procRes.ok) {
+        const errBody = await procRes.json().catch(() => ({}))
+        throw new Error(errBody.error || `mark-processing returned ${procRes.status}`)
       }
 
-      setDeliveryStatus(result.status)
-      setDeliveryDistance(result.distance)
-      setDeliveryGpsLat(result.gps_lat)
-      setDeliveryGpsLng(result.gps_lng)
+      const { delivery_photo_id } = await procRes.json()
 
-      toast(
-        result.status === 'delivered'
-          ? `Delivered${result.distance != null ? ` (${result.distance}m away)` : ''}`
-          : 'GPS out of range — sent for review',
-        result.status === 'delivered' ? 'success' : 'warning',
-        TOAST_DURATION,
-      )
+      setDeliveryStatus('processing')
+      setDeliveryDistance(null)
+      setDeliveryGpsLat(userLat)
+      setDeliveryGpsLng(userLng)
+
+      toast('Processing — photo will sync', 'info', TOAST_DURATION)
 
       // Optimistic cache update
       if (userId) {
@@ -214,7 +213,7 @@ export default function UnitDeliverySheet({
               ...old,
               items: old.items.map((item) =>
                 item.id === assignmentItemId
-                  ? { ...item, status: result.status, delivered_at: new Date().toISOString() }
+                  ? { ...item, status: 'processing', delivered_at: new Date().toISOString() }
                   : item
               ),
             }
@@ -226,11 +225,11 @@ export default function UnitDeliverySheet({
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
       queryClient.invalidateQueries({ queryKey: ['delivery-photos'] })
 
-      // Compress photo and add to sync queue
-      if (result.delivery_photo_id) {
+      // Step 2: Compress photo and add to sync queue
+      if (delivery_photo_id) {
         const compressed = await compressImage(file)
         await enqueuePhoto({
-          deliveryPhotoId: result.delivery_photo_id,
+          deliveryPhotoId: delivery_photo_id,
           assignmentItemId,
           psid: unit.psid,
           photoBlob: compressed,
@@ -245,6 +244,7 @@ export default function UnitDeliverySheet({
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
     } finally {
+      if (inputRef.current) inputRef.current.value = ''
       setIsDelivering(false)
     }
   }, [assignmentItemId, unit?.psid, unit?.lat, unit?.lng, userLat, userLng, mark, enqueuePhoto, queueCount, toast, queryClient, userId])

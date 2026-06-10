@@ -20,6 +20,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { useMapZoom } from '@/hooks/use-map-zoom'
 import { UnsentImagesSection } from '@/components/settings/unsent-images-section'
+import { ErrorLogSection } from '@/components/settings/error-log-section'
 import { DeliveryTable } from '@/components/settings/delivery-table'
 
 const THEMES = [
@@ -31,6 +32,7 @@ const tabs = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'account', label: 'Account' },
   { id: 'unsent', label: 'Photo Queue' },
+  { id: 'errors', label: 'Error Log' },
   { id: 'delivery', label: 'Delivery', adminOnly: true },
   { id: 'users', label: 'Users', adminOnly: true },
 ] as const
@@ -511,6 +513,21 @@ export default function SettingsPage() {
             </Card>
             <UnsentImagesSection />
           </div>
+        )}
+
+        {/* Error Log tab */}
+        {activeTab === 'errors' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-bold">Error Log</CardTitle>
+              <CardDescription className="text-xs">
+                App errors and warnings from the last 30 days.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ErrorLogSection />
+            </CardContent>
+          </Card>
         )}
 
         {/* Delivery tab (admin-only) — sidebar + table layout */}

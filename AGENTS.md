@@ -148,6 +148,29 @@ Every task is broken into short atomic steps (max 1-2 file changes per step).
 **Never skip ahead or batch multiple steps without explicit approval.**
 **When in a phase/step and the user asks a question:** Answer the question, then return to the current phase/step without advancing unless told to proceed.
 
+## Plain-Language Communication Rule
+When explaining errors, features, or how the code works:
+1. Do not start with jargon or technical terms (e.g., don't lead with "zustand store key" or "Leaflet's size calculation").
+2. First say what the user cares about in everyday language — "the map is slow because the map thinks it has zero height" instead of "Leaflet returns 0x0 from getSize when container has display:none".
+3. If technical terms are unavoidable, explain them right after in plain words.
+4. For errors: say what happened, what caused it (in plain words), and what the fix does. Example:
+   - Bad: "MapFollower's flyTo subscription re-triggers on mapCenter changes causing unnecessary re-renders"
+   - Good: "The map was jumping back to the admin's selected location every time the GPS updated, so it never let you scroll around freely"
+5. For implementation decisions: say WHY the choice was made, not just the technical what.
+
+## Pre-Edit Ripple Check
+Before making any code change, check four things to avoid accidentally breaking other features:
+
+1. **What pages or files use this component?** — A component may be used in more than one page. Changing its props, CSS sizing, or when it renders could break another page. Search for imports of the file being edited.
+
+2. **What shared state does this code touch?** — Global state (like the current selected city or active view tab) is shared across many components. Changing who writes to it or when it updates can break features that read the same state.
+
+3. **Does this library need special treatment?** — Some tools have hidden rules: the map library needs a visible container with real height, the toast library needs a specific provider. Before changing how a component is rendered or hidden, check if the library it uses has quirks like these.
+
+4. **What shared data queries does this affect?** — If a shared query module (like `survey-repository.ts`) is changed, every component that loads survey data will be affected. Search for all consumers before editing shared modules.
+
+After checking these, include a "Ripple effects to verify" section in the testing instructions that lists what else could break.
+
 ## Monthly Workflow
 
 ### CRITICAL: Billing Cycle Definition

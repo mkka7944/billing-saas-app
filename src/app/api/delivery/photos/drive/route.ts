@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 const WEBHOOK_URL = process.env.NEXT_PUBLIC_DRIVE_WEBHOOK_URL
 
 export async function GET(request: Request) {
+  const sup = await createClient()
+  const { data: { user } } = await sup.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   const sp = new URL(request.url).searchParams
   const surveyId = sp.get('survey_id')
 

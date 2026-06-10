@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { AuthInit } from "@/components/providers/auth-init";
+import { GlobalErrorLogger } from "@/components/providers/global-error-logger";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { ToastProvider } from "@/hooks/use-toast";
 
@@ -63,6 +64,7 @@ export default function RootLayout({
             <AuthInit>
               <ConfirmProvider>
                 <ToastProvider>
+                  <GlobalErrorLogger />
                   {children}
                 </ToastProvider>
               </ConfirmProvider>

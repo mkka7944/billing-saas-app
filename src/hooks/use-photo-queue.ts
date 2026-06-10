@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useToast } from '@/hooks/use-toast'
 import {
   addToQueue,
   getAllQueued,
@@ -28,6 +29,7 @@ export function usePhotoQueue() {
   const [lastError, setLastError] = useState<string | null>(null)
   const processingRef = useRef(false)
   const queryClient = useQueryClient()
+  const { toast } = useToast()
 
   const refreshCount = useCallback(async () => {
     const count = await getQueueCount()
@@ -38,7 +40,7 @@ export function usePhotoQueue() {
     try {
       const dataUrl = await blobToBase64(photo.photoBlob)
 
-      const res = await fetch('/api/deliveries/sync-photo', {
+      const res = await fetch('/api/deliveries/promote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -50,9 +52,11 @@ export function usePhotoQueue() {
       if (!res.ok) {
         if (res.status === 404 || res.status === 403) {
           await removeFromQueue(photo.id!)
+          toast(`Photo for ${photo.psid} skipped — assignment was revoked`, 'error')
           return 'orphan'
         }
-        throw new Error(`Sync returned ${res.status}`)
+        const errBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        throw new Error(errBody.error || `HTTP ${res.status}`)
       }
 
       const json = await res.json()
@@ -68,6 +72,17 @@ export function usePhotoQueue() {
       if (photo.retryCount >= MAX_RETRIES) {
         await removeFromQueue(photo.id!)
         setLastError(`Photo ${photo.psid} failed after ${MAX_RETRIES} retries`)
+        toast(`Photo for ${photo.psid} failed: ${errMsg}`, 'error')
+        fetch('/api/log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            level: 'error',
+            message: `Photo ${photo.psid} failed after ${MAX_RETRIES} retries: ${errMsg}`,
+            details: { psid: photo.psid, deliveryPhotoId: photo.deliveryPhotoId, retryCount: photo.retryCount },
+            source: 'photo-queue',
+          }),
+        }).catch(() => {})
         return 'orphan'
       } else {
         await incrementRetry(photo.id!)
@@ -75,7 +90,7 @@ export function usePhotoQueue() {
       setLastError(`Photo ${photo.psid}: ${errMsg}`)
       return 'retry'
     }
-  }, [])
+  }, [toast])
 
   const processQueue = useCallback(async () => {
     if (processingRef.current) return

@@ -1,1 +1,0 @@
-{"query": "-- Add unsent_mode setting for \"always queue photos unsent\" feature\nINSERT INTO public.app_settings (key, value)\nVALUES ('unsent_mode', '{\"enabled\":false,\"max_limit\":50}')\nON CONFLICT (key) DO NOTHING;\n"}

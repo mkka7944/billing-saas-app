@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     // Ownership check
     const { data: ownership } = await sup
       .from('assignment_items')
-      .select('id, status, daily_assignments!inner(staff_id)')
+      .select('id, status, started_at, daily_assignments!inner(staff_id)')
       .eq('id', assignmentItemId)
       .eq('daily_assignments.staff_id', user.id)
       .maybeSingle()
@@ -148,9 +148,9 @@ export async function POST(request: Request) {
     // Update assignment_items status
     const update: Record<string, unknown> = {
       status,
-      started_at: startedAt,
       delivered_at: deliveredAt,
     }
+    if (!ownership.started_at) update.started_at = startedAt
     if (gps_lat != null) update.gps_lat = gps_lat
     if (gps_lng != null) update.gps_lng = gps_lng
 

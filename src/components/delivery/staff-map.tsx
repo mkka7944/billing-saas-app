@@ -32,6 +32,33 @@ function UserMarker({ location: propLocation }: { location?: UserLocation | null
   return <Marker position={[loc.lat, loc.lng]} icon={USER_DOT_ICON} />
 }
 
+function FitStaffBounds({ items }: { items: AssignmentItemWithUnit[] }) {
+  const map = useMap()
+  const hasFittedRef = useRef(false)
+
+  useEffect(() => {
+    if (hasFittedRef.current || !items?.length) return
+
+    const coords: [number, number][] = []
+    for (const item of items) {
+      if (item.unit?.lat != null && item.unit?.lng != null) {
+        coords.push([item.unit.lat, item.unit.lng])
+      }
+    }
+
+    if (coords.length >= 2) {
+      const bounds = L.latLngBounds(coords)
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 })
+      hasFittedRef.current = true
+    } else if (coords.length === 1) {
+      map.setView(coords[0], 15)
+      hasFittedRef.current = true
+    }
+  }, [items, map])
+
+  return null
+}
+
 function FlyToTarget({ items }: { items: AssignmentItemWithUnit[] }) {
   const map = useMap()
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
@@ -80,6 +107,7 @@ export default function StaffMap({ items, userLocation }: StaffMapProps) {
           maxZoom={20}
           attribution="&copy; Google"
         />
+        <FitStaffBounds items={items} />
         <StaffMapMarkers items={items} />
         <FlyToTarget items={items} />
         <UserMarker location={userLocation} />

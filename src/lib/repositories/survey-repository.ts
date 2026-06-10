@@ -46,7 +46,7 @@ export async function getSurveys(sup: SupabaseClient, q: SurveyQuery) {
   let allPsids: string[] = []
   let psidOffset = 0
   while (true) {
-    let pq = sup.from('survey_units').select('psid').eq('status', 'ACTIVE')
+    let pq = applyActiveFilter(sup.from('survey_units').select('psid'))
     if (q.districts.length) pq = pq.in('city_district', q.districts)
     if (q.tehsils.length) pq = pq.in('tehsil', q.tehsils)
     if (q.ucs.length) pq = pq.in('uc_name', q.ucs)

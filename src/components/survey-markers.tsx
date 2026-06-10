@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from 'react'
 import { Marker, Tooltip } from 'react-leaflet'
+import L from 'leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import { createMarkerIcon } from '@/lib/markers'
 import type { SurveyUnit, AssignmentItemUnit } from '@/types'
@@ -61,6 +62,23 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
     [markers]
   )
 
+  const markerIcons = useMemo(() => {
+    const icons: Record<string, L.DivIcon> = {}
+    for (const s of markers) {
+      const color = getUcColor(s.uc_name)
+      icons[s.survey_id] = createMarkerIcon(color, { size: 10 })
+      icons[`${s.survey_id}_sel`] = createMarkerIcon(color, { size: 10, selected: true })
+    }
+    return icons
+  }, [markers])
+
+  const handleClick = useMemo(() => {
+    const fn = (psid: string, unit: AssignmentItemUnit | null) => () => {
+      setDeliverTarget(psid, unit)
+    }
+    return fn
+  }, [setDeliverTarget])
+
   useEffect(() => {
     setDeliverableList(deliverableList)
   }, [deliverableList, setDeliverableList])
@@ -77,12 +95,8 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
           <Marker
             key={s.survey_id}
             position={[s.lat!, s.lng!]}
-            icon={createMarkerIcon(getUcColor(s.uc_name), { size: 10, selected: isSelected })}
-            eventHandlers={{
-              click: () => {
-                setDeliverTarget(s.psid, unit)
-              },
-            }}
+            icon={markerIcons[isSelected ? `${s.survey_id}_sel` : s.survey_id]}
+            eventHandlers={{ click: handleClick(s.psid!, unit) }}
           >
             <Tooltip
               direction="top"
