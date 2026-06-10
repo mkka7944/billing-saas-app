@@ -67,6 +67,7 @@
 24. [Deliver — Testing Protocol for Unsent Flow](#24-deliver--testing-protocol-for-unsent-flow)
 25. [Remaining Corrections](#25-remaining-corrections)
 26. [Delivery KPI Queries (Future)](#26-delivery-kpi-queries-future)
+27. [Photo Upload Priority: Direct Browser-to-GAS](#27-photo-upload-priority-direct-browser-to-gas-replace-ssr-proxy)
 ---
 ## App Vision — Daily Reference
 
@@ -2117,6 +2118,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-07 | 28.0 | **Unsent delivery flow fixes + testing protocol.** Toast redesign (top-right pill, 5s slide-in). "Always unsent" feature (7 steps): migration 038, admin toggle, handleFile unsent mode, max limit enforcement, UnsentBadge floating modal, skipAutoSync param. Fixed unsent delivery gap: POST /api/deliveries/mark-processing, POST /api/deliveries/promote, filter-bar icon replacing floating badge, concurrent processQueue (batch 3), orphan cleanup on 403/404. Bug: unsent icon placed in deliver filter bar — needs moving to FloatingActions. Shared GPS watcher with retry (1s/3s/10s). Delivery step progress overlay. Testing protocol in Section 24. |
 | 2026-06-07 | 29.0 | **Corrections: Progress overlay → sequential toasts + GPS dots.** Removed progress step checklist from sheet (overlaid action buttons). Added `updateToast(id, msg, variant?)` to toast system. Added `onProgress` callback to `useDeliverUnit.deliver()`. Online path: "Compressing..."→"Uploading..."→"Recording..."→final result as sequential toast updates. Unsent path: "Saving..."→"Compressing..."→"Saved ✓". Added 3-dot GPS signal indicator after live distance text (accuracy-based green/gray dots). 3 files changed. Part 11 doc corrected (removed incorrect GPS claims). Part 12 added. |
 | 2026-06-08 | 30.0 | **Delivery hardening + started_at KPI column.** A1-A4: unsent queue destination, sync-photo promotion, mark route photo order, processing guard. B1-B2: unsent icon moved to FloatingActions, desktop visibility. C1-C4: offline toast, auth check, orphan cleanup (useAssignmentRealtime hook). D1: 037-notifications migration applied. `started_at` column added to `assignment_items` (migration 040), written by mark + mark-processing routes, displayed as Duration column in admin delivery table. See Section 26 for KPI query. |
+| 2026-06-10 | 31.0 | **Photo upload reliability investigation + simplified direct-upload plan.** Studied working routing station reference (12_drive_sync.js — direct browser→GAS upload). Identified root cause: SSR proxy (promote route) causes 85% failure rate via Vercel 10s timeout + GAS rate limits. Agreed to rewrite: remove SSR proxy, upload directly from browser to GAS (matching proven old app approach). Session log added. Section 27 created with detailed implementation plan. Section 25 updated: item #1 = CRITICAL photo upload rewrite. |
 
 ---
 
@@ -4936,6 +4938,50 @@ Settings → "Sync All" → retryAll → retrySingle() per photo
 - Fix P1 bugs from audit (incrementRetry race condition, sync-photo auth check)
 - Consider P2 fixes (unsynced admin auth, GPS target validation, IndexedDB schema migration, usePhotoQueue state dedup, toast duration)
 
+### 2026-06-10 — Photo Upload Reliability Investigation + Simplified Direct-Upload Plan — Location: Office
+
+**Goal:** Investigate why photos fail to sync (GAS 404 after URL fix, only 15% success rate), compare against working routing station implementation, propose simplified direct-upload approach.
+
+**Done:**
+
+**Root cause analysis:**
+- Reviewed error logs from error-log-2026-06-10.json — 50 photos all failed with GAS HTTP 404
+- Timeline: 10:56-10:59 UTC → promote endpoint returned 404 (wrong GAS webhook URL)
+- After URL fixed: 15/41 old queue photos synced, then all revoked
+- Fresh test: 13 new deliveries, only 2 synced — **85% failure rate persists**
+- The `sync-photo/promote` SSR proxy adds an extra hop (browser → SSR → GAS) with Vercel serverless timeout (10s Hobby)
+
+**Working reference studied:** `F:\qoder\billing-system\routing-station-src\js\12_drive_sync.js` (1128 lines)
+- Old app uploads directly from browser to GAS webhook via CORS POST — no SSR proxy
+- Staff-paced uploads avoid GAS rate limits
+- Simple DB logging to `staff_sync_logs` table — no multi-step status flow, no assignment tracking
+- Manual sync button — staff controls when to upload
+
+**Key architectural difference identified:**
+| Aspect | Old App (works) | Current App (broken) |
+|--------|-----------------|---------------------|
+| Upload path | Browser → GAS (1 hop) | Browser → SSR → GAS (2 hops) |
+| Queue | IndexedDB fallback only | Primary path with auto-sync |
+| DB logging | Simple upsert after success | 3-step DB flow (mark-processing → enqueue → promote) |
+| Upload trigger | Manual/staff-paced | Auto-sync (burst → rate limited) |
+
+**Agreed priority:** Rewrite photo upload to match the old app's proven approach — direct browser-to-GAS upload, no SSR proxy, simplified DB logging. Details in Section 27.
+
+**Files reviewed:**
+- `src/app/api/deliveries/promote/route.ts` — SSR proxy, the likely bottleneck
+- `src/app/api/deliveries/mark/route.ts` — current mark endpoint (176 lines, over-engineered)
+- `src/app/api/deliveries/mark-processing/route.ts` — redundant intermediate step
+- `src/components/delivery/unit-delivery-sheet.tsx` — handleFile flow (585 lines)
+- `src/hooks/use-photo-queue.ts` — queue with promote dependency (178 lines)
+- `src/hooks/use-deliver-unit.ts` — deliver unit hook (72 lines)
+- `src/hooks/use-unsynced-photos.ts` — unsynced tracking hook
+- `src/app/api/deliveries/unsynced/route.ts` — unsynced endpoint
+- `src/lib/photo-queue.ts` — IndexedDB queue
+- `src/lib/image/compress.ts` — WebP compression
+- `src/lib/drive.ts` — GAS webhook helpers
+- `F:\qoder\billing-system\routing-station-src\js\12_drive_sync.js` — working reference (1128 lines)
+- `F:\qoder\billing-system\routing-station-src\js\06_list_view.js` — old app list/capture UI
+
 ---
 
 ## 25. Remaining Corrections
@@ -4945,18 +4991,19 @@ Items that need to be fixed before the next session or are deferred from this se
 
 | # | Priority | Issue | Status |
 |---|----------|-------|--------|
-| 1 | LOW | Offline fallback has no toast | Pending |
-| 2 | INFO | Stale IndexedDB entries from prior testing | Clear before each test session |
-| 3 | HIGH | Stale `processing` items in DB from failed tests | `UPDATE ... SET status='pending' WHERE status='processing' AND delivered_at IS NOT NULL` |
-| 4 | MEDIUM | `037-notifications.sql` not yet applied | Needs PAT token |
-| 5 | MEDIUM | `030-delivery-photos.sql` not yet applied | Needs PAT token |
-| 6 | MEDIUM | `036-test-mc-data.sql` not yet applied | Needs PAT token |
-| 7 | INFO | GPS signal thresholds (10m/50m/Infinity) — verify on mobile | Test with actual mobile GPS |
-| 8 | INFO | GPS battery optimization (deferred) | `use-user-location.ts` — low accuracy default |
-| 9 | INFO | Stale GPS dots doc in MASTER.md | `sharedLocation.accuracy` → `gpsAccuracy` |
-| 10 | INFO | `haversine()` in `geo.ts` has no input validation | Add bounds checking |
-| 11 | MEDIUM | `usePhotoQueue` state duplicated across 5 components | Move to Context/Zustand store |
-| 12 | MEDIUM | IndexedDB v3→v4 upgrade won't create `deliveryPhotoId` index | Create indexes unconditionally on upgrade |
+| 1 | **CRITICAL** | **Photo upload unreliable — SSR proxy causes 85% failure rate. Rewrite to direct browser-to-GAS upload (see Section 27).** | **Pending — top priority** |
+| 2 | LOW | Offline fallback has no toast | Pending |
+| 3 | INFO | Stale IndexedDB entries from prior testing | Clear before each test session |
+| 4 | HIGH | Stale `processing` items in DB from failed tests | `UPDATE ... SET status='pending' WHERE status='processing' AND delivered_at IS NOT NULL` |
+| 5 | MEDIUM | `037-notifications.sql` not yet applied | Needs PAT token |
+| 6 | MEDIUM | `030-delivery-photos.sql` not yet applied | Needs PAT token |
+| 7 | MEDIUM | `036-test-mc-data.sql` not yet applied | Needs PAT token |
+| 8 | INFO | GPS signal thresholds (10m/50m/Infinity) — verify on mobile | Test with actual mobile GPS |
+| 9 | INFO | GPS battery optimization (deferred) | `use-user-location.ts` — low accuracy default |
+| 10 | INFO | Stale GPS dots doc in MASTER.md | `sharedLocation.accuracy` → `gpsAccuracy` |
+| 11 | INFO | `haversine()` in `geo.ts` has no input validation | Add bounds checking |
+| 12 | MEDIUM | `usePhotoQueue` state duplicated across 5 components | Move to Context/Zustand store |
+| 13 | MEDIUM | IndexedDB v3→v4 upgrade won't create `deliveryPhotoId` index | Create indexes unconditionally on upgrade |
 
 **Fixed in 2026-06-09 session:**
 - `incrementRetry` race condition ✅
@@ -4980,4 +5027,70 @@ Items that need to be fixed before the next session or are deferred from this se
 - `useMapZoom` hook + Settings zoom slider (admin) + read-only display (staff) ✅
 - `MapContainer` initial zooms from hardcoded 12 to configured value ✅
 - `FlyToTarget` compound guard (target+zoom) replaces dual ref ✅
+
+---
+
+## 27. Photo Upload Priority: Direct Browser-to-GAS (Replace SSR Proxy)
+
+### 27.1 The Problem
+
+Current flow has **85% failure rate**:
+```
+Browser → POST /api/deliveries/promote (SSR) → GAS webhook → Drive
+           ↑                              ↗ 404/timeout
+         3-step DB flow (mark-processing → enqueue → promote)
+```
+- SSR proxy adds an extra hop with Vercel 10s timeout (Hobby)
+- GAS rate-limits when photos arrive in bursts (auto-sync sends 3+ concurrent)
+- 3-step DB flow (mark-processing → enqueue → promote) creates orphaned `processing` items
+- IndexedDB queue drops blobs after 3 retries → data permanently lost
+
+### 27.2 Target Flow (matches old routing station app, proven working)
+
+```
+Staff takes photo
+  ↓
+Compress to WebP (same as now)
+  ↓
+Online? ─YES─→ Upload directly to GAS from browser (1 hop, no SSR)
+  │              ↓ Success → POST /api/deliveries/mark { gdriveFileId, gpsLat, gpsLng }
+  │                          → endpoint just creates delivery_photos row + sets status
+  │              ↓ Fail    → Toast + retry button
+  │
+  └─NO─→ Store in IndexedDB queue → badge shows count
+          → Staff taps "Sync" when online → direct GAS upload (no promote)
+```
+
+### 27.3 Files to Change
+
+| Action | File | What |
+|--------|------|------|
+| **CREATE** | `src/lib/drive-upload.ts` | Client-side `uploadToGAS(base64, surveyId, email): Promise<string>` — direct fetch to GAS webhook, same payload as old app |
+| **MODIFY** | `unit-delivery-sheet.tsx` | `handleFile` simplified: compress → uploadToGAS → POST /api/deliveries/mark. No mark-processing, no enqueue. On upload fail → toast + retry. |
+| **MODIFY** | `mark/route.ts` | Accept `{ assignmentItemId, gdriveFileId, gpsLat, gpsLng }`. Create `delivery_photos` row with real `photo_url = /api/delivery/photo/{gdriveFileId}`, set `assignment_items.status = delivered`. **No GPS distance eval** (causes more issues than it solves — remove from mark). |
+| **MODIFY** | `use-photo-queue.ts` | Remove promote dependency. Queue only for offline fallback — uploads directly to GAS from browser when online. |
+| **DELETE** | `mark-processing/route.ts` | No longer needed — mark creates row directly |
+| **DELETE** | `promote/route.ts` | No longer needed — upload is client-side |
+| **DELETE** | `sync-photo/route.ts` | No longer needed — replaced by direct upload |
+| **MODIFY** | `use-deliver-unit.ts` | Simplified — just calls POST /api/deliveries/mark with gdriveFileId |
+
+### 27.4 Why This Will Work
+
+1. **Matching proven implementation** — old routing station app uses identical pattern (browser → GAS) and works reliably
+2. **No SSR timeout risk** — browser handles the upload directly with no 10s Vercel limit
+3. **Staff-paced uploads** — each photo is uploaded when staff taps "Take Picture" (1 at a time, natural pacing)
+4. **No orphan data** — DB row only created AFTER successful upload (no `pending://` placeholders)
+5. **Queue only for offline** — IndexedDB is fallback, not primary path
+6. **GAS URL is already public** — `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` exposed to client, same as old app hardcoding it
+
+### 27.5 Edge Cases
+
+| Scenario | Handling |
+|----------|----------|
+| **GAS returns 404** | Show error toast with retry button. Staff can retry immediately. |
+| **Offline** | Store blob in IndexedDB queue, show badge count. Staff taps "Sync" when online. |
+| **GPS failure** | Deliver with null GPS (photo timestamp alone is sufficient proof, tracked as metric). |
+| **Multiple photos** | Each photo = separate upload + separate mark call. Always INSERT (never UPSERT). |
+| **Revoke** | Revoke only resets `assignment_items.status`. `delivery_photos` rows preserved. |
+| **Browser closes during upload** | If close during GAS upload → no DB row created. Staff retakes photo next session. |
 
