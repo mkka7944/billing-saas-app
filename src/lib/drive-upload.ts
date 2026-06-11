@@ -2,13 +2,23 @@ import { stripDataPrefix } from './drive'
 
 const WEBHOOK_URL = process.env.NEXT_PUBLIC_DRIVE_WEBHOOK_URL
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
 export async function uploadToGAS(
-  dataUrl: string,
+  blob: Blob,
   surveyId: string,
   email: string,
 ): Promise<string> {
   if (!WEBHOOK_URL) throw new Error('DRIVE_WEBHOOK_URL not configured')
 
+  const dataUrl = await blobToBase64(blob)
   const rawBase64 = stripDataPrefix(dataUrl)
   const filename = `${surveyId}_${Date.now()}.webp`
 

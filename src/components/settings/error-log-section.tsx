@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, AlertCircle, AlertTriangle, RefreshCw, Download, ChevronDown, ChevronRight } from 'lucide-react'
+import { Loader2, AlertCircle, AlertTriangle, RefreshCw, Download, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface LogEntry {
@@ -14,7 +14,7 @@ interface LogEntry {
   created_at: string
 }
 
-export function ErrorLogSection() {
+export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -23,6 +23,19 @@ export function ErrorLogSection() {
   const [levelFilter, setLevelFilter] = useState<string>('')
   const [sourceFilter, setSourceFilter] = useState<string>('')
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [allSources, setAllSources] = useState<string[]>([])
+  const [userIdFilter, setUserIdFilter] = useState('')
+  const [copiedId, setCopiedId] = useState<number | null>(null)
+
+  const copyToClipboard = useCallback(async (entry: LogEntry) => {
+    try {
+      await navigator.clipboard.writeText(`Error #${entry.id}: ${entry.message}`)
+      setCopiedId(entry.id)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch {
+      // silent
+    }
+  }, [])
 
   const fetchLogs = useCallback(async (append = false) => {
     if (append) {
@@ -30,6 +43,7 @@ export function ErrorLogSection() {
     } else {
       setLoading(true)
       setOffset(0)
+      setAllSources([])
     }
 
     try {
@@ -37,6 +51,7 @@ export function ErrorLogSection() {
       if (append) params.set('offset', String(offset))
       if (levelFilter) params.set('level', levelFilter)
       if (sourceFilter) params.set('source', sourceFilter)
+      if (userIdFilter && isAdmin) params.set('user_id', userIdFilter)
 
       const res = await fetch(`/api/log?${params}`)
       const json = await res.json()
@@ -48,6 +63,14 @@ export function ErrorLogSection() {
           setLogs(json.data)
         }
         setTotal(json.total ?? 0)
+        // Accumulate sources so filter pills don't appear/disappear
+        const newSources = json.data
+          .map((l: LogEntry) => l.source)
+          .filter(Boolean) as string[]
+        setAllSources(prev => {
+          const merged = new Set([...prev, ...newSources])
+          return [...merged].sort()
+        })
       }
     } catch {
       // silent
@@ -55,7 +78,7 @@ export function ErrorLogSection() {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [offset, levelFilter, sourceFilter])
+  }, [offset, levelFilter, sourceFilter, userIdFilter, isAdmin])
 
   useEffect(() => {
     fetchLogs()
@@ -85,7 +108,7 @@ export function ErrorLogSection() {
     return d.toLocaleDateString()
   }
 
-  const sources = [...new Set(logs.map(l => l.source).filter(Boolean))] as string[]
+  const sources = allSources
 
   return (
     <div className="space-y-3">
@@ -141,6 +164,15 @@ export function ErrorLogSection() {
             {source}
           </button>
         ))}
+        {isAdmin && (
+          <input
+            type="text"
+            value={userIdFilter}
+            onChange={(e) => setUserIdFilter(e.target.value)}
+            placeholder="Filter by user ID..."
+            className="ml-auto h-7 w-[140px] text-[10px] px-2 rounded-lg border border-border bg-background outline-none focus:ring-1 focus:ring-ring"
+          />
+        )}
       </div>
 
       {/* List */}
@@ -167,7 +199,10 @@ export function ErrorLogSection() {
                     )}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-medium truncate">{entry.message}</p>
+                    <p className="text-[11px] font-medium truncate">
+                      <span className="text-[10px] text-muted-foreground font-mono mr-1">#{entry.id}</span>
+                      {entry.message}
+                    </p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[10px] text-muted-foreground">{formatTime(entry.created_at)}</span>
                       {entry.source && (
@@ -177,11 +212,24 @@ export function ErrorLogSection() {
                       )}
                     </div>
                   </div>
-                  {entry.details && (
-                    <span className="shrink-0 mt-0.5 text-muted-foreground">
-                      {expandedId === entry.id ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); copyToClipboard(entry) }}
+                      className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted cursor-pointer transition-colors"
+                      title="Copy error ID"
+                    >
+                      {copiedId === entry.id ? (
+                        <Check className="h-3 w-3 text-green-500" />
+                      ) : (
+                        <Copy className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </button>
+                    {entry.details && (
+                      <span className="text-muted-foreground">
+                        {expandedId === entry.id ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      </span>
+                    )}
+                  </div>
                 </button>
                 {expandedId === entry.id && entry.details && (
                   <div className="px-3 pb-2.5">

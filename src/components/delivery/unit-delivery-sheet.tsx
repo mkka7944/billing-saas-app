@@ -184,7 +184,7 @@ export default function UnitDeliverySheet({
     if (!file || !file.type.startsWith('image/') || !assignmentItemId || !unit?.psid) return
 
     if (queueCount >= 50) {
-      toast(`Queue full (${queueCount}/50) — sync before delivering more`, 'warning', TOAST_DURATION)
+      toast(`Queue full (${queueCount}/50)`, 'warning', TOAST_DURATION)
       return
     }
 
@@ -250,16 +250,9 @@ export default function UnitDeliverySheet({
           const sizeKB = Math.round(compressed.size / 1024)
           const sizeLabel = sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`
 
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onloadend = () => resolve(reader.result as string)
-            reader.onerror = reject
-            reader.readAsDataURL(compressed)
-          })
-
           try {
             updateToast(progressToastId, `Uploading (${sizeLabel})...`, 'info', 30000)
-            const gdriveFileId = await uploadToGAS(dataUrl, unit.survey_id, userEmail)
+            const gdriveFileId = await uploadToGAS(compressed, unit.survey_id, userEmail)
             setProcessingStep('Syncing to Drive...')
             updateToast(progressToastId, 'Photo uploaded! Finalizing...', 'info', 30000)
             await fetch('/api/deliveries/sync-photo', {
@@ -280,7 +273,7 @@ export default function UnitDeliverySheet({
             )
           } catch {
             setProcessingStep('Photo queued for sync')
-            updateToast(progressToastId, 'Auto-upload failed — photo queued for sync', 'warning', TOAST_DURATION)
+            updateToast(progressToastId, 'Queued — upload failed', 'warning', TOAST_DURATION)
             await enqueuePhoto({
               deliveryPhotoId: result.delivery_photo_id,
               assignmentItemId,
@@ -298,8 +291,8 @@ export default function UnitDeliverySheet({
           updateToast(
             progressToastId,
             manualSync
-              ? 'Photo queued — tap Sync when ready'
-              : 'Photo queued for sync',
+              ? 'Queued — tap Sync'
+              : 'Queued',
             'info',
             TOAST_DURATION,
           )
@@ -317,7 +310,7 @@ export default function UnitDeliverySheet({
         }
 
         if (queueCount + 1 >= 50) {
-          toast(`Queue nearly full — tap Sync on deliver page`, 'info', TOAST_DURATION)
+          toast(`Nearly full — tap Sync`, 'info', TOAST_DURATION)
         }
       }
     } catch (e) {

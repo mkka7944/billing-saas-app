@@ -16,15 +16,6 @@ import type { QueuedPhoto } from '@/lib/photo-queue'
 
 const MAX_RETRIES = 3
 
-async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
-}
-
 export function usePhotoQueue() {
   const queueCount = usePhotoQueueStore((s) => s.queueCount)
   const setQueueCount = usePhotoQueueStore((s) => s.setQueueCount)
@@ -46,9 +37,7 @@ export function usePhotoQueue() {
 
   const processSingle = useCallback(async (photo: QueuedPhoto): Promise<'ok' | 'retry' | 'orphan'> => {
     try {
-      const dataUrl = await blobToBase64(photo.photoBlob)
-
-      const gdriveFileId = await uploadToGAS(dataUrl, photo.surveyId, photo.email)
+      const gdriveFileId = await uploadToGAS(photo.photoBlob, photo.surveyId, photo.email)
 
       const res = await fetch('/api/deliveries/sync-photo', {
         method: 'POST',

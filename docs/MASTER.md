@@ -3548,7 +3548,7 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
 **Done:**
 
 **GPS Accuracy field:**
-- `src/hooks/use-user-location.ts` — Added `accuracy` field to return type. `sharedLocation.accuracy` returns meters. GPS retry logic with exponential backoff (1s, 3s, 10s) on watch failure.
+- `src/hooks/use-user-location.ts` — Added `accuracy` field to return type. `gpsAccuracy` returns meters. GPS retry logic with exponential backoff (1s, 3s, 10s) on watch failure.
 
 **Toast Redesign (1 file):**
 - `src/hooks/use-toast.tsx` — Redesigned from bottom-right card stack to top-right slim pill below header. Styled as `rounded-full bg-white/90 backdrop-blur-sm` with variant-colored border + icon. `animate-slide-in-right` animation. 5s duration. `max-w-[260px]` on mobile. Keyframes added to globals.css.
@@ -3610,7 +3610,7 @@ The `UnitDeliverySheet` component rendered in the DOM but was visually invisible
   - Accuracy ≤ 50m → 2 green, 1 gray
   - Accuracy > 50m → 1 green, 2 gray
   - No accuracy → all gray
-  - Conditionally rendered when `liveGpsStatus === 'ready'` and `sharedLocation.accuracy != null`
+  - Conditionally rendered when `liveGpsStatus === 'ready'` and `gpsAccuracy != null`
 
 **Key decisions:**
 - Progress steps no longer block the action buttons area — staff sees button state throughout delivery.
@@ -4793,7 +4793,7 @@ Unsentry entry → retrySingle(): resolvePhotoData (blob→dataUrl) → POST /ap
 | 7 | **Offline fallback has no toast** | `unit-delivery-sheet.tsx:323-337` — sets deliveryStatus('processing') without showing any toast | **LOW** | User gets no feedback that photo was queued offline. Only visible via badge increment. |
 | 8 | **captureGPS timeout (3s) may be too fast** | `use-deliver-unit.ts:6-25` — timeout 3000ms for getCurrentPosition | **LOW** | On slow networks or GPS-poor devices, captureGPS may return null, causing unnecessary 'processing' status. However, gpsOverride from live tracking bypasses this. |
 | 9 | **lfsvc disabled on home PC** | OS-level — Windows Geolocation Service was set to Disabled | **FIXED** | `sc.exe config lfsvc start=auto` + `sc.exe start lfsvc` resolved it. Documented here for reference. |
-| 10 | **Stale MASTER.md: GPS dots use sharedLocation.accuracy** | MASTER.md Part 12 (line 3570) — says GPS dots use `sharedLocation.accuracy` | **LOW** | Current code uses local `gpsAccuracy` state from sheet's own watchPosition callback. Documentation is stale. |
+| 10 | **Stale MASTER.md: GPS dots use gpsAccuracy** | MASTER.md Part 12 (line 3570) — says GPS dots use `gpsAccuracy` | **LOW** | Current code uses local `gpsAccuracy` state from sheet's own watchPosition callback. Documentation is stale. |
 
 ### 26.8 Efficiency Assessment
 
@@ -4821,7 +4821,7 @@ Unsentry entry → retrySingle(): resolvePhotoData (blob→dataUrl) → POST /ap
 | **P1** | #5 | `deliver/page.tsx`, `floating-actions.tsx` | Move unsent icon from deliver filter bar → add as 4th button in FloatingActions. Wire UnsentModal. | 20 min |
 | **P2** | #7 | `unit-delivery-sheet.tsx:332` | Add `updateToast(progressTid, 'Saved for later — will sync when online', 'info')` in the offline fallback path. | 5 min |
 | **P3** | #6 | Both queue files | Deferred: Consider merging both queues into one. Not urgent — confusing UX but functional. | Deferred |
-| **P3** | #10 | MASTER.md:3570 | Update "GPS dots use `sharedLocation.accuracy`" → "GPS dots use local `gpsAccuracy` state". | 2 min |
+| **P3** | #10 | MASTER.md:3570 | Update "GPS dots use `gpsAccuracy`" → "GPS dots use local `gpsAccuracy` state". | 2 min |
 
 ### 26.10 Data Flow Diagrams
 
@@ -5001,7 +5001,7 @@ Items that need to be fixed before the next session or are deferred from this se
 | 7 | MEDIUM | `036-test-mc-data.sql` not yet applied | Needs PAT token |
 | 8 | INFO | GPS signal thresholds (10m/50m/Infinity) — verify on mobile | Test with actual mobile GPS |
 | 9 | INFO | GPS battery optimization (deferred) | `use-user-location.ts` — low accuracy default |
-| 10 | INFO | Stale GPS dots doc in MASTER.md | `sharedLocation.accuracy` → `gpsAccuracy` |
+| 10 | INFO | Stale GPS dots doc in MASTER.md | `gpsAccuracy` → `gpsAccuracy` |
 | 11 | INFO | `haversine()` in `geo.ts` has no input validation | Add bounds checking |
 | 12 | MEDIUM | `usePhotoQueue` state duplicated across 5 components | Move to Context/Zustand store |
 | 13 | MEDIUM | IndexedDB v3→v4 upgrade won't create `deliveryPhotoId` index | Create indexes unconditionally on upgrade |

@@ -8,7 +8,7 @@ import { useStaffList, useStaffAssignment } from '@/hooks/use-assignments'
 import { useStaffPerformance, useSavePerformance } from '@/hooks/use-staff-performance'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, CheckCircle2, XCircle, TrendingUp, Star, FileText } from 'lucide-react'
+import { Users, CheckCircle2, XCircle, TrendingUp, Star, FileText, CameraOff, Info } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import type { StaffMember } from '@/hooks/use-assignments'
 
@@ -241,6 +241,18 @@ function StaffPersonalStats({ userId }: { userId: string | null }) {
 
   const { data: assignment } = useStaffAssignment(userId)
   const { data: stats, isLoading } = useStaffStats(userId || undefined, fromDate, toDate)
+  const [failedUploads, setFailedUploads] = useState<{ id: string; psid: string; captured_at: string; gps_lat: number | null; gps_lng: number | null }[]>([])
+  const [failedExpanded, setFailedExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!userId) return
+    fetch('/api/deliveries/failed-uploads')
+      .then(r => r.json())
+      .then(json => {
+        if (json.photos) setFailedUploads(json.photos)
+      })
+      .catch(() => {})
+  }, [userId])
 
   const todayItems = assignment?.items || []
   const todayDelivered = todayItems.filter((i) => i.status === 'delivered').length
@@ -343,6 +355,42 @@ function StaffPersonalStats({ userId }: { userId: string | null }) {
             )}
           </CardContent>
         </Card>
+
+        {/* Failed Uploads */}
+        {failedUploads.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-amber-600 flex items-center gap-1.5">
+                <CameraOff className="h-3.5 w-3.5" />
+                Failed Uploads ({failedUploads.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                These deliveries were marked but the photo never reached Google Drive.
+                Show this list to your supervisor to verify.
+              </p>
+              <div className="space-y-1">
+                {failedUploads.slice(0, failedExpanded ? undefined : 5).map(fu => (
+                  <div key={fu.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded-lg bg-muted/50">
+                    <span className="font-mono font-medium">{fu.psid}</span>
+                    <span className="text-muted-foreground">
+                      {new Date(fu.captured_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {failedUploads.length > 5 && (
+                <button
+                  onClick={() => setFailedExpanded(!failedExpanded)}
+                  className="text-[11px] font-medium text-blue-500 hover:text-blue-600 cursor-pointer"
+                >
+                  {failedExpanded ? 'Show less' : `Show all ${failedUploads.length}`}
+                </button>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppShell>
   )

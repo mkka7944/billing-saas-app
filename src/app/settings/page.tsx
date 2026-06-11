@@ -14,13 +14,14 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup } from '@/components/ui/select'
-import { Building2, ChevronDown, ChevronRight, Sun, Moon, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save, Send } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight, Sun, Moon, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save, Send, CameraOff, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { useMapZoom } from '@/hooks/use-map-zoom'
 import { UnsentImagesSection } from '@/components/settings/unsent-images-section'
 import { ErrorLogSection } from '@/components/settings/error-log-section'
+import { FailedUploadsTab } from '@/components/settings/failed-uploads-tab'
 import { DeliveryTable } from '@/components/settings/delivery-table'
 
 const THEMES = [
@@ -34,6 +35,7 @@ const tabs = [
   { id: 'unsent', label: 'Photo Queue' },
   { id: 'errors', label: 'Error Log' },
   { id: 'delivery', label: 'Delivery', adminOnly: true },
+  { id: 'failed-uploads', label: 'Failed Uploads', adminOnly: true },
   { id: 'users', label: 'Users', adminOnly: true },
 ] as const
 
@@ -539,7 +541,7 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ErrorLogSection />
+              <ErrorLogSection isAdmin={isAdmin} />
             </CardContent>
           </Card>
         )}
@@ -684,6 +686,9 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        {/* Failed Uploads tab (admin-only) */}
+        {activeTab === 'failed-uploads' && <FailedUploadsTab />}
 
         {/* Users tab */}
         {activeTab === 'users' && (
