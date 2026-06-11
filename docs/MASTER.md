@@ -2120,6 +2120,7 @@ scripts/data/ (gitignored — 1.10 GB total, 110 files):
 | 2026-06-08 | 30.0 | **Delivery hardening + started_at KPI column.** A1-A4: unsent queue destination, sync-photo promotion, mark route photo order, processing guard. B1-B2: unsent icon moved to FloatingActions, desktop visibility. C1-C4: offline toast, auth check, orphan cleanup (useAssignmentRealtime hook). D1: 037-notifications migration applied. `started_at` column added to `assignment_items` (migration 040), written by mark + mark-processing routes, displayed as Duration column in admin delivery table. See Section 26 for KPI query. |
 | 2026-06-10 | 31.0 | **Photo upload reliability investigation + simplified direct-upload plan.** Studied working routing station reference (12_drive_sync.js — direct browser→GAS upload). Identified root cause: SSR proxy (promote route) causes 85% failure rate via Vercel 10s timeout + GAS rate limits. Agreed to rewrite: remove SSR proxy, upload directly from browser to GAS (matching proven old app approach). Session log added. Section 27 created with detailed implementation plan. Section 25 updated: item #1 = CRITICAL photo upload rewrite. |
 | 2026-06-11 | 32.0 | **Direct browser-to-GAS photo upload implemented.** Created `src/lib/drive-upload.ts` (client-side GAS upload matching Routing Station pattern). Rewrote `usePhotoQueue` with direct upload (no promote), added progress tracking (index/total, KB/s, file size). Rewrote `unit-delivery-sheet.tsx` — mark-first flow, toast chain with `updateToast`, `processingStep` overlay, 2s button cooldown. Simplified `sync-photo/route.ts` to DB-update only. Added progress display to UnsentModal, deliver page Sync banner, and UnsentImagesSection (progress bar + KB/s). Deleted `mark-processing`, `promote`, `use-unsynced-photos`. Fixed HDS 500 error — added `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` to Vercel env and `.env.local`. Upload tags with `survey_id` (not psid) for HDS gallery compatibility. Build verified: zero errors. Full rewrite of Section 27 with actual architecture. |
+| 2026-06-11 | 33.0 | **Failed upload tracking system + sidebar cleanup + queue resilience fixes.** Migration 040 added `verified_by`/`verified_at` to `delivery_photos`. Created `GET /api/deliveries/failed-uploads` (staff sees own, admin sees all), `POST /api/deliveries/verify-photo` (admin stamps verified). Staff stats page shows "Failed Uploads" card with PSID list. Admin Settings has "Failed Uploads" tab with per-row Verify button. Dashboard view made admin-only in sidebar (staff no longer sees billing charts). Fixed: failed-uploads query was silently returning 0 due to 3-level `!inner` join — rewrote to use separate queries. Fixed: `mark/route.ts` now always writes GPS to `assignment_items` (not conditional). Fixed: deliver page shows red banner when DB has unsynced photos lost from IndexedDB queue. Toast messages shortened for mobile. Error log source pills stabilized (accumulate across loads). Error log shows `#ID` per row with copy button; admin can filter by user_id. `uploadToGAS()` accepts Blob directly (internal base64 conversion). MASTER.md doc fix: `sharedLocation.accuracy` → `gpsAccuracy`. |
 
 ---
 
@@ -5184,6 +5185,57 @@ Implemented the direct browser-to-GAS photo upload system that was planned on 20
 
 ### Discovery: HDS 500 Error Root Cause
 The HDS Drive Images tab returned `{"error":"DRIVE_WEBHOOK_URL not configured"}` because `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` was never set on Vercel. Found the GAS webhook URL in old Routing Station source `12_drive_sync.js:7`. Added to `.env.local` and Vercel Dashboard. Old Routing Station images now visible in HDS.
+
+---
+
+## Session Log — 2026-06-11 (Bug Fixes: Failed Uploads, Sidebar, Queue Resilience)
+
+### Summary
+Five combined change sets: (1) Failed upload tracking with admin verification, (2) Sidebar cleanup — Dashboard admin-only, (3) Queue resilience — DB fallback when IndexedDB lost, (4) Error log polish, (5) Blob→base64 optimization. Key fixes included rewriting the failed-uploads query (was silently dropping rows due to deeply nested `!inner` join), storing GPS unconditionally on assignment_items, and adding a red banner on the deliver page when DB has unsynced photos not in IndexedDB.
+
+### Changes Made
+1. **Migration 040** (`scripts/sql/040-delivery-photo-verification.sql`) — added `verified_by uuid REFERENCES auth.users(id)` and `verified_at timestamptz` to `delivery_photos`.
+
+2. **New: `GET /api/deliveries/failed-uploads`** — returns delivery_photos where `synced_to_drive=false AND verified_by IS NULL`. Staff sees only own items, admin sees all with staff filter. Uses two separate queries instead of a 3-level `!inner` join to avoid silent row dropping when `staff` table is missing entries.
+
+3. **New: `POST /api/deliveries/verify-photo`** — admin-only endpoint, stamps `verified_by` and `verified_at` on a delivery_photo row via service_role client.
+
+4. **New: `src/components/settings/failed-uploads-tab.tsx`** — admin table showing all unverified failed uploads with staff name, PSID, date, GPS coords, and "Verify" button per row. Staff filter pills.
+
+5. **Modified: `src/app/stats/stats-client.tsx`** — `StaffPersonalStats` now fetches and shows a "Failed Uploads" card with PSID + date list (read-only, expandable).
+
+6. **Modified: `BillingSidebar.tsx`** — moved `{ id: 'stats', title: 'Dashboard', isView: true }` into admin-only conditional (alongside Data Insight). Staff no longer sees billing dashboard. Staff sidebar: Map, List, Deliver, Settings.
+
+7. **Fixed: `src/app/api/deliveries/failed-uploads/route.ts`** — rewrote to avoid 3-level `!inner` join. Two separate queries: first gets `delivery_photos` + `assignment_items` (1-level join), second fetches staff names. Photos show up even when `staff` table row is missing.
+
+8. **Fixed: `src/app/api/deliveries/mark/route.ts`** — changed GPS write from conditional (`if (gps_lat != null)`) to unconditional (`update.gps_lat = gps_lat ?? null`). GPS coords always stored on `assignment_items`.
+
+9. **Modified: `src/app/deliver/page.tsx`** — added DB unsynced fallback check on mount. When IndexedDB queue is empty but DB has unsynced photos (e.g., after screen-off data loss), shows red banner: "X photos stuck in database — queue was cleared."
+
+10. **Shortened toast messages** in `unit-delivery-sheet.tsx`: "Queue full (50/50)", "Queued — upload failed", "Queued — tap Sync", "Nearly full — tap Sync".
+
+11. **Fixed: error log source pills** in `error-log-section.tsx` — sources now accumulate across all loaded pages instead of recomputing from 50 displayed rows. Source filter buttons stay stable.
+
+12. **Enhanced: error log** — each row shows error `#ID`, copy button per row copies "Error #ID: message" to clipboard, admin-only user_id text filter.
+
+13. **Optimized: `src/lib/drive-upload.ts`** — `uploadToGAS()` now accepts `Blob` directly instead of `dataUrl`. Base64 conversion happens internally.
+
+14. **Doc fix: MASTER.md** — `sharedLocation.accuracy` → `gpsAccuracy` (3 references).
+
+### Key Design Decisions
+- **Failed uploads are permanent records.** Staff cannot delete or reset them. Admin verifies by stamping `verified_by`. Clean audit trail without deleting historical data.
+- **Deeply nested `!inner` joins are fragile.** PostgREST silently drops parent rows when any FK in the join chain is missing. Always prefer multiple shallow queries over deep nested joins for reliability.
+- **GPS always stored unconditionally.** Even if momentarily null, the field is explicitly set to `null` rather than left unset. Ensures `assignment_items` always has explicit GPS values.
+- **IndexedDB cannot be trusted for reliability.** Mobile Chrome may clear IndexedDB when under memory pressure. Always provide a DB-based fallback for queue state.
+
+### Build Verification
+- `npm run build` — compiled successfully, TypeScript zero errors, all 47 pages generated.
+
+### Next Steps
+1. Apply migration 040 to production DB.
+2. Deploy to Vercel.
+3. Staff verifies: `/stats` shows Failed Uploads card, sidebar no longer has Dashboard.
+4. Admin verifies: Settings → Failed Uploads tab shows stuck photos, can tap Verify.
 
 ---
 

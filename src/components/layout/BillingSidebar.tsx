@@ -50,9 +50,11 @@ export function BillingSidebar() {
       items: [
         { id: 'map', title: 'Map', icon: MapIcon, isView: true },
         { id: 'list', title: 'List', icon: List, isView: true },
-        { id: 'stats', title: 'Dashboard', icon: BarChart3, isView: true },
         ...(roleName === 'admin' || roleName === 'super_admin'
-          ? [{ id: 'data-insight', title: 'Data Insight', icon: FileSpreadsheet, isView: true }]
+          ? [
+              { id: 'stats', title: 'Dashboard', icon: BarChart3, isView: true },
+              { id: 'data-insight', title: 'Data Insight', icon: FileSpreadsheet, isView: true },
+            ]
           : []),
       ],
     },

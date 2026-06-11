@@ -151,8 +151,8 @@ export async function POST(request: Request) {
       delivered_at: deliveredAt,
     }
     if (!ownership.started_at) update.started_at = startedAt
-    if (gps_lat != null) update.gps_lat = gps_lat
-    if (gps_lng != null) update.gps_lng = gps_lng
+    update.gps_lat = gps_lat ?? null
+    update.gps_lng = gps_lng ?? null
 
     const { error: updateErr } = await sup
       .from('assignment_items')

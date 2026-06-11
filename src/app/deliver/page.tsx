@@ -44,6 +44,7 @@ export default function DeliverPage() {
   const [filterTab, setFilterTab] = useState<'pending' | 'issues' | 'delivered' | 'all'>('pending')
   const [selectedUc, setSelectedUc] = useState<string>('all')
   const [ucDropdownOpen, setUcDropdownOpen] = useState(false)
+  const [dbUnsyncedCount, setDbUnsyncedCount] = useState(0)
 
   useAssignmentRealtime(user?.id || null)
   const { queueCount, isProcessing, processQueue, processingIndex, totalToProcess, currentFileSize, uploadSpeed } = usePhotoQueue()
@@ -52,6 +53,17 @@ export default function DeliverPage() {
   const isOnline = useOnlineStatus()
 
   useEffect(() => { setPageIdentity('Deliver') }, [setPageIdentity])
+
+  // Fallback: check DB for unsynced photos when IndexedDB queue is empty
+  useEffect(() => {
+    if (!user?.id) return
+    fetch('/api/deliveries/unsynced')
+      .then(r => r.json())
+      .then(json => {
+        if (json.count) setDbUnsyncedCount(json.count)
+      })
+      .catch(() => {})
+  }, [user?.id])
 
   useEffect(() => {
     if (data?.items) {
@@ -210,6 +222,18 @@ export default function DeliverPage() {
                   )}
                   {!isProcessing && 'Sync'}
                 </button>
+              </div>
+            )}
+
+            {/* DB unsynced fallback — when IndexedDB queue is empty but DB has photos */}
+            {!isProcessing && dbUnsyncedCount > 0 && queueCount === 0 && (
+              <div className="px-4 py-1.5 border-b shrink-0 bg-red-50 dark:bg-red-950/10">
+                <p className="text-[10px] font-medium text-red-600 dark:text-red-400">
+                  {dbUnsyncedCount} photo{dbUnsyncedCount !== 1 ? 's' : ''} stuck in database — queue was cleared
+                </p>
+                <p className="text-[9px] text-red-500/70 mt-0.5">
+                  These photos were lost from the local queue. Go to Settings → Failed Uploads or visit admin.
+                </p>
               </div>
             )}
 
