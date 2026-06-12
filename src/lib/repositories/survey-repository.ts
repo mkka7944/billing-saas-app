@@ -4,6 +4,8 @@ import { chunkArray } from '@/lib/utils'
 
 const COLS = 'survey_id, consumer_name, address, lat, lng, city_district, tehsil, uc_name, surveyor_name, survey_date, survey_time, monthly_fee, billing_category, status, psid, arrears, route_name, route_seq, current_bill_month, image_urls'
 
+const BATCH_SIZE = 1000
+
 export interface SurveyQuery {
   districts: string[]
   tehsils: string[]
@@ -17,6 +19,32 @@ export interface SurveyQuery {
   sort: { field: string; ascending: boolean }
 }
 
+function applyFilters(qb: any, q: SurveyQuery) {
+  if (q.districts.length) qb = qb.in('city_district', q.districts)
+  if (q.tehsils.length) qb = qb.in('tehsil', q.tehsils)
+  if (q.ucs.length) qb = qb.in('uc_name', q.ucs)
+  if (q.surveyor) qb = qb.eq('surveyor_name', q.surveyor)
+  if (q.search) qb = qb.or(`consumer_name.ilike.%${q.search}%,survey_id.ilike.%${q.search}%`)
+  return qb
+}
+
+async function fetchAll(sup: SupabaseClient, q: SurveyQuery): Promise<any[]> {
+  const all: any[] = []
+  let offset = 0
+  while (true) {
+    let qb = applyActiveFilter(sup.from('survey_units').select(COLS))
+    qb = applyFilters(qb, q)
+    const { data } = await qb
+      .order(q.sort.field, { ascending: q.sort.ascending })
+      .range(offset, offset + BATCH_SIZE - 1)
+    if (!data?.length) break
+    all.push(...data)
+    if (data.length < BATCH_SIZE) break
+    offset += BATCH_SIZE
+  }
+  return all
+}
+
 export async function getSurveyById(sup: SupabaseClient, id: string) {
   const { data, error } = await sup.from('survey_units').select(COLS).eq('survey_id', id).single()
   if (error) return { error: error.message }
@@ -26,14 +54,15 @@ export async function getSurveyById(sup: SupabaseClient, id: string) {
 export async function getSurveys(sup: SupabaseClient, q: SurveyQuery) {
   const from = (q.page - 1) * q.pageSize
 
-  let qb = applyActiveFilter(sup.from('survey_units').select(COLS, { count: 'exact' }))
-  if (q.districts.length) qb = qb.in('city_district', q.districts)
-  if (q.tehsils.length) qb = qb.in('tehsil', q.tehsils)
-  if (q.ucs.length) qb = qb.in('uc_name', q.ucs)
-  if (q.surveyor) qb = qb.eq('surveyor_name', q.surveyor)
-  if (q.search) qb = qb.or(`consumer_name.ilike.%${q.search}%,survey_id.ilike.%${q.search}%`)
-
   if (q.paymentStatus === 'all') {
+    if (q.pageSize > BATCH_SIZE) {
+      const data = await fetchAll(sup, q)
+      return { data, total: data.length }
+    }
+
+    let qb = applyActiveFilter(sup.from('survey_units').select(COLS, { count: 'exact' }))
+    qb = applyFilters(qb, q)
+
     const { data, count, error } = await qb
       .order(q.sort.field, { ascending: q.sort.ascending })
       .range(from, from + q.pageSize - 1)
@@ -47,11 +76,7 @@ export async function getSurveys(sup: SupabaseClient, q: SurveyQuery) {
   let psidOffset = 0
   while (true) {
     let pq = applyActiveFilter(sup.from('survey_units').select('psid'))
-    if (q.districts.length) pq = pq.in('city_district', q.districts)
-    if (q.tehsils.length) pq = pq.in('tehsil', q.tehsils)
-    if (q.ucs.length) pq = pq.in('uc_name', q.ucs)
-    if (q.surveyor) pq = pq.eq('surveyor_name', q.surveyor)
-    if (q.search) pq = pq.or(`consumer_name.ilike.%${q.search}%,survey_id.ilike.%${q.search}%`)
+    pq = applyFilters(pq, q)
     pq = pq.not('psid', 'is', null)
 
     const { data: rows } = await pq.range(psidOffset, psidOffset + PSID_PAGE - 1)

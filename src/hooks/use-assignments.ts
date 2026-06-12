@@ -84,7 +84,7 @@ export function useStaffList() {
 export function useCreateAssignment() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[] }) => {
+    mutationFn: async (body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[]; bill_month?: string }) => {
       const res = await fetch('/api/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -98,6 +98,7 @@ export function useCreateAssignment() {
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['assignment-totals'] })
+      qc.invalidateQueries({ queryKey: ['assignment-list'] })
       qc.invalidateQueries({ queryKey: ['uc-stats'] })
       qc.invalidateQueries({ queryKey: ['unassigned-bills', vars.uc_name] })
       qc.invalidateQueries({ queryKey: ['staff-assignment'] })
@@ -128,6 +129,7 @@ export interface AssignmentWithStats {
   issued_at: string
   uc_name: string
   total_items: number
+  bill_month: string
   pending: number
   delivered: number
   missed: number
@@ -135,13 +137,14 @@ export interface AssignmentWithStats {
   created_at: string
 }
 
-export function useAssignmentList(district?: string | null, tehsil?: string | null) {
+export function useAssignmentList(district?: string | null, tehsil?: string | null, month?: string) {
   return useQuery<AssignmentWithStats[]>({
-    queryKey: ['assignment-list', district, tehsil],
+    queryKey: ['assignment-list', district, tehsil, month],
     queryFn: async () => {
       const params = new URLSearchParams({ list: 'true' })
       if (district) params.set('district', district)
       if (tehsil) params.set('tehsil', tehsil)
+      if (month) params.set('month', month)
       const res = await fetch(`/api/assignments?${params}`)
       if (!res.ok) throw new Error('Failed to fetch assignments')
       const json = await res.json()
@@ -220,6 +223,7 @@ export function useRevokeAssignment() {
       qc.invalidateQueries({ queryKey: ['assignment-totals'] })
       qc.invalidateQueries({ queryKey: ['uc-stats'] })
       qc.invalidateQueries({ queryKey: ['unassigned-bills'] })
+      qc.invalidateQueries({ queryKey: ['staff-assignment'] })
     },
   })
 }

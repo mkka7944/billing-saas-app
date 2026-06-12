@@ -4,6 +4,38 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 const LOG_COLS = 'id, level, user_id, message, details, source, created_at'
 
+export async function DELETE(request: Request) {
+  try {
+    const sup = await createClient()
+    const { data: { user } } = await sup.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await sup
+      .from('profiles')
+      .select('roles!inner(name)')
+      .eq('id', user.id)
+      .single()
+
+    const role = (profile?.roles as { name: string } | undefined)?.name
+    if (role !== 'admin' && role !== 'super_admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const admin = createAdminClient()
+    const { error: delErr } = await (admin.from('app_error_log') as any).delete().gte('id', 0)
+
+    if (delErr) {
+      return NextResponse.json({ error: delErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 })
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
@@ -78,7 +110,13 @@ export async function GET(request: Request) {
     }
 
     if (level) query = query.eq('level', level)
-    if (source) query = query.eq('source', source)
+    if (source) {
+      if (source.startsWith('!')) {
+        query = query.not('source', 'in', `(${source.slice(1)})`)
+      } else {
+        query = query.in('source', source.split(','))
+      }
+    }
 
     const { data, count, error } = await query
       .order('created_at', { ascending: false })

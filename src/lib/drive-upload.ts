@@ -33,15 +33,20 @@ export async function uploadToGAS(
       surveyId,
       survey_id: surveyId,
       email,
+      referer: window.location.origin,
       timestamp: new Date().toISOString(),
     }),
   })
 
-  if (!res.ok) throw new Error(`GAS HTTP ${res.status}`)
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`GAS HTTP ${res.status}${body ? `: ${body}` : ''}`)
+  }
 
   const result: Record<string, unknown> = await res.json()
   if (result.status !== 'success') {
-    throw new Error(`GAS returned status="${result.status}"`)
+    const msg = (result.message as string) || `status="${result.status}"`
+    throw new Error(`GAS: ${msg}`)
   }
 
   const fileId =

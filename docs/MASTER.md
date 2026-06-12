@@ -6201,3 +6201,92 @@ the old app did not used markercluster, every selected filter marker list was vi
 **User:**
 add this audit and detail in a new section in master.md
 
+## Session Log — 2026-06-12 (Phase C + D: Delivery Quality, Performance, Cleanup)
+
+### Completed
+- **C.6 — Delivery Quality RPC + Settings tab**: Migration `042-delivery-quality-rpc.sql` created `get_delivery_quality(p_month)` RPC returning per-staff aggregates (total_assigned, total_delivered, photo_fail_count, gps_oor_count, fail_rate, quality_score). API `GET /api/deliveries/quality?month=JUN2026` calls RPC admin-only. `DeliveryQualityTab` component with month selector, sortable table, quality score badges. Registered in Settings → Administration.
+- **GAS referer check** (Item 5): `ALLOWED_ORIGIN` constant added to GAS script. `referer: window.location.origin` added to `drive-upload.ts` POST body. Protects webhook from unauthorized callers.
+- **Error message propagation**: `drive-upload.ts` now includes GAS response body in HTTP errors and `result.message` in business-logic errors. Error log shows meaningful messages like "GAS: Unauthorized origin" instead of "GAS returned status='forbidden'".
+- **D.1 — Map performance**: `preferCanvas: true` added to both MapContainers (map-view.tsx, staff-map.tsx). `updateWhenIdle: true` added to both TileLayers. Canvas renderer replaces SVG — fixes marker lag on low-end devices. GPS watcher deduplication deferred to D.3.
+- **D.2 — Supersede old photos**: Migration `043-add-superseded-at.sql` added `superseded_at timestamptz` column to `delivery_photos` with partial index. Mark route now sets `superseded_at` on previous active photos when creating a new one for the same `assignment_item_id`.
+- **D.3 — Queue state to Zustand**: `photo-queue-store.ts` expanded with `isProcessing`, `processingIndex`, `totalToProcess`, `currentFileSize`, `uploadSpeed`, `lastError`. `usePhotoQueue` hook now reads/writes store instead of local `useState`. All 5 consumers share the same state.
+- **D.4 — Dead code cleanup**: Removed unused `extractFileId()` from `drive.ts`. Removed unused POST handler from `delivery/photos/route.ts`.
+
+### Files Changed
+- `scripts/sql/042-delivery-quality-rpc.sql` — NEW
+- `scripts/sql/043-add-superseded-at.sql` — NEW
+- `src/app/api/deliveries/quality/route.ts` — NEW
+- `src/components/settings/delivery-quality-tab.tsx` — NEW
+- `src/app/settings/page.tsx` — import + tab def + render
+- `src/lib/drive-upload.ts` — referer, error msg fix
+- `src/components/map-view.tsx` — preferCanvas, updateWhenIdle
+- `src/components/delivery/staff-map.tsx` — preferCanvas, updateWhenIdle
+- `src/app/api/deliveries/mark/route.ts` — supersede old photos
+- `src/stores/photo-queue-store.ts` — expanded state
+- `src/hooks/use-photo-queue.ts` — store reads/writes
+- `src/lib/drive.ts` — removed extractFileId
+- `src/app/api/delivery/photos/route.ts` — removed POST handler
+
+### Migrations Applied
+- `042-delivery-quality-rpc.sql` — creates `get_delivery_quality(p_month)` RPC
+- `043-add-superseded-at.sql` — adds `superseded_at` column + index
+
+### Testing Verification Needed
+1. Settings → Administration → "Delivery Quality" tab — month selector works, data loads, sorting works, quality score badges show
+2. `GET /api/deliveries/quality?month=MAY2026` returns staff rows with all metrics
+3. Revoke + re-deliver same assignment_item — old photo has `superseded_at` set, new photo created
+4. Map loads with Canvas renderer — markers render as `<canvas>` elements, not DOM `<img>` tags
+5. Photo queue processing — all 5 consumers show same `isProcessing` state (badge, deliver page, settings)
+6. `POST /api/delivery/photos` — returns 404 (handler removed)
+7. GAS referer check — upload from different origin returns `forbidden`
+
+## Session Log — 2026-06-12 (Phase D.5: CircleMarker + Canvas, MC ShowAll, PulsingRing CSS)
+
+### Summary
+Three changes in one session: (1) Replaced all DOM-based `<Marker>` + `L.divIcon` map markers with `<CircleMarker>` to enable true Canvas rendering for 5k-50k markers. (2) Fixed the map MC filter showing only 50 markers by adding `showAll` mode with batched PostgREST fetching. (3) Replaced rAF-based pulsing ring animation with a CSS `@keyframes` compositor-thread animation for smoothness and satellite visibility.
+
+### Completed
+
+#### D.5a — CircleMarker Swap (DOM → Canvas)
+- **`src/lib/markers.ts`** — DELETED. Removed `createMarkerIcon()` (L.divIcon with inline HTML), pulse keyframe injection, and all marker helper code. No consumers remain.
+- **`src/components/delivery/staff-map-markers.tsx`** — Replaced `<Marker icon={divIcon}>` with `<CircleMarker pathOptions={...}>`. Removed `L` and `createMarkerIcon` imports, `markerIcons` useMemo, and `L.DivIcon` typing. Markers now rendered as Leaflet vector layers: radius 6 (normal) / 7 (selected), `color` = border color, `fillColor` = status color, `weight: 2`. Selected marker gets `color: '#1e40af'` (dark blue border) + `<PulsingRing>`.
+- **`src/components/survey-markers.tsx`** — Same replacement. Radius 5 (normal) / 6 (selected). Removed `grayIcon` dead constant. UC color hash function unchanged. Selected marker gets PulsingRing.
+- **`src/components/delivery/staff-map.tsx`** — `UserMarker` changed from `<Marker icon={L.divIcon}>` to `<CircleMarker>`. Removed `USER_DOT_ICON` constant. Blue fill, white 3px border, radius 7.
+- **`src/components/ui/pulsing-ring.tsx`** — NEW. CSS-animated pulsing ring. Uses `useMap()` + `latLngToContainerPoint()` to track marker position on pan/zoom via direct DOM manipulation (no React re-render during animation). Injects `@keyframes marker-pulse-overlay` once. White ring (`rgba(255,255,255,0.9)`, 2.5px border) with `boxShadow: 0 0 8px rgba(0,0,0,0.5)` for visibility on satellite tiles. Animation: 1.5s ease-in-out infinite, scale 0.6→2.5, opacity 0.9→0. Runs on compositor thread — auto-pauses when tab hidden.
+
+#### D.5b — MC Filter ShowAll (Fix 50-row map limit)
+- **Root cause**: `useSurveyData` defaulted to `pageSize=50`. `map-view.tsx` passed no override, so the map always showed only the first 50 markers regardless of MC filter.
+- **`src/lib/queries/constants.ts`** — Added `MAP_PAGE_SIZE = 50000`.
+- **`src/lib/validation/schemas.ts`** — Raised `surveyQuerySchema.pageSize` max from 100 to 50000.
+- **`src/hooks/use-survey-data.ts`** — Added `showAll` boolean param (default `false`). When true, forces `page=1, pageSize=MAP_PAGE_SIZE`. Added `placeholderData: keepPreviousData` so old markers stay visible while new data loads (no blank-map flash).
+- **`src/components/map-view.tsx`** — `showAll = filters.ucs.length > 0`. Only applies `showAll` mode when at least one MC/UC is selected. Without MC filter, defaults to `pageSize=50` (prevents 150k+ city-wide fetch on clear).
+- **`src/lib/repositories/survey-repository.ts`** — Extracted `applyFilters()` to remove filter-application duplication. Added `fetchAll()` function that iterates through PostgREST in batches of 1000 rows (bypasses Supabase 1000-row-per-request limit). Used when `pageSize > 1000` in the `paymentStatus === 'all'` path. Existing callers using small pageSize are unaffected.
+
+#### Unchanged / Confirmed Unaffected
+- Staff delivery (`/deliver`) — uses assignment hooks, never calls `useSurveyData` or the surveys API. Zero impact.
+- List view (`survey-list.tsx`) — calls `useSurveyData(filters, listPage, pageSize)` without `showAll`. Defaults to `false`, stays paginated.
+- All other consumers of `useSurveyData` — optional 4th param with default `false`.
+
+### Files Changed
+- `src/components/ui/pulsing-ring.tsx` — NEW (CSS div pulse ring)
+- `src/components/delivery/staff-map-markers.tsx` — REWRITTEN (Marker→CircleMarker)
+- `src/components/survey-markers.tsx` — REWRITTEN (Marker→CircleMarker, dead code removed)
+- `src/components/delivery/staff-map.tsx` — EDITED (UserMarker Marker→CircleMarker)
+- `src/lib/markers.ts` — DELETED
+- `src/lib/queries/constants.ts` — EDITED (added MAP_PAGE_SIZE)
+- `src/lib/validation/schemas.ts` — EDITED (surveyQuerySchema pageSize max 100→50000)
+- `src/hooks/use-survey-data.ts` — EDITED (showAll param, keepPreviousData)
+- `src/components/map-view.tsx` — EDITED (showAll guard)
+- `src/lib/repositories/survey-repository.ts` — REWRITTEN (applyFilters, batched fetchAll)
+
+### Testing Verification
+1. DevTools Elements → Ctrl+F `canvas` → single `<canvas>` element in map container, zero `<div class="leaflet-marker-icon">`
+2. Select MC in filter bar → Apply → network tab shows `GET /api/surveys?uc=MC_NAME&pageSize=50000` → all MC markers visible on map
+3. Clear MC filter → Apply → `pageSize=50` (default paginated view), no 150k city-wide fetch
+4. Switch between two MCs → old markers stay visible (keepPreviousData), no blank flash
+5. Click marker → white expanding ring visible on both streets + satellite tiles
+6. Pan map → ring follows marker position
+7. `/deliver` → staff markers render as CircleMarker, click selects, ring appears
+8. `/map` list tab → pagination still works (not affected by showAll)
+9. `npx tsc --noEmit` — zero errors
+

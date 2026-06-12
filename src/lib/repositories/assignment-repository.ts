@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { applyActiveFilter } from '@/lib/queries/survey-units'
 import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
+import { currentMonth } from '@/lib/constants'
 
 async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
   const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -24,7 +25,7 @@ async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
   return all
 }
 
-const ASSIGNMENT_COLS = 'id, staff_id, issued_at, uc_name, total_items, created_by, created_at'
+const ASSIGNMENT_COLS = 'id, staff_id, issued_at, uc_name, total_items, bill_month, created_by, created_at'
 const ITEM_COLS = 'id, assignment_id, psid, survey_id, route_seq, status, delivered_at, gps_lat, gps_lng, notes'
 const PSID_COLS = 'survey_id, consumer_name, address, lat, lng, psid, monthly_fee, arrears, route_seq, route_name, surveyor_name, survey_date, survey_time'
 
@@ -58,6 +59,7 @@ export async function getUcTotals(sup: SupabaseClient, q: AssignmentQuery) {
   const { data: allAssignments } = await sup
     .from('daily_assignments')
     .select('id, uc_name')
+    .eq('bill_month', q.month)
 
   if (allAssignments?.length) {
     type TA = { id: string; uc_name: string }
@@ -87,6 +89,8 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
     .from('daily_assignments')
     .select(ASSIGNMENT_COLS)
 
+  if (q.month) query = query.eq('bill_month', q.month)
+
   // Filter by district/tehsil via hierarchy_summary UC names
   if (q.district) {
     let hsQuery = sup
@@ -106,7 +110,7 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
 
   if (!assignments?.length) return { data: [] }
 
-  type DA = { id: string; staff_id: string; issued_at: string; uc_name: string; total_items: number; created_by: string; created_at: string }
+  type DA = { id: string; staff_id: string; issued_at: string; uc_name: string; total_items: number; bill_month: string; created_by: string; created_at: string }
   const daRows = assignments as DA[]
   const staffIds = [...new Set(daRows.map((a) => a.staff_id))]
   type SR = { id: string; full_name: string | null }
@@ -140,6 +144,7 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
       issued_at: a.issued_at,
       uc_name: a.uc_name,
       total_items: a.total_items,
+      bill_month: a.bill_month,
       ...counts,
       completion_pct: a.total_items > 0 ? Math.round((completed / a.total_items) * 100) : 0,
       created_at: a.created_at,
@@ -193,6 +198,7 @@ export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery
     .from('daily_assignments')
     .select(ASSIGNMENT_COLS)
     .eq('staff_id', q.staffId)
+    .eq('bill_month', q.month)
     .order('created_at', { ascending: false })
 
   if (ae) return { error: ae.message }
@@ -226,10 +232,11 @@ export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery
 
 export async function createAssignment(
   sup: SupabaseClient,
-  body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[] }
+  body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[]; bill_month?: string }
 ) {
   const { staff_id, uc_name, psids } = body
   const issued_at = body.issued_at || new Date().toISOString().slice(0, 10)
+  const bill_month = body.bill_month || currentMonth()
 
   if (!staff_id || !uc_name || !psids?.length) {
     return { error: 'staff_id, uc_name, and psids[] required' }
@@ -272,7 +279,7 @@ export async function createAssignment(
 
   const { data: assignment, error: ae } = await sup
     .from('daily_assignments')
-    .insert({ staff_id, issued_at, uc_name, total_items: psids.length })
+    .insert({ staff_id, issued_at, uc_name, total_items: psids.length, bill_month })
     .select(ASSIGNMENT_COLS)
     .single()
 

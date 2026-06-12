@@ -57,6 +57,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated }: Props) {
         staff_id: selectedStaff,
         uc_name: uc,
         psids,
+        bill_month: month,
       })
       setSelectedStaff('')
       setRangeInput('')

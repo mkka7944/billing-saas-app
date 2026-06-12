@@ -22,11 +22,16 @@ function openDB(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       const db = request.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, {
+        db.createObjectStore(STORE_NAME, {
           keyPath: 'id',
           autoIncrement: true,
         })
+      }
+      const store = request.transaction!.objectStore(STORE_NAME)
+      if (!store.indexNames.contains('deliveryPhotoId')) {
         store.createIndex('deliveryPhotoId', 'deliveryPhotoId', { unique: false })
+      }
+      if (!store.indexNames.contains('assignmentItemId')) {
         store.createIndex('assignmentItemId', 'assignmentItemId', { unique: false })
       }
     }
@@ -90,10 +95,9 @@ export async function incrementRetry(id: number): Promise<void> {
     const req = store.get(id)
     req.onsuccess = () => {
       const photo = req.result
-      if (photo) {
-        photo.retryCount++
-        store.put(photo)
-      }
+      if (!photo) { resolve(); return }
+      photo.retryCount++
+      store.put(photo)
     }
     req.onerror = () => reject(req.error)
     tx.oncomplete = () => { db.close(); resolve() }

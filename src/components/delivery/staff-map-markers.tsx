@@ -1,10 +1,9 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Marker, Tooltip } from 'react-leaflet'
-import L from 'leaflet'
+import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
-import { createMarkerIcon } from '@/lib/markers'
+import PulsingRing from '@/components/ui/pulsing-ring'
 import type { AssignmentItemUnit } from '@/types'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -28,16 +27,6 @@ export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
     [items]
   )
 
-  const markerIcons = useMemo(() => {
-    const icons: Record<string, L.DivIcon> = {}
-    for (const item of markers) {
-      const color = STATUS_COLORS[item.status] || STATUS_COLORS.pending
-      icons[item.id] = createMarkerIcon(color, {})
-      icons[`${item.id}_sel`] = createMarkerIcon(color, { selected: true })
-    }
-    return icons
-  }, [markers])
-
   const handleClick = useMemo(() => {
     const fn = (psid: string, unit: AssignmentItemUnit | null, currentTarget: string | null) => () => {
       if (currentTarget === psid) {
@@ -55,23 +44,34 @@ export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
         const lat = item.unit!.lat!
         const lng = item.unit!.lng!
         const isSelected = deliverTargetId != null && item.psid === deliverTargetId
+        const color = STATUS_COLORS[item.status] || STATUS_COLORS.pending
 
         return (
-          <Marker
-            key={item.id}
-            position={[lat, lng]}
-            icon={markerIcons[isSelected ? `${item.id}_sel` : item.id]}
-            eventHandlers={{ click: handleClick(item.psid, item.unit, deliverTargetId) }}
-          >
-            <Tooltip
-              direction="top"
-              offset={[0, -8]}
-              className="survey-tooltip"
-              opacity={1}
+          <div key={item.id}>
+            {isSelected && (
+              <PulsingRing center={[lat, lng]} />
+            )}
+            <CircleMarker
+              center={[lat, lng]}
+              radius={isSelected ? 7 : 6}
+              pathOptions={{
+                color: isSelected ? '#1e40af' : 'rgba(0,0,0,0.35)',
+                fillColor: color,
+                fillOpacity: 1,
+                weight: 2,
+              }}
+              eventHandlers={{ click: handleClick(item.psid, item.unit, deliverTargetId) }}
             >
-              {item.unit?.survey_id || item.psid}
-            </Tooltip>
-          </Marker>
+              <Tooltip
+                direction="top"
+                offset={[0, -8]}
+                className="survey-tooltip"
+                opacity={1}
+              >
+                {item.unit?.survey_id || item.psid}
+              </Tooltip>
+            </CircleMarker>
+          </div>
         )
       })}
     </>

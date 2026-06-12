@@ -2,10 +2,14 @@
 
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import type { SurveyUnit, FilterState, BillInfo } from '@/types'
+import { MAP_PAGE_SIZE } from '@/lib/queries/constants'
 
-export function useSurveyData(filters: FilterState, page = 1, pageSize = 50) {
+export function useSurveyData(filters: FilterState, page = 1, pageSize = 50, showAll = false) {
+  const actualPage = showAll ? 1 : page
+  const actualPageSize = showAll ? MAP_PAGE_SIZE : pageSize
+
   return useQuery({
-    queryKey: ['surveys', filters, page, pageSize],
+    queryKey: ['surveys', filters, actualPage, actualPageSize],
     queryFn: async () => {
       const params = new URLSearchParams()
       for (const d of filters.districts) params.append('district', d)
@@ -18,8 +22,8 @@ export function useSurveyData(filters: FilterState, page = 1, pageSize = 50) {
       if (filters.paymentStatus !== 'all') params.set('paymentStatus', filters.paymentStatus)
       params.set('sortField', filters.sort.field)
       params.set('sortDirection', filters.sort.direction)
-      params.set('page', String(page))
-      params.set('pageSize', String(pageSize))
+      params.set('page', String(actualPage))
+      params.set('pageSize', String(actualPageSize))
 
       const res = await fetch(`/api/surveys?${params}`)
       if (!res.ok) throw new Error('Failed to fetch surveys')
@@ -27,6 +31,7 @@ export function useSurveyData(filters: FilterState, page = 1, pageSize = 50) {
       return { data: (json.data || []) as SurveyUnit[], total: json.total as number }
     },
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   })
 }
 

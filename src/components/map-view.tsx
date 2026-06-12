@@ -43,7 +43,8 @@ function MapFollower() {
 export function MapView() {
   const filters = useBillingStore((s) => s.filters)
   const mapType = useBillingStore((s) => s.mapType)
-  const { data, isLoading } = useSurveyData(filters)
+  const showAll = filters.ucs.length > 0
+  const { data, isLoading } = useSurveyData(filters, 1, 50, showAll)
   const { data: mapZoom = 18 } = useMapZoom()
 
   const mapRef = useRef<HTMLDivElement>(null)
@@ -69,11 +70,13 @@ export function MapView() {
         zoom={mapZoom}
         className="w-full h-full"
         zoomControl={false}
+        preferCanvas={true}
       >
         <TileLayer
           url={tileUrl}
           subdomains={GOOGLE_SUBDOMAINS}
           maxZoom={20}
+          updateWhenIdle={true}
           attribution='&copy; Google'
         />
         <MapFollower />

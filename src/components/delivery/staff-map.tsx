@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, useMap, Marker } from 'react-leaflet'
+import { MapContainer, TileLayer, useMap, CircleMarker } from 'react-leaflet'
 import L from 'leaflet'
 import StaffMapMarkers from './staff-map-markers'
 import { useBillingStore } from '@/stores/billing-store'
@@ -17,19 +17,23 @@ const TILE_URLS = {
   satellite: 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',
 }
 
-const USER_DOT_ICON = L.divIcon({
-  className: 'user-location-dot',
-  html: '<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>',
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-})
-
 function UserMarker({ location: propLocation }: { location?: UserLocation | null }) {
   const { location: hookLocation } = useUserLocation()
   const loc = propLocation || hookLocation
   if (!loc) return null
 
-  return <Marker position={[loc.lat, loc.lng]} icon={USER_DOT_ICON} />
+  return (
+    <CircleMarker
+      center={[loc.lat, loc.lng]}
+      radius={7}
+      pathOptions={{
+        color: '#ffffff',
+        fillColor: '#3b82f6',
+        fillOpacity: 1,
+        weight: 3,
+      }}
+    />
+  )
 }
 
 function FitStaffBounds({ items }: { items: AssignmentItemWithUnit[] }) {
@@ -100,11 +104,13 @@ export default function StaffMap({ items, userLocation }: StaffMapProps) {
         zoom={mapZoom}
         className="w-full h-full"
         zoomControl={false}
+        preferCanvas={true}
       >
         <TileLayer
           url={tileUrl}
           subdomains={GOOGLE_SUBDOMAINS}
           maxZoom={20}
+          updateWhenIdle={true}
           attribution="&copy; Google"
         />
         <FitStaffBounds items={items} />

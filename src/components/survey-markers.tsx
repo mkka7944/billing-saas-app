@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useMemo } from 'react'
-import { Marker, Tooltip } from 'react-leaflet'
-import L from 'leaflet'
+import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
-import { createMarkerIcon } from '@/lib/markers'
+import PulsingRing from '@/components/ui/pulsing-ring'
 import type { SurveyUnit, AssignmentItemUnit } from '@/types'
 
 const UC_COLORS = [
@@ -23,8 +22,6 @@ function getUcColor(ucName: string | null): string {
   }
   return UC_COLORS[Math.abs(hash) % UC_COLORS.length]
 }
-
-const grayIcon = createMarkerIcon('#9ca3af', { size: 10 })
 
 interface SurveyMarkersProps {
   data: SurveyUnit[]
@@ -62,16 +59,6 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
     [markers]
   )
 
-  const markerIcons = useMemo(() => {
-    const icons: Record<string, L.DivIcon> = {}
-    for (const s of markers) {
-      const color = getUcColor(s.uc_name)
-      icons[s.survey_id] = createMarkerIcon(color, { size: 10 })
-      icons[`${s.survey_id}_sel`] = createMarkerIcon(color, { size: 10, selected: true })
-    }
-    return icons
-  }, [markers])
-
   const handleClick = useMemo(() => {
     const fn = (psid: string, unit: AssignmentItemUnit | null) => () => {
       setDeliverTarget(psid, unit)
@@ -91,22 +78,34 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
         const unit = toAssignmentUnit(s)
         if (!unit) return null
         const isSelected = deliverTargetId != null && s.psid === deliverTargetId
+        const color = getUcColor(s.uc_name)
+
         return (
-          <Marker
-            key={s.survey_id}
-            position={[s.lat!, s.lng!]}
-            icon={markerIcons[isSelected ? `${s.survey_id}_sel` : s.survey_id]}
-            eventHandlers={{ click: handleClick(s.psid!, unit) }}
-          >
-            <Tooltip
-              direction="top"
-              offset={[0, -8]}
-              className="survey-tooltip"
-              opacity={1}
+          <div key={s.survey_id}>
+            {isSelected && (
+              <PulsingRing center={[s.lat!, s.lng!]} />
+            )}
+            <CircleMarker
+              center={[s.lat!, s.lng!]}
+              radius={isSelected ? 6 : 5}
+              pathOptions={{
+                color: isSelected ? '#1e40af' : 'rgba(0,0,0,0.35)',
+                fillColor: color,
+                fillOpacity: 1,
+                weight: 2,
+              }}
+              eventHandlers={{ click: handleClick(s.psid!, unit) }}
             >
-              {s.survey_id}
-            </Tooltip>
-          </Marker>
+              <Tooltip
+                direction="top"
+                offset={[0, -8]}
+                className="survey-tooltip"
+                opacity={1}
+              >
+                {s.survey_id}
+              </Tooltip>
+            </CircleMarker>
+          </div>
         )
       })}
     </>

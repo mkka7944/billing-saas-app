@@ -126,6 +126,13 @@ export async function POST(request: Request) {
     // Create delivery_photos placeholder if photo expected
     let deliveryPhotoId: string | null = null
     if (hasPhoto) {
+      // Supersede any previous active photos for this assignment item
+      await sup
+        .from('delivery_photos')
+        .update({ superseded_at: new Date().toISOString() })
+        .eq('assignment_item_id', assignmentItemId)
+        .is('superseded_at', null)
+
       const { data: photoRecord, error: photoErr } = await sup
         .from('delivery_photos')
         .insert({

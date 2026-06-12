@@ -22,6 +22,7 @@ import { useMapZoom } from '@/hooks/use-map-zoom'
 import { UnsentImagesSection } from '@/components/settings/unsent-images-section'
 import { ErrorLogSection } from '@/components/settings/error-log-section'
 import { FailedUploadsTab } from '@/components/settings/failed-uploads-tab'
+import { DeliveryQualityTab } from '@/components/settings/delivery-quality-tab'
 import { DeliveryTable } from '@/components/settings/delivery-table'
 
 const THEMES = [
@@ -35,6 +36,7 @@ const tabs = [
   { id: 'unsent', label: 'Photo Queue' },
   { id: 'errors', label: 'Error Log' },
   { id: 'delivery', label: 'Delivery', adminOnly: true },
+  { id: 'delivery-quality', label: 'Delivery Quality', adminOnly: true },
   { id: 'failed-uploads', label: 'Failed Uploads', adminOnly: true },
   { id: 'users', label: 'Users', adminOnly: true },
 ] as const
@@ -435,7 +437,7 @@ export default function SettingsPage() {
 
   return (
     <AppShell>
-      <div className={cn('h-full overflow-y-auto p-3 md:p-4 lg:p-6 space-y-4', activeTab === 'delivery' || activeTab === 'users' ? 'max-w-full' : 'max-w-2xl')}>
+      <div className="h-full overflow-y-auto p-3 md:p-4 lg:p-6 space-y-4 max-w-full">
         {/* Tab bar */}
         <div className="flex gap-1 border-b pb-0">
           {visibleTabs.map(t => (
@@ -686,6 +688,9 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        {/* Delivery Quality tab (admin-only) */}
+        {activeTab === 'delivery-quality' && <DeliveryQualityTab />}
 
         {/* Failed Uploads tab (admin-only) */}
         {activeTab === 'failed-uploads' && <FailedUploadsTab />}

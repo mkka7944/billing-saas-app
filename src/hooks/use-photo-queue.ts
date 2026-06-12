@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
 import { usePhotoQueueStore } from '@/stores/photo-queue-store'
@@ -18,13 +18,19 @@ const MAX_RETRIES = 3
 
 export function usePhotoQueue() {
   const queueCount = usePhotoQueueStore((s) => s.queueCount)
+  const isProcessing = usePhotoQueueStore((s) => s.isProcessing)
+  const lastError = usePhotoQueueStore((s) => s.lastError)
+  const processingIndex = usePhotoQueueStore((s) => s.processingIndex)
+  const totalToProcess = usePhotoQueueStore((s) => s.totalToProcess)
+  const currentFileSize = usePhotoQueueStore((s) => s.currentFileSize)
+  const uploadSpeed = usePhotoQueueStore((s) => s.uploadSpeed)
   const setQueueCount = usePhotoQueueStore((s) => s.setQueueCount)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [lastError, setLastError] = useState<string | null>(null)
-  const [processingIndex, setProcessingIndex] = useState(0)
-  const [totalToProcess, setTotalToProcess] = useState(0)
-  const [currentFileSize, setCurrentFileSize] = useState('')
-  const [uploadSpeed, setUploadSpeed] = useState('')
+  const setProcessing = usePhotoQueueStore((s) => s.setProcessing)
+  const setProcessingIndex = usePhotoQueueStore((s) => s.setProcessingIndex)
+  const setTotalToProcess = usePhotoQueueStore((s) => s.setTotalToProcess)
+  const setCurrentFileSize = usePhotoQueueStore((s) => s.setCurrentFileSize)
+  const setUploadSpeed = usePhotoQueueStore((s) => s.setUploadSpeed)
+  const setLastError = usePhotoQueueStore((s) => s.setLastError)
   const processingRef = useRef(false)
   const manualSyncRef = useRef(false)
   const queryClient = useQueryClient()
@@ -81,7 +87,7 @@ export function usePhotoQueue() {
             details: { psid: photo.psid, deliveryPhotoId: photo.deliveryPhotoId, retryCount: photo.retryCount },
             source: 'photo-queue',
           }),
-        }).catch(() => {})
+        }).catch((logErr) => console.error('Failed to write error log:', logErr))
         return 'orphan'
       } else {
         await incrementRetry(photo.id!)
@@ -94,7 +100,7 @@ export function usePhotoQueue() {
   const processQueue = useCallback(async () => {
     if (processingRef.current) return
     processingRef.current = true
-    setIsProcessing(true)
+    setProcessing(true)
     setLastError(null)
 
     try {
@@ -140,7 +146,7 @@ export function usePhotoQueue() {
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
     } finally {
       processingRef.current = false
-      setIsProcessing(false)
+      setProcessing(false)
     }
   }, [processSingle, refreshCount, queryClient])
 
@@ -179,7 +185,7 @@ export function usePhotoQueue() {
     fetch('/api/settings')
       .then(r => r.json())
       .then(data => { manualSyncRef.current = data?.unsent_mode?.enabled === true })
-      .catch(() => {})
+      .catch((err) => console.error('Failed to fetch settings:', err))
 
     const handleOnline = () => {
       if (!manualSyncRef.current) processQueue()

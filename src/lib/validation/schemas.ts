@@ -71,7 +71,7 @@ export const surveyQuerySchema = z.object({
   paymentStatus: z.enum(['all', 'paid', 'unpaid']).default('all'),
   billMonth: z.string().default(''),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  pageSize: z.coerce.number().int().min(1).max(50000).default(50),
   sortField: z.enum(['survey_id', 'surveyor_name', 'survey_date', 'survey_time', 'consumer_name']).default('consumer_name'),
   sortDirection: z.enum(['asc', 'desc']).default('desc'),
 })

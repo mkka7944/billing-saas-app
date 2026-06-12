@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, AlertCircle, AlertTriangle, RefreshCw, Download, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
+import { Loader2, AlertCircle, AlertTriangle, RefreshCw, Download, ChevronDown, ChevronRight, Copy, Check, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { useToast } from '@/hooks/use-toast'
 
 interface LogEntry {
   id: number
@@ -14,18 +16,33 @@ interface LogEntry {
   created_at: string
 }
 
+interface StaffUser {
+  id: string
+  name: string
+}
+
+const UPLOAD_SOURCES = ['photo-queue', 'drive-upload', 'drive', 'upload', 'sync', 'gas', 'photo']
+
+function sourceType(source: string | null): 'upload' | 'app' {
+  if (!source) return 'app'
+  return UPLOAD_SOURCES.includes(source) ? 'upload' : 'app'
+}
+
 export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [offset, setOffset] = useState(0)
   const [levelFilter, setLevelFilter] = useState<string>('')
-  const [sourceFilter, setSourceFilter] = useState<string>('')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'upload' | 'app'>('all')
   const [expandedId, setExpandedId] = useState<number | null>(null)
-  const [allSources, setAllSources] = useState<string[]>([])
   const [userIdFilter, setUserIdFilter] = useState('')
+  const [staffList, setStaffList] = useState<StaffUser[]>([])
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const confirm = useConfirm()
+  const { toast } = useToast()
 
   const copyToClipboard = useCallback(async (entry: LogEntry) => {
     try {
@@ -43,14 +60,19 @@ export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
     } else {
       setLoading(true)
       setOffset(0)
-      setAllSources([])
     }
 
     try {
       const params = new URLSearchParams({ limit: '50' })
       if (append) params.set('offset', String(offset))
       if (levelFilter) params.set('level', levelFilter)
-      if (sourceFilter) params.set('source', sourceFilter)
+      if (typeFilter !== 'all') {
+        if (typeFilter === 'upload') {
+          params.set('source', UPLOAD_SOURCES.join(','))
+        } else {
+          params.set('source', `!${UPLOAD_SOURCES.join(',')}`)
+        }
+      }
       if (userIdFilter && isAdmin) params.set('user_id', userIdFilter)
 
       const res = await fetch(`/api/log?${params}`)
@@ -63,14 +85,6 @@ export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
           setLogs(json.data)
         }
         setTotal(json.total ?? 0)
-        // Accumulate sources so filter pills don't appear/disappear
-        const newSources = json.data
-          .map((l: LogEntry) => l.source)
-          .filter(Boolean) as string[]
-        setAllSources(prev => {
-          const merged = new Set([...prev, ...newSources])
-          return [...merged].sort()
-        })
       }
     } catch {
       // silent
@@ -78,11 +92,51 @@ export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [offset, levelFilter, sourceFilter, userIdFilter, isAdmin])
+  }, [offset, levelFilter, typeFilter, userIdFilter, isAdmin])
 
   useEffect(() => {
     fetchLogs()
-  }, [levelFilter, sourceFilter])
+    if (isAdmin) {
+      fetch('/api/admin/users')
+        .then(r => r.json())
+        .then(json => {
+          if (json.data) {
+            setStaffList(json.data.map((u: any) => ({
+              id: u.id,
+              name: u.displayName || u.username || u.id,
+            })))
+          }
+        })
+        .catch(() => {})
+    }
+  }, []) // only on mount
+
+  const handleClear = async () => {
+    const ok = await confirm({
+      title: 'Clear all error logs?',
+      message: 'This permanently deletes every entry. Cannot be undone.',
+      confirmLabel: 'Clear all',
+      variant: 'destructive',
+    })
+    if (!ok) return
+
+    setClearing(true)
+    try {
+      const res = await fetch('/api/log', { method: 'DELETE' })
+      if (res.ok) {
+        setLogs([])
+        setTotal(0)
+        toast('All error logs cleared', 'success')
+      } else {
+        const j = await res.json()
+        toast(j.error || 'Failed to clear', 'error')
+      }
+    } catch {
+      toast('Network error', 'error')
+    } finally {
+      setClearing(false)
+    }
+  }
 
   const handleLoadMore = () => {
     setOffset(prev => prev + 50)
@@ -108,13 +162,21 @@ export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
     return d.toLocaleDateString()
   }
 
-  const sources = allSources
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">{total} error{total !== 1 ? 's' : ''}</p>
         <div className="flex items-center gap-2">
+          {isAdmin && total > 0 && (
+            <button
+              onClick={handleClear}
+              disabled={clearing}
+              className="h-7 px-2.5 text-[11px] font-medium rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500/20 border border-red-200 flex items-center gap-1 cursor-pointer disabled:opacity-50 transition-colors"
+            >
+              {clearing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              Clear all
+            </button>
+          )}
           <button
             onClick={() => fetchLogs()}
             disabled={loading}
@@ -135,7 +197,7 @@ export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         {['', 'error', 'warn'].map(level => (
           <button
             key={level}
@@ -150,29 +212,40 @@ export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
             {level === 'error' ? 'Errors' : level === 'warn' ? 'Warnings' : 'All'}
           </button>
         ))}
-        {sources.map(source => (
+        <span className="w-px h-5 bg-border mx-0.5 self-center" />
+        {(['all', 'upload', 'app'] as const).map(type => (
           <button
-            key={source}
-            onClick={() => setSourceFilter(sourceFilter === source ? '' : source)}
+            key={type}
+            onClick={() => setTypeFilter(type)}
             className={cn(
               'shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors cursor-pointer border',
-              sourceFilter === source
-                ? 'bg-blue-500/10 text-blue-600 border-blue-200'
+              typeFilter === type
+                ? type === 'upload' ? 'bg-amber-500/10 text-amber-600 border-amber-200' : type === 'app' ? 'bg-blue-500/10 text-blue-600 border-blue-200' : 'bg-muted/50 text-foreground border-border'
                 : 'text-muted-foreground border-transparent hover:bg-muted'
             )}
           >
-            {source}
+            {type === 'upload' ? 'Upload' : type === 'app' ? 'App' : 'All Types'}
           </button>
         ))}
         {isAdmin && (
-          <input
-            type="text"
+          <select
             value={userIdFilter}
             onChange={(e) => setUserIdFilter(e.target.value)}
-            placeholder="Filter by user ID..."
-            className="ml-auto h-7 w-[140px] text-[10px] px-2 rounded-lg border border-border bg-background outline-none focus:ring-1 focus:ring-ring"
-          />
+            className="h-7 text-[10px] rounded-lg border border-border bg-background px-2 outline-none focus:ring-1 focus:ring-ring max-w-[140px]"
+          >
+            <option value="">All staff</option>
+            {staffList.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
         )}
+        <button
+          onClick={() => fetchLogs()}
+          disabled={loading}
+          className="h-7 px-3 text-[10px] font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1 cursor-pointer disabled:opacity-50 transition-colors"
+        >
+          Apply
+        </button>
       </div>
 
       {/* List */}
@@ -206,24 +279,32 @@ export function ErrorLogSection({ isAdmin }: { isAdmin?: boolean }) {
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[10px] text-muted-foreground">{formatTime(entry.created_at)}</span>
                       {entry.source && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-mono">
-                          {entry.source}
+                        <span className={cn(
+                          'text-[10px] px-1.5 py-0.5 rounded-full font-mono',
+                          sourceType(entry.source) === 'upload'
+                            ? 'bg-amber-500/10 text-amber-600 border border-amber-200'
+                            : 'bg-muted text-muted-foreground'
+                        )}>
+                          {sourceType(entry.source) === 'upload' ? 'Upload' : entry.source}
                         </span>
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                    <button
+                    <span
                       onClick={(e) => { e.stopPropagation(); copyToClipboard(entry) }}
                       className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted cursor-pointer transition-colors"
                       title="Copy error ID"
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyToClipboard(entry) }}}
                     >
                       {copiedId === entry.id ? (
                         <Check className="h-3 w-3 text-green-500" />
                       ) : (
                         <Copy className="h-3 w-3 text-muted-foreground" />
                       )}
-                    </button>
+                    </span>
                     {entry.details && (
                       <span className="text-muted-foreground">
                         {expandedId === entry.id ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
