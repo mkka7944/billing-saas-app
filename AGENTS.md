@@ -216,15 +216,19 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 - Service role key: in `.env.local` (`SUPABASE_SERVICE_ROLE_KEY`) — used by SSR API routes
 - PAT token: in `.env.local` (`SUPABASE_ACCESS_TOKEN` = `sbp_...`)
 
-### Management API (Direct SQL via PAT)
+### Supabase CLI (Working Method — Prefer This)
+The Management API via PAT token is broken (403). Use the Supabase CLI instead. The CLI is already logged in and linked to project `qrxbsoqepfaryolwcedk`.
+
 ```bash
-# Execute SQL directly against Supabase DB (no Dashboard needed)
-curl -X POST https://api.supabase.com/v1/projects/qrxbsoqepfaryolwcedk/database/query \
-  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "SELECT COUNT(*) FROM survey_units;"}'
+# Execute SQL file against the linked Supabase project
+npx supabase db query --linked --file scripts/sql/XXX-migration-name.sql
+
+# Execute inline query
+npx supabase db query --linked "SELECT COUNT(*) FROM survey_units;"
 ```
-Used for: running migrations, VACUUM FULL, ad-hoc queries via CLI/Python.
+
+### Credentials / Token Rule
+**Never use credentials (DB password, PAT token, service_role key, anon key) from `.env.local` in shell commands without first asking the user for permission.** Some tokens in `.env.local` may be expired or may have been superseded. The Supabase CLI login session is the preferred authentication method.
 
 ### Python Upsert (service_role)
 Python scripts (enrich-survey-units.py, load-payments.py, ingest-all.py) use:
@@ -235,9 +239,9 @@ supabase.table("survey_units").upsert(rows, on_conflict="survey_id").execute()
 
 ### Schema
 - Base: `scripts/sql/reset-and-create.sql`
-- Migrations: `scripts/sql/` files `005`–`029` (apply in order)
+- Migrations: `scripts/sql/` files `005`–`043` (apply in order via `npx supabase db query --linked --file <file>`)
 - RPCs: `scripts/sql/007-data-insight-rpcs.sql` — admin-only aggregate functions
-- Triggers: `scripts/sql/009-triggers-and-automation.sql`, `010-reference-tables.sql`, `026-staff-sync-trigger.sql`
+- Triggers: `scripts/sql/009-triggers-and-automation.sql`, `010-reference-tables.sql`, `026-staff-sync-trigger.sql``
 
 ## Pipeline Scripts Reference
 

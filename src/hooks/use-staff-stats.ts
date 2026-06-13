@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { STALE_TIMES } from '@/lib/queries/constants'
 
 export interface StaffDeliveryStat {
   staff_id: string
@@ -26,6 +27,6 @@ export function useStaffStats(staffId?: string, from?: string, to?: string) {
       const json = await res.json()
       return json.data || []
     },
-    staleTime: 1000 * 60 * 2,
+    staleTime: STALE_TIMES.PERFORMANCE,
   })
 }

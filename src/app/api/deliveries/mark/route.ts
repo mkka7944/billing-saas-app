@@ -7,18 +7,15 @@ const ALLOWED_STATUSES = ['pending', 'processing', 'delivered']
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { assignmentItemId, psid, gpsLat, gpsLng, targetLat, targetLng, skipPhoto } = body as {
+    const { assignmentItemId, gpsLat, gpsLng, skipPhoto } = body as {
       assignmentItemId: string
-      psid: string
       gpsLat?: number | null
       gpsLng?: number | null
-      targetLat?: number | null
-      targetLng?: number | null
       skipPhoto?: boolean
     }
 
-    if (!assignmentItemId || !psid) {
-      return NextResponse.json({ error: 'assignmentItemId and psid required' }, { status: 400 })
+    if (!assignmentItemId) {
+      return NextResponse.json({ error: 'assignmentItemId required' }, { status: 400 })
     }
 
     const gps_lat = gpsLat ?? null
@@ -44,10 +41,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Forbidden — role "${role?.name ?? '(none)'}"` }, { status: 403 })
     }
 
-    // Ownership check
+    // Ownership + psid lookup
     const { data: ownership } = await sup
       .from('assignment_items')
-      .select('id, status, started_at, daily_assignments!inner(staff_id)')
+      .select('id, status, started_at, psid, daily_assignments!inner(staff_id)')
       .eq('id', assignmentItemId)
       .eq('daily_assignments.staff_id', user.id)
       .maybeSingle()
@@ -66,14 +63,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Cannot mark item with status "${ownership.status}"` }, { status: 409 })
     }
 
-    // Resolve authoritative target coordinates from survey_units, fall back to client-provided
-    let target_lat = targetLat ?? null
-    let target_lng = targetLng ?? null
-    if (psid) {
+    // Derive authoritative target coordinates from survey_units
+    let target_lat: number | null = null
+    let target_lng: number | null = null
+    if (ownership.psid) {
       const { data: su } = await sup
         .from('survey_units')
         .select('lat, lng')
-        .eq('psid', psid)
+        .eq('psid', ownership.psid)
         .maybeSingle()
       if (su?.lat != null && su?.lng != null) {
         target_lat = su.lat
@@ -126,30 +123,38 @@ export async function POST(request: Request) {
     // Create delivery_photos placeholder if photo expected
     let deliveryPhotoId: string | null = null
     if (hasPhoto) {
-      // Supersede any previous active photos for this assignment item
-      await sup
+      // Dedup: if a non-superseded photo was created in the last 2s, reuse it (prevents double-tap orphans)
+      const twoSecAgo = new Date(Date.now() - 2000).toISOString()
+      const { data: recentPhoto } = await sup
         .from('delivery_photos')
-        .update({ superseded_at: new Date().toISOString() })
+        .select('id')
         .eq('assignment_item_id', assignmentItemId)
         .is('superseded_at', null)
+        .gte('created_at', twoSecAgo)
+        .limit(1)
+        .maybeSingle()
 
-      const { data: photoRecord, error: photoErr } = await sup
-        .from('delivery_photos')
-        .insert({
-          assignment_item_id: assignmentItemId,
-          photo_url: null,
-          gdrive_file_id: null,
-          gps_lat,
-          gps_lng,
-          synced_to_drive: false,
-        })
-        .select('id')
-        .single()
+      if (recentPhoto) {
+        deliveryPhotoId = recentPhoto.id
+      } else {
+        const { data: photoRecord, error: photoErr } = await sup
+          .from('delivery_photos')
+          .insert({
+            assignment_item_id: assignmentItemId,
+            photo_url: null,
+            gdrive_file_id: null,
+            gps_lat,
+            gps_lng,
+            synced_to_drive: false,
+          })
+          .select('id')
+          .single()
 
-      if (photoErr) {
-        return NextResponse.json({ error: `Failed to create photo record: ${photoErr.message}` }, { status: 500 })
+        if (photoErr) {
+          return NextResponse.json({ error: `Failed to create photo record: ${photoErr.message}` }, { status: 500 })
+        }
+        deliveryPhotoId = photoRecord.id
       }
-      deliveryPhotoId = photoRecord.id
     }
 
     // Update assignment_items status

@@ -70,15 +70,24 @@ export function UnsentModal({ open, onClose }: UnsentModalProps) {
                   ) : (
                     <Image className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   )}
-                  <span className="font-mono text-[10px] truncate flex-1">{p.psid}</span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {isCurrent && currentFileSize
-                      ? currentFileSize
-                      : p.retryCount > 0
-                        ? `${p.retryCount}x retry`
-                        : 'pending'
-                    }
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] truncate">{p.psid}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">
+                        {isCurrent && currentFileSize
+                          ? currentFileSize
+                          : p.lastError
+                            ? 'Failed'
+                            : p.retryCount > 0
+                              ? `${p.retryCount}x retry`
+                              : 'pending'
+                        }
+                      </span>
+                    </div>
+                    {p.lastError && (
+                      <p className="text-[9px] text-red-500 truncate mt-0.5">{p.lastError}</p>
+                    )}
+                  </div>
                 </div>
               )
             })}

@@ -3,13 +3,32 @@ import { createClient } from '@/lib/supabase/server'
 
 const PERF_COLS = 'id, staff_id, assigned_date, rating, notes, created_by, created_at, updated_at'
 
+async function requireAdmin(sup: Awaited<ReturnType<typeof createClient>>) {
+  const { data: { user }, error: authError } = await sup.auth.getUser()
+  if (!user || authError) return 'Unauthorized'
+  const { data: profile } = await sup
+    .from('profiles')
+    .select('roles!inner(name)')
+    .eq('id', user.id)
+    .single()
+  const role = profile?.roles as { name: string } | undefined
+  if (!role || (role.name !== 'admin' && role.name !== 'super_admin')) return 'Forbidden: admin required'
+  return null
+}
+
 export async function GET(request: Request) {
+  const sup = await createClient()
+
+  const { data: { user }, error: authError } = await sup.auth.getUser()
+  if (!user || authError) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const sp = new URL(request.url).searchParams
   const staffId = sp.get('staff_id') || ''
   const fromDate = sp.get('from') || ''
   const toDate = sp.get('to') || ''
 
-  const sup = await createClient()
   let q = sup
     .from('staff_performance')
     .select('id, staff_id, assigned_date, rating, notes, created_by, created_at, updated_at')
@@ -26,6 +45,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const sup = await createClient()
+  const err = await requireAdmin(sup)
+  if (err) return NextResponse.json({ error: err }, { status: err === 'Unauthorized' ? 401 : 403 })
+
   const body = await request.json()
   const { staff_id, assigned_date, rating, notes } = body
 
@@ -33,7 +55,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'staff_id and assigned_date are required' }, { status: 400 })
   }
 
-  // Get current user from session
   const { data: { user } } = await sup.auth.getUser()
   const created_by = user?.id
 

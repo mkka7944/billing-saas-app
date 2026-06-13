@@ -7,6 +7,7 @@ import { useBillingStore } from '@/stores/billing-store'
 import { useStaffAssignment } from '@/hooks/use-assignments'
 import { useOnlineStatus } from '@/hooks/use-online-status'
 import { cacheAssignment, getCachedAssignment } from '@/lib/offline-cache'
+import type { CachedAssignment } from '@/lib/offline-cache'
 import { Loader2, WifiOff, CheckCircle2, ArrowLeft, ArrowRight, ChevronDown, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AssignmentItemWithUnit } from '@/types'
@@ -49,7 +50,7 @@ export default function DeliverPage() {
   useAssignmentRealtime(user?.id || null)
   const { queueCount, isProcessing, processQueue, processingIndex, totalToProcess, currentFileSize, uploadSpeed } = usePhotoQueue()
 
-  const { data, isLoading, refetch } = useStaffAssignment(user?.id || null)
+  const { data, isLoading, isError, refetch } = useStaffAssignment(user?.id || null)
   const isOnline = useOnlineStatus()
 
   useEffect(() => { setPageIdentity('Deliver') }, [setPageIdentity])
@@ -65,6 +66,8 @@ export default function DeliverPage() {
       .catch(() => {})
   }, [user?.id])
 
+  const [cached, setCached] = useState<CachedAssignment | null>(null)
+
   useEffect(() => {
     if (data?.items) {
       cacheAssignment(data.data as unknown as Record<string, unknown> | null, data.items as unknown as Record<string, unknown>[])
@@ -73,17 +76,23 @@ export default function DeliverPage() {
   }, [data])
 
   useEffect(() => {
-    if (!isLoading && !data && !isOnline) {
-      const cached = getCachedAssignment()
-      if (cached) setUseCache(true)
+    if (!isLoading && (!data || isError)) {
+      getCachedAssignment().then((c) => { if (c) setUseCache(true) })
     }
-  }, [isLoading, data, isOnline])
+  }, [isLoading, data, isError])
+
+  useEffect(() => {
+    if (useCache) {
+      getCachedAssignment().then(setCached)
+    } else {
+      setCached(null)
+    }
+  }, [useCache])
 
   useEffect(() => {
     if (roleName !== 'field_staff') router.replace('/map')
   }, [roleName, router])
 
-  const cached = useCache ? getCachedAssignment() : null
   const displayData = cached ? { data: cached.data, items: cached.items } : data
   const items: AssignmentItemWithUnit[] = (displayData?.items as unknown as AssignmentItemWithUnit[]) || []
   const assignment = displayData?.data as unknown as Record<string, unknown> | null
@@ -145,6 +154,20 @@ export default function DeliverPage() {
           <div className="flex-1 flex items-center justify-center">
             <div className="animate-pulse text-sm text-muted-foreground">Loading assignment...</div>
           </div>
+        ) : isError && !useCache ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
+            <div className="text-4xl">⚠️</div>
+            <p className="text-sm font-medium">Server error — tap to retry</p>
+            <p className="text-xs text-muted-foreground">
+              Could not load your assignment. Check your connection and try again.
+            </p>
+            <button
+              onClick={() => refetch()}
+              className="mt-2 px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
         ) : !assignment && !useCache ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
             <div className="text-4xl">📋</div>
@@ -178,8 +201,11 @@ export default function DeliverPage() {
                     <WifiOff className="h-3 w-3" /> Offline
                   </span>
                 )}
-                {useCache && (
-                  <span className="text-[10px] text-amber-600 font-medium">(cached)</span>
+                {useCache && isOnline && (
+                  <span className="text-[10px] text-red-600 font-medium">Server error — showing cached data</span>
+                )}
+                {useCache && !isOnline && (
+                  <span className="text-[10px] text-amber-600 font-medium">Offline (cached)</span>
                 )}
               </div>
             )}
@@ -363,7 +389,7 @@ export default function DeliverPage() {
                           <button
                             key={item.id}
                             onClick={() => handleSelect(item.id)}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
+                            className="w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
                           >
                             {/* Route seq */}
                             <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
@@ -421,7 +447,7 @@ export default function DeliverPage() {
                     <button
                       key={item.id}
                       onClick={() => handleSelect(item.id)}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
+                      className="w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
                     >
                       {/* Route seq */}
                       <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">

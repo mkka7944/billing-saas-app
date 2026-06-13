@@ -1,8 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-
-export type DeliveryProgress = 'idle' | 'saving' | 'done'
+import { useCallback } from 'react'
 
 export interface DeliveryResult {
   status: 'delivered' | 'processing'
@@ -13,60 +11,37 @@ export interface DeliveryResult {
 }
 
 export function useDeliverUnit() {
-  const [isDelivering, setIsDelivering] = useState(false)
-  const [lastResult, setLastResult] = useState<DeliveryResult | null>(null)
-  const [progress, setProgress] = useState<DeliveryProgress>('idle')
-
-  const reset = useCallback(() => {
-    setProgress('idle')
-    setIsDelivering(false)
-    setLastResult(null)
-  }, [])
-
   const mark = useCallback(async (
     assignmentItemId: string,
-    psid: string,
     gpsLat: number | null,
     gpsLng: number | null,
-    targetLat: number | null,
-    targetLng: number | null,
     skipPhoto: boolean,
   ): Promise<DeliveryResult | null> => {
-    setIsDelivering(true)
-    setProgress('saving')
-
     try {
       const res = await fetch('/api/deliveries/mark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assignmentItemId,
-          psid,
           gpsLat,
           gpsLng,
-          targetLat,
-          targetLng,
           skipPhoto,
         }),
       })
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}))
-        throw new Error(errBody.error || `HTTP ${res.status}`)
+        throw new Error(errBody.error || `Server error — please try again (HTTP ${res.status})`)
       }
 
       const result: DeliveryResult = await res.json()
-      setLastResult(result)
-      setProgress('done')
       return result
     } catch (e) {
-      reset()
-      if (e instanceof TypeError) {
-        return null
-      }
-      throw e
+      if (e instanceof TypeError) return null
+      if (e instanceof Error) throw e
+      throw new Error('Server error — please try again')
     }
-  }, [reset])
+  }, [])
 
-  return { mark, isDelivering, lastResult, progress }
+  return { mark }
 }

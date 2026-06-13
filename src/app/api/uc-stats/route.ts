@@ -44,6 +44,7 @@ export async function GET(request: Request) {
       assigned_today: 0,
       delivered_today: 0,
       missed_today: 0,
+      processing_today: 0,
     })
   }
 
@@ -64,15 +65,16 @@ export async function GET(request: Request) {
       .select('assignment_id, status')
       .in('assignment_id', assignmentIds)
 
-    const acc = new Map<string, { assigned: number; delivered: number; missed: number }>()
+    const acc = new Map<string, { assigned: number; delivered: number; missed: number; processing: number }>()
     for (const item of (itemCounts as ItemRow[]) || []) {
       const uc = ucByAssignmentId.get(item.assignment_id)
       if (!uc) continue
-      if (!acc.has(uc)) acc.set(uc, { assigned: 0, delivered: 0, missed: 0 })
+      if (!acc.has(uc)) acc.set(uc, { assigned: 0, delivered: 0, missed: 0, processing: 0 })
       const c = acc.get(uc)!
       c.assigned++
       if (item.status === 'delivered') c.delivered++
       if (item.status === 'missed') c.missed++
+      if (item.status === 'processing') c.processing++
     }
 
     for (const [ucName, counts] of acc) {
@@ -81,6 +83,7 @@ export async function GET(request: Request) {
         existing.assigned_today = counts.assigned
         existing.delivered_today = counts.delivered
         existing.missed_today = counts.missed
+        existing.processing_today = counts.processing
       } else if (!cfg) {
         ucRowMap.set(ucName, {
           uc_name: ucName,
@@ -95,6 +98,7 @@ export async function GET(request: Request) {
           assigned_today: counts.assigned,
           delivered_today: counts.delivered,
           missed_today: counts.missed,
+          processing_today: counts.processing,
         })
       }
     }

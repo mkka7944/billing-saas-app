@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { DailyAssignment, AssignmentItemWithUnit } from '@/types'
 import { currentMonth } from '@/lib/constants'
+import { STALE_TIMES } from '@/lib/queries/constants'
 
 export interface UCTotals {
   uc_name: string
@@ -47,7 +48,7 @@ export function useAssignmentTotals(month: string = currentMonth(), district?: s
       const json = await res.json()
       return json.data || []
     },
-    staleTime: 1000 * 30,
+    staleTime: STALE_TIMES.DELIVERY,
   })
 }
 
@@ -64,7 +65,7 @@ export function useUnassignedBills(uc: string | null, month: string = currentMon
       return { data: json.data || [], total: json.total ?? 0 }
     },
     enabled: !!uc,
-    staleTime: 1000 * 30,
+    staleTime: STALE_TIMES.DELIVERY,
   })
 }
 
@@ -77,7 +78,7 @@ export function useStaffList() {
       const json = await res.json()
       return json.data || []
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: STALE_TIMES.BILLING,
   })
 }
 
@@ -118,7 +119,7 @@ export function useStaffAssignment(staffId: string | null) {
       return res.json()
     },
     enabled: !!staffId,
-    staleTime: 1000 * 30,
+    staleTime: STALE_TIMES.DELIVERY,
   })
 }
 
@@ -131,6 +132,7 @@ export interface AssignmentWithStats {
   total_items: number
   bill_month: string
   pending: number
+  processing: number
   delivered: number
   missed: number
   completion_pct: number
@@ -150,7 +152,7 @@ export function useAssignmentList(district?: string | null, tehsil?: string | nu
       const json = await res.json()
       return json.data || []
     },
-    staleTime: 1000 * 30,
+    staleTime: STALE_TIMES.DELIVERY,
   })
 }
 
@@ -203,7 +205,7 @@ export function useRouteUnits(city: string | null, route: string | null) {
       return res.json()
     },
     enabled: !!city && !!route,
-    staleTime: 1000 * 30,
+    staleTime: STALE_TIMES.DELIVERY,
   })
 }
 

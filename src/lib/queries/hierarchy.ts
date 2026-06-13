@@ -24,6 +24,7 @@ export interface UCStatRow {
   assigned_today: number
   delivered_today: number
   missed_today: number
+  processing_today: number
 }
 
 export function getCityFromTehsil(district: string, tehsil: string): string | null {

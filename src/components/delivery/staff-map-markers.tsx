@@ -4,15 +4,8 @@ import { useMemo } from 'react'
 import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import PulsingRing from '@/components/ui/pulsing-ring'
+import { STATUS_COLORS } from '@/lib/delivery-status'
 import type { AssignmentItemUnit } from '@/types'
-
-const STATUS_COLORS: Record<string, string> = {
-  pending: '#3b82f6',
-  processing: '#f59e0b',
-  delivered: '#22c55e',
-  missed: '#ef4444',
-  skipped: '#9ca3af',
-}
 
 interface StaffMapMarkersProps {
   items: { id: string; status: string; psid: string; unit: AssignmentItemUnit | null }[]

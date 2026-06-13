@@ -127,15 +127,16 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
     .select('assignment_id, status')
     .in('assignment_id', assignmentIds)
 
-  const itemCounts = new Map<string, { pending: number; delivered: number; missed: number }>()
+  const itemCounts = new Map<string, { pending: number; processing: number; delivered: number; missed: number }>()
   for (const item of allItems || []) {
-    const c = itemCounts.get(item.assignment_id) || { pending: 0, delivered: 0, missed: 0 }
-    c[item.status as keyof typeof c]++
+    const c = itemCounts.get(item.assignment_id) || { pending: 0, processing: 0, delivered: 0, missed: 0 }
+    const key = item.status as string
+    if (key in c) (c as Record<string, number>)[key]++
     itemCounts.set(item.assignment_id, c)
   }
 
   const data = daRows.map((a) => {
-    const counts = itemCounts.get(a.id) || { pending: 0, delivered: 0, missed: 0 }
+    const counts = itemCounts.get(a.id) || { pending: 0, processing: 0, delivered: 0, missed: 0 }
     const completed = counts.delivered + counts.missed
     return {
       id: a.id,
@@ -253,10 +254,10 @@ export async function createAssignment(
     const staffCityCfg = CITY_TEHSIL_MAP[staffRow.assigned_city as string]
     if (staffCityCfg) {
       const { data: ucRow } = await sup
-        .from('hierarchy_summary')
+        .from('survey_units')
         .select('city_district, tehsil')
         .eq('uc_name', uc_name)
-        .eq('bill_month', issued_at.slice(0, 7).replace('-', '')) // approximate month
+        .limit(1)
         .maybeSingle()
 
       if (ucRow && (ucRow.city_district !== staffCityCfg.district || ucRow.tehsil !== staffCityCfg.tehsil)) {

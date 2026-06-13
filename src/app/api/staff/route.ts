@@ -4,6 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET() {
   const sup = await createClient()
 
+  const { data: { user }, error: authError } = await sup.auth.getUser()
+  if (!user || authError) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   // Profiles with role filter (FK exists: profiles.role_id -> roles.id)
   const { data: profiles, error } = await sup
     .from('profiles')

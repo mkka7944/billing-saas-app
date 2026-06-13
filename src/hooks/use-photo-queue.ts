@@ -10,6 +10,7 @@ import {
   removeFromQueue,
   getQueueCount,
   incrementRetry,
+  markFailed,
 } from '@/lib/photo-queue'
 import { uploadToGAS } from '@/lib/drive-upload'
 import type { QueuedPhoto } from '@/lib/photo-queue'
@@ -75,8 +76,8 @@ export function usePhotoQueue() {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error'
       if (photo.retryCount >= MAX_RETRIES) {
-        await removeFromQueue(photo.id!)
-        setLastError(`Photo ${photo.psid} failed after ${MAX_RETRIES} retries`)
+        await markFailed(photo.id!, errMsg)
+        setLastError(`Photo ${photo.psid} failed after ${MAX_RETRIES} retries: ${errMsg}`)
         toast(`Photo for ${photo.psid} failed: ${errMsg}`, 'error')
         fetch('/api/log', {
           method: 'POST',
@@ -90,9 +91,10 @@ export function usePhotoQueue() {
         }).catch((logErr) => console.error('Failed to write error log:', logErr))
         return 'orphan'
       } else {
+        await markFailed(photo.id!, errMsg)
         await incrementRetry(photo.id!)
+        setLastError(`Photo ${photo.psid}: ${errMsg}`)
       }
-      setLastError(`Photo ${photo.psid}: ${errMsg}`)
       return 'retry'
     }
   }, [toast])
@@ -112,6 +114,7 @@ export function usePhotoQueue() {
 
         for (let i = 0; i < photos.length; i++) {
           const photo = photos[i]
+          if (photo.lastError) continue
           setProcessingIndex(i)
 
           const sizeKB = Math.round(photo.photoBlob.size / 1024)
@@ -185,7 +188,10 @@ export function usePhotoQueue() {
     fetch('/api/settings')
       .then(r => r.json())
       .then(data => { manualSyncRef.current = data?.unsent_mode?.enabled === true })
-      .catch((err) => console.error('Failed to fetch settings:', err))
+      .catch((err) => {
+        console.error('Failed to fetch settings:', err)
+        toast('Could not load settings — some features may be unavailable', 'warning')
+      })
 
     const handleOnline = () => {
       if (!manualSyncRef.current) processQueue()

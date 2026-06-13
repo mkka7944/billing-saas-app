@@ -6290,3 +6290,95 @@ Three changes in one session: (1) Replaced all DOM-based `<Marker>` + `L.divIcon
 8. `/map` list tab → pagination still works (not affected by showAll)
 9. `npx tsc --noEmit` — zero errors
 
+## Session Log — 2026-06-12 (Full MASTER.md Audit — 20 Unlisted Items Discovered)
+
+### Summary
+Performed a systematic audit of the entire `docs/MASTER.md` (6292 lines) against `docs/PHASES.md` to find every proposed phase, feature, TODO, gap, or planned work item not yet captured in PHASES.md. Found 20 items across 5 categories. Updated PHASES.md with a new appendix section. Created `docs/PHASES.md` Appendix section with all 20 items organized by category, kept separate from existing phases. Corrected status tracking tables for items found already complete.
+
+### Audit Method
+1. Read PHASES.md to establish baseline of all captured phases
+2. Read MASTER.md from start to finish, section by section
+3. For each discovered item: traced against actual codebase (`src/`, `scripts/`, `scripts/sql/`) to verify current implementation status
+4. Categorized as Done / Partial / Not Started / Deferred / Gap
+
+### Findings: 20 Items
+
+#### A. Pipeline & Deployment (6 items — all Not Started)
+- **A1** Deploy Office PC pipeline — Phase 25, 1 hr. `ingest-all.py` exists but never deployed.
+- **A2** Pipeline wrapper scripts P.1-P.3 — 4 hrs. Standalone scripts for payments, lifecycle, bill mapping.
+- **A3** App-Controlled Pipeline API — Future. 4 endpoints to trigger scripts via Next.js server.
+- **A4** Update bill-extractor-v4.py to write city/tehsil — 30 min. Reference copy has columns; Office PC copy not updated.
+- **A5** Import printer mapping JSON to DB (DQ.8) — 1 hr. `bill_print_log` table exists; no import script.
+- **A6** HDS show bill print metadata (DQ.9) — 1 hr. Depends on A5.
+
+#### B. Database Gaps (1 item — Not Started)
+- **B1** Add `updated_at` to `payment_history` — 5 min. DB Gap #10; every other main table has it.
+
+#### C. Code Quality Gaps (4 items — 1 Not Started, 1 Deferred, 1 Resolved, 1 Info)
+- **C1** Fix `/api/log` error swallowing in `global-error-logger.tsx` — 10 min. `use-photo-queue.ts` fixed; 2 silent catches remain in global-error-logger.
+- **C2** GPS thresholds: verify on mobile — Info/testing item.
+- **C3** GPS battery optimization — Deferred. Currently uses high-accuracy-first approach.
+- **C4** Merge two IndexedDB unsent queues — Resolved. Audit confirmed only one queue ever existed; no merge needed.
+
+#### D. Industry / Feature Gaps (7 items — all unplanned gaps)
+- **D1** Realtime admin visibility (WebSocket) — No Supabase Realtime subscriptions exist; all polling.
+- **D2** Photo anti-tamper (EXIF/hash) — No photo integrity verification.
+- **D3** Customer signature capture — No signature component exists.
+- **D4** PWA service worker + manifest — No PWA infrastructure.
+- **D5** Cut admin bloat 30-40% — 2-3 days. Settings (991 lines), FilterPanel (640 lines), Dashboard (225 lines).
+- **D6** Field flag button + daily staff summary — 1-2 days. No flag button in delivery sheet.
+- **D7** Consolidate two Google Drive accounts — Partial. Webhook URLs consolidated; legacy photo migration not done.
+
+#### E. Resolved (2 items — Found Done)
+- **E1** Orphaned PSID cleanup — ✅ Done. Fully implemented (hook, API, UI, enrich script, photo queue).
+- **E2** Stale GPS dots doc — ✅ Partial. Part 12 narrative fixed; tracking tables still need cleanup.
+
+### Files Changed
+- `docs/PHASES.md` — Added Appendix section with all 20 items. Updated Correction Items (added orphan PSID cleanup as Done). Updated Quick Stats. Updated Execution Priority Order with appendix gaps table.
+- `docs/MASTER.md` — This session log entry.
+
+### Remaining Tracking Updates Needed
+- Remove stale GPS dots entries from Section 25 and Section 26 tracking tables.
+- Mark Phase 25 (Deploy Office PC) as visible in execution order table.
+
+## Session Log — 2026-06-13 (Staff Delivery Harden & Efficiency — 8 Steps)
+
+### Summary
+Performed 8 targeted hardening steps for the staff delivery experience, identified through an audit of remaining gaps after Phase B3. Focused on: silent failure visibility, GPS battery optimization, dead code removal, field flagging, touch targets, and future-proofing IndexedDB migrations.
+
+### Completed
+
+#### Step 1 — Settings fetch silent failure (P0, 10m)
+- **`src/hooks/use-photo-queue.ts`**: Changed `.catch(console.error)` on `/api/settings` fetch to also show `toast('Could not load settings...', 'warning')`.
+- **`src/components/delivery/unit-delivery-sheet.tsx`**: Changed `.catch(() => {})` on `/api/settings` fetch to show `toast('Could not load settings...', 'warning')`.
+
+#### Step 2 — "No assignment" misleading error (P0, 15m)
+- **`src/app/deliver/page.tsx`**: Added explicit `isError && !useCache` render branch with "Server error — tap to retry" + `refetch()` button. Previously showed "No assignment for today" when API failed and no cache.
+
+#### Step 3 — Double GPS watcher consolidation (P0, 30m)
+- **`src/components/delivery/unit-delivery-sheet.tsx`**: Removed `watchIdRef`, `getCurrentPosition` effect, and `watchPosition` effect. Now reads from singleton `useUserLocation()` hook. Derived values: `deliveryLat`, `deliveryLng`, `gpsAccuracy`, `liveDistance` (useMemo), `liveGpsStatus` (computed). Removed 5 state variables and 2 useEffect blocks.
+
+#### Step 4 — Dead `isDelivering` state removal (P1, 5m)
+- **`src/hooks/use-deliver-unit.ts`**: Removed `isDelivering`, `setIsDelivering`, `lastResult`, `setLastResult`, `progress`, `setProgress`, `reset` — none were consumed by the sheet (which only destructures `{ mark }`). Hook now returns only `{ mark }`.
+
+#### Step 5 — Field Flag button (P1, 1h)
+- **`src/components/delivery/unit-delivery-sheet.tsx`**: Added "Flag for Review" button in idle state, visible when `assignmentItemId` exists. Uses existing `useConfirm()` dialog. POSTs to existing `/api/admin/flagged-psids` with `reason: 'staff_flagged'`. No new API route needed.
+
+#### Step 6 — Mobile touch targets (P1, 1h)
+- **`src/components/delivery/unit-delivery-sheet.tsx`**: Bumped "Photo not working?" button from `h-8` (32px) → `h-9` (36px). Bumped "Flag for Review" from `h-7` (28px) → `h-8` (32px). Bumped bottom content padding from `pb-5` → `pb-6`.
+- **`src/app/deliver/page.tsx`**: Bumped list item button rows from `py-2.5` → `py-3` (larger tap target).
+
+#### Step 8 — IndexedDB migration pattern (P2, 15m)
+- **`src/lib/photo-queue.ts`**: Replaced flat `onupgradeneeded` handler with structured `switch(event.oldVersion)` pattern. Each version case falls through for cumulative migrations. Currently all versions 0-5 are no-ops — ready for future destructive schema changes.
+
+### Files Changed
+- `src/hooks/use-photo-queue.ts` — EDITED (settings toast, 2 locations)
+- `src/components/delivery/unit-delivery-sheet.tsx` — EDITED (settings toast, GPS singleton, flag button, touch targets)
+- `src/app/deliver/page.tsx` — EDITED (isError branch, touch targets)
+- `src/hooks/use-deliver-unit.ts` — REWRITTEN (removed dead state)
+- `src/lib/photo-queue.ts` — EDITED (structured migration pattern)
+
+### Verification
+- `npx tsc --noEmit` — zero errors
+- `npm run lint` — zero new errors in modified files
+

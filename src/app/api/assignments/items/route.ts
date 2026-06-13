@@ -4,6 +4,24 @@ import { createClient } from '@/lib/supabase/server'
 const ITEM_COLS = 'id, assignment_id, psid, route_seq, status, delivered_at, gps_lat, gps_lng, notes'
 
 export async function PATCH(request: Request) {
+  const sup = await createClient()
+
+  const { data: { user }, error: authError } = await sup.auth.getUser()
+  if (!user || authError) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: profile } = await sup
+    .from('profiles')
+    .select('roles!inner(name)')
+    .eq('id', user.id)
+    .single()
+
+  const role = profile?.roles as { name: string } | undefined
+  if (!role || (role.name !== 'admin' && role.name !== 'super_admin')) {
+    return NextResponse.json({ error: 'Forbidden: admin required' }, { status: 403 })
+  }
+
   const body = await request.json()
   const { id, status, gps_lat, gps_lng, notes } = body as {
     id: string
@@ -20,8 +38,6 @@ export async function PATCH(request: Request) {
   if (!['delivered', 'missed', 'skipped'].includes(status)) {
     return NextResponse.json({ error: 'status must be delivered, missed, or skipped' }, { status: 400 })
   }
-
-  const sup = await createClient()
 
   const update: Record<string, unknown> = {
     status,

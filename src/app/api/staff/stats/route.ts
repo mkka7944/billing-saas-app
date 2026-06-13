@@ -2,12 +2,17 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
+  const sup = await createClient()
+
+  const { data: { user }, error: authError } = await sup.auth.getUser()
+  if (!user || authError) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const sp = new URL(request.url).searchParams
   const staffId = sp.get('staff_id') || ''
   const fromDate = sp.get('from') || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
   const toDate = sp.get('to') || new Date().toISOString().slice(0, 10)
-
-  const sup = await createClient()
 
   let q = sup
     .from('staff_daily_stats')
@@ -55,11 +60,12 @@ export async function GET(request: Request) {
       .select('assignment_id, status')
       .in('assignment_id', aIds)
 
-    const itemCounts = new Map<string, { delivered: number; missed: number; pending: number }>()
+    const itemCounts = new Map<string, { delivered: number; missed: number; processing: number; pending: number }>()
     for (const item of items || []) {
-      const c = itemCounts.get(item.assignment_id) || { delivered: 0, missed: 0, pending: 0 }
+      const c = itemCounts.get(item.assignment_id) || { delivered: 0, missed: 0, processing: 0, pending: 0 }
       if (item.status === 'delivered') c.delivered++
       else if (item.status === 'missed') c.missed++
+      else if (item.status === 'processing') c.processing++
       else c.pending++
       itemCounts.set(item.assignment_id, c)
     }
@@ -71,13 +77,13 @@ export async function GET(request: Request) {
       .in('id', staffIds)
 
     const staffNameMap = new Map((staffRows || []).map((s: any) => [s.id, s.full_name || 'Unknown']))
-    const staffAgg = new Map<string, { total_assigned: number; delivered: number; missed: number; pending: number }>()
+    const staffAgg = new Map<string, { total_assigned: number; delivered: number; missed: number; processing: number; pending: number }>()
 
     for (const a of assignments) {
-      const ag = staffAgg.get(a.staff_id) || { total_assigned: 0, delivered: 0, missed: 0, pending: 0 }
+      const ag = staffAgg.get(a.staff_id) || { total_assigned: 0, delivered: 0, missed: 0, processing: 0, pending: 0 }
       ag.total_assigned += a.total_items || 0
       const ic = itemCounts.get(a.id)
-      if (ic) { ag.delivered += ic.delivered; ag.missed += ic.missed; ag.pending += ic.pending }
+      if (ic) { ag.delivered += ic.delivered; ag.missed += ic.missed; ag.processing += ic.processing; ag.pending += ic.pending }
       staffAgg.set(a.staff_id, ag)
     }
 
@@ -100,12 +106,13 @@ export async function GET(request: Request) {
 
   const staffNameMap = new Map((staffRows || []).map((s: any) => [s.id, s.full_name || 'Unknown']))
 
-  const agg = new Map<string, { total_assigned: number; delivered: number; missed: number }>()
+  const agg = new Map<string, { total_assigned: number; delivered: number; missed: number; processing: number }>()
   for (const s of stats) {
-    const a = agg.get(s.staff_id) || { total_assigned: 0, delivered: 0, missed: 0 }
+    const a = agg.get(s.staff_id) || { total_assigned: 0, delivered: 0, missed: 0, processing: 0 }
     a.total_assigned += s.total_assigned || 0
     a.delivered += s.delivered || 0
     a.missed += s.missed || 0
+    a.processing += (s as any).processing || 0
     agg.set(s.staff_id, a)
   }
 
@@ -115,7 +122,8 @@ export async function GET(request: Request) {
     total_assigned: a.total_assigned,
     delivered: a.delivered,
     missed: a.missed,
-    pending: a.total_assigned - a.delivered - a.missed,
+    processing: a.processing,
+    pending: a.total_assigned - a.delivered - a.missed - a.processing,
     rate: a.total_assigned > 0 ? Math.round((a.delivered / a.total_assigned) * 100) : 0,
   }))
 

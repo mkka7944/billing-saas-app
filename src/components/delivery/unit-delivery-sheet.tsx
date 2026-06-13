@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft, Crosshair } from 'lucide-react'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
@@ -12,6 +12,7 @@ import { uploadToGAS } from '@/lib/drive-upload'
 import { useToast } from '@/hooks/use-toast'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
+import { useUserLocation } from '@/hooks/use-user-location'
 import { haversine } from '@/lib/geo'
 import type { AssignmentItemUnit, AssignmentItemWithUnit } from '@/types'
 
@@ -46,23 +47,18 @@ export default function UnitDeliverySheet({
   const [deliveryDistance, setDeliveryDistance] = useState<number | null>(null)
   const [deliveryGpsLat, setDeliveryGpsLat] = useState<number | null>(null)
   const [deliveryGpsLng, setDeliveryGpsLng] = useState<number | null>(null)
-  const [liveDistance, setLiveDistance] = useState<number | null>(null)
-  const [liveGpsStatus, setLiveGpsStatus] = useState<'idle' | 'locating' | 'ready' | 'unavailable'>('idle')
-  const [userLat, setUserLat] = useState<number | null>(null)
-  const [userLng, setUserLng] = useState<number | null>(null)
   const [forceCompleting, setForceCompleting] = useState(false)
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
-  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
   const [manualSync, setManualSync] = useState(false)
   const [inputCooldown, setInputCooldown] = useState(false)
   const [processingStep, setProcessingStep] = useState<string | null>(null)
   const touchXRef = useRef<number | null>(null)
-  const watchIdRef = useRef<number | null>(null)
 
   const queryClient = useQueryClient()
   const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
   const { mark } = useDeliverUnit()
   const { enqueuePhoto, queueCount } = usePhotoQueue()
+  const { location: gpsLocation, isTracking: gpsIsTracking, error: gpsError } = useUserLocation()
 
   useEffect(() => {
     fetch('/api/settings')
@@ -71,7 +67,7 @@ export default function UnitDeliverySheet({
         setAllowNoPhoto(data?.allow_no_photo === true)
         setManualSync(data?.unsent_mode?.enabled === true)
       })
-      .catch(() => {})
+      .catch(() => { toast('Could not load settings — some features may be unavailable', 'warning') })
   }, [])
 
   const userId = useAuthStore((s) => s.user?.id)
@@ -81,6 +77,19 @@ export default function UnitDeliverySheet({
   const { toast, updateToast } = useToast()
   const confirm = useConfirm()
 
+  const deliveryLat = gpsLocation?.lat ?? initialLat ?? null
+  const deliveryLng = gpsLocation?.lng ?? initialLng ?? null
+  const gpsAccuracy = gpsLocation?.accuracy ?? null
+  const liveDistance = useMemo(() => {
+    if (!gpsLocation || !unit?.lat || !unit?.lng) return null
+    return Math.round(haversine(gpsLocation.lat, gpsLocation.lng, unit.lat, unit.lng))
+  }, [gpsLocation, unit?.lat, unit?.lng])
+  const liveGpsStatus: 'idle' | 'locating' | 'ready' | 'unavailable' =
+    !gpsLocation && !gpsError && !gpsIsTracking ? 'idle'
+    : gpsIsTracking && !gpsLocation ? 'locating'
+    : gpsError ? 'unavailable'
+    : 'ready'
+
   useEffect(() => {
     setDeliveryStatus('idle')
     setIsDelivering(false)
@@ -88,8 +97,6 @@ export default function UnitDeliverySheet({
     setDeliveryDistance(null)
     setDeliveryGpsLat(null)
     setDeliveryGpsLng(null)
-    setUserLat(initialLat ?? null)
-    setUserLng(initialLng ?? null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unit?.psid])
 
@@ -100,74 +107,16 @@ export default function UnitDeliverySheet({
     return () => clearTimeout(timer)
   }, [unit?.psid])
 
-  // Fast initial GPS fix — getCurrentPosition fires immediately
-  useEffect(() => {
-    if (!unit?.lat || !unit?.lng || !navigator.geolocation) return
-    const timer = setTimeout(() => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const d = Math.round(haversine(pos.coords.latitude, pos.coords.longitude, unit.lat!, unit.lng!))
-          setLiveDistance(d)
-          setUserLat(pos.coords.latitude)
-          setUserLng(pos.coords.longitude)
-          setLiveGpsStatus('ready')
-        },
-        () => {},
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
-      )
-    }, 100)
-    return () => clearTimeout(timer)
-  }, [unit?.lat, unit?.lng, unit?.psid])
 
-  // Live GPS tracking — watch position, restart only on unit change
-  useEffect(() => {
-    if (!unit?.lat || !unit?.lng || !navigator.geolocation) {
-      setLiveDistance(null)
-      setLiveGpsStatus('idle')
-      return
-    }
-
-    if (watchIdRef.current != null) {
-      navigator.geolocation.clearWatch(watchIdRef.current)
-    }
-
-    setLiveGpsStatus('locating')
-    const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        const d = Math.round(haversine(pos.coords.latitude, pos.coords.longitude, unit.lat!, unit.lng!))
-        setLiveDistance(d)
-        setUserLat(pos.coords.latitude)
-        setUserLng(pos.coords.longitude)
-        setGpsAccuracy(pos.coords.accuracy)
-        setLiveGpsStatus('ready')
-      },
-      () => setLiveGpsStatus('unavailable'),
-      { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
-    )
-    watchIdRef.current = id
-    return () => {
-      if (watchIdRef.current != null) {
-        navigator.geolocation.clearWatch(watchIdRef.current)
-        watchIdRef.current = null
-      }
-    }
-  }, [unit?.lat, unit?.lng, unit?.psid])
-
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current != null) {
-        navigator.geolocation.clearWatch(watchIdRef.current)
-      }
-    }
-  }, [])
 
   // Auto-advance after successful delivery
   useEffect(() => {
     if (deliveryStatus === 'delivered' || deliveryStatus === 'processing') {
+      const delay = deliveryStatus === 'delivered' ? 2000 : 3500
       const timer = setTimeout(() => {
         setIsDelivering(false)
         onNext?.()
-      }, 3000)
+      }, delay)
       return () => clearTimeout(timer)
     }
   }, [deliveryStatus, onNext])
@@ -196,11 +145,8 @@ export default function UnitDeliverySheet({
       // Step 1: Mark delivery (creates placeholder + GPS check)
       const result = await mark(
         assignmentItemId,
-        unit.psid,
-        userLat,
-        userLng,
-        unit.lat,
-        unit.lng,
+        deliveryLat,
+        deliveryLng,
         false,
       )
 
@@ -281,8 +227,8 @@ export default function UnitDeliverySheet({
               surveyId: unit.survey_id,
               email: userEmail,
               photoBlob: compressed,
-              gpsLat: userLat,
-              gpsLng: userLng,
+              gpsLat: deliveryLat,
+              gpsLng: deliveryLng,
               skipAutoSync: false,
             })
           }
@@ -303,8 +249,8 @@ export default function UnitDeliverySheet({
             surveyId: unit.survey_id || '',
             email: userEmail,
             photoBlob: compressed,
-            gpsLat: userLat,
-            gpsLng: userLng,
+            gpsLat: deliveryLat,
+            gpsLng: deliveryLng,
             skipAutoSync: manualSync,
           })
         }
@@ -319,7 +265,7 @@ export default function UnitDeliverySheet({
     } finally {
       if (inputRef.current) inputRef.current.value = ''
     }
-  }, [assignmentItemId, unit?.psid, unit?.survey_id, unit?.lat, unit?.lng, userLat, userLng, userEmail, mark, enqueuePhoto, queueCount, manualSync, toast, updateToast, queryClient, userId])
+  }, [assignmentItemId, unit?.psid, unit?.survey_id, unit?.lat, unit?.lng, deliveryLat, deliveryLng, userEmail, mark, enqueuePhoto, queueCount, manualSync, toast, updateToast, queryClient, userId])
 
   const handleSkipPhoto = useCallback(async () => {
     if (!assignmentItemId || !unit?.psid) return
@@ -335,11 +281,8 @@ export default function UnitDeliverySheet({
     try {
       const result = await mark(
         assignmentItemId,
-        unit.psid,
-        userLat,
-        userLng,
-        unit.lat,
-        unit.lng,
+        deliveryLat,
+        deliveryLng,
         true,
       )
 
@@ -387,7 +330,7 @@ export default function UnitDeliverySheet({
     } finally {
       // isDelivering stays true on success — auto-advance timer handles it
     }
-  }, [assignmentItemId, unit, userLat, userLng, mark, confirm, toast, queryClient, userId])
+  }, [assignmentItemId, unit, deliveryLat, deliveryLng, mark, confirm, toast, queryClient, userId])
 
   const handleForceComplete = useCallback(async () => {
     if (!unit?.psid) return
@@ -422,6 +365,36 @@ export default function UnitDeliverySheet({
       setForceCompleting(false)
     }
   }, [unit?.psid, confirm, toast, queryClient, onClose])
+
+  const handleFlag = useCallback(async () => {
+    const ok = await confirm({
+      title: 'Flag for Review',
+      message: `Mark PSID ${unit?.psid} as needing review? An admin will check this later.`,
+      confirmLabel: 'Flag',
+      variant: 'default',
+    })
+    if (!ok || !unit?.psid) return
+    try {
+      const res = await fetch('/api/admin/flagged-psids', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          psid: unit.psid,
+          survey_id: unit.survey_id || null,
+          reason: 'staff_flagged',
+          notes: '',
+        }),
+      })
+      if (res.ok) {
+        toast('Flagged for review', 'success')
+      } else {
+        const j = await res.json().catch(() => ({}))
+        toast(j.error || 'Failed to flag', 'error')
+      }
+    } catch {
+      toast('Network error', 'error')
+    }
+  }, [unit?.psid, unit?.survey_id, confirm, toast])
 
   if (!unit) return null
 
@@ -526,12 +499,22 @@ export default function UnitDeliverySheet({
               {processingStep && (
                 <span className="text-[10px] text-white/70 mt-0.5">{processingStep}</span>
               )}
+              {isAdmin && deliveryStatus === 'processing' && (
+                <button
+                  onClick={handleForceComplete}
+                  disabled={forceCompleting}
+                  className="mt-2 w-full h-8 text-[11px] font-semibold rounded-lg bg-amber-500/70 text-white border border-amber-400/30 hover:bg-amber-500 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors"
+                >
+                  {forceCompleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  {forceCompleting ? 'Marking...' : 'Force Complete (admin)'}
+                </button>
+              )}
             </div>
           </div>
         )}
 
         {/* Bottom content — info + actions on the image */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 pb-5 z-10 flex flex-col gap-3">
+        <div className="absolute bottom-0 left-0 right-0 p-4 pb-6 z-10 flex flex-col gap-3">
           {/* Consumer info */}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
@@ -626,20 +609,18 @@ export default function UnitDeliverySheet({
                 <button
                   onClick={handleSkipPhoto}
                   disabled={isDelivering || inputCooldown}
-                  className='w-full h-8 text-[11px] font-medium rounded-lg bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors'
+                  className='w-full h-9 text-[11px] font-medium rounded-lg bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors'
                 >
                   {(isDelivering || inputCooldown) ? <Loader2 className='h-3 w-3 animate-spin' /> : <Crosshair className='h-3 w-3' />}
                   {(isDelivering || inputCooldown) ? 'Processing...' : 'Photo not working? Tap to deliver without photo'}
                 </button>
               )}
-              {isAdmin && !assignmentItemId && (
+              {deliveryStatus === 'idle' && assignmentItemId && (
                 <button
-                  onClick={handleForceComplete}
-                  disabled={forceCompleting}
-                  className="w-full h-10 text-xs font-semibold rounded-xl bg-amber-500/70 text-white border border-amber-400/30 hover:bg-amber-500 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors"
+                  onClick={handleFlag}
+                  className='w-full h-8 text-[10px] font-medium text-white/40 hover:text-white/70 flex items-center justify-center gap-1 cursor-pointer transition-colors'
                 >
-                  {forceCompleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {forceCompleting ? 'Marking...' : 'Force Complete (admin)'}
+                  Flag for Review
                 </button>
               )}
             </div>

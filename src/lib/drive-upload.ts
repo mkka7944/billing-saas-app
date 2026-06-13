@@ -22,21 +22,32 @@ export async function uploadToGAS(
   const rawBase64 = stripDataPrefix(dataUrl)
   const filename = `${surveyId}_${Date.now()}.webp`
 
-  const res = await fetch(WEBHOOK_URL, {
-    method: 'POST',
-    mode: 'cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({
-      action: 'upload',
-      name: filename,
-      data: rawBase64,
-      surveyId,
-      survey_id: surveyId,
-      email,
-      referer: window.location.origin,
-      timestamp: new Date().toISOString(),
-    }),
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+
+  let res: Response
+  try {
+    res = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        action: 'upload',
+        name: filename,
+        data: rawBase64,
+        surveyId,
+        survey_id: surveyId,
+        email,
+        referer: window.location.origin,
+        timestamp: new Date().toISOString(),
+      }),
+    })
+  } catch (e) {
+    throw new Error(e instanceof DOMException && e.name === 'AbortError' ? 'GAS timeout (8s)' : 'GAS network error')
+  } finally {
+    clearTimeout(timeout)
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
