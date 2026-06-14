@@ -1,8 +1,9 @@
 # Billing SaaS App — Development Rules
 
 ## Source of Truth
-**Read `docs/MASTER.md` at session start + append session log at session end.**
-All plans, data model, workflow, edge case decisions, and session history live there.
+**At session start:** Read `.opencode/context.json` (machine-readable state) and `docs/SESSION.md` (running session log).
+**At session end:** Update `.opencode/context.json` and append to `docs/SESSION.md`.
+All plans, data model, workflow, and edge case decisions live in `docs/MASTER.md` (reference-only, 2728 lines).
 **Section 9** contains edge case decisions (must review before making migration or schema changes).
 **Section 11** contains the sequential workflow rule (must follow for all implementation).
 

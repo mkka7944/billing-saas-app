@@ -117,24 +117,30 @@
 
 ### Phase C — Admin Dashboard
 | | |
-|---|---|
-| **Status** | ⏳ Not Started |
-| **Estimate** | 3 hrs |
+|---|---|---|
+| **Status** | 🔜 Partial |
+| **Estimate** | 3 hrs (originally) |
 | **Description** | `/stats` page daily delivery stats, staff performance tracking (notes + rating 1-5), Data Insight delivery KPIs. |
+| **Done** | Delivery Quality RPC + Settings tab (2026-06-12). Failed Uploads card in staff stats (2026-06-11). Sidebar Dashboard admin-only gate fix. |
+| **Remaining** | Staff performance notes/rating system. Data Insight delivery KPIs. |
 
 ### Phase D — Visual Rehaul
 | | |
-|---|---|
-| **Status** | ⏳ Not Started |
-| **Estimate** | 4 hrs |
+|---|---|---|
+| **Status** | 🔜 Partial |
+| **Estimate** | 4 hrs (originally) |
 | **Description** | Staff mode route guard, mobile layout optimizations, desktop sidebar persistence, admin filter bar polish, theme system, touch target audit for mobile. |
+| **Done** | D.1 Canvas renderer (preferCanvas). D.2 Supersede old photos. D.3 Queue state to Zustand. D.4 Dead code cleanup. D.5 CircleMarker swap, ShowAll backend, PulsingRing CSS. Touch targets bumped (2026-06-13). Single GPS watcher consolidated. |
+| **Remaining** | Staff route guard. Desktop sidebar persistence. Admin filter bar polish. Theme system expansion. |
 
 ### Phase E — Flag Management UI
 | | |
-|---|---|
-| **Status** | ⏳ Not Started |
-| **Estimate** | 4 hrs |
+|---|---|---|
+| **Status** | 🔜 Partial |
+| **Estimate** | 4 hrs (originally) |
 | **Description** | `/flagged-units` page with table of flagged PSIDs. Resolve, confirm, and note actions per flagged unit. "Flag for Review" button on HDS. Support for `staff_flagged` enrichment data. |
+| **Done** | "Flag for Review" button in delivery sheet (2026-06-13). Posts to existing `/api/admin/flagged-psids` with `reason: 'staff_flagged'`. |
+| **Remaining** | `/flagged-units` page. Resolve/confirm/note actions. |
 
 ### Phase F — Auto-Route Generation
 | | |
@@ -166,11 +172,12 @@
 
 ### Phase M2 — "Show All" Markers + Unit Counts per UC
 | | |
-|---|---|
-| **Status** | ⏳ Not Started |
-| **Estimate** | 3 hrs |
+|---|---|---|
+| **Status** | 🔜 Partial |
+| **Estimate** | 3 hrs (originally, remaining ~1.5 hrs) |
 | **Description** | Marker cluster counts at city zoom level. "Show All" toggle to load full dataset. Unit count badges per UC in filter dropdown. Marker clustering for sparse zoom levels. |
-| **Note** | The `showAll` backend (batched fetch for map) was implemented in 2026-06-12 session. This phase now covers: marker clustering, unit counts in UI, and cluster toggle. |
+| **Done** | `showAll` backend (batched fetch with MAP_PAGE_SIZE=50000, keepPreviousData, applyFilters refactor) — 2026-06-12 session. |
+| **Remaining** | Marker clustering. Unit count badges in filter dropdown. Cluster toggle. |
 
 ### Phase M3 — Post-Enrichment JSON Marker Chunks
 | | |
@@ -628,25 +635,25 @@
 
 ## Execution Priority Order (Next Up)
 
-### Primary Phases — From MASTER.md Section 10 (lines 1141–1169)
+### Primary Phases — From MASTER.md Section 10
 
-| Priority | Phase | Est. | Why |
-|----------|-------|------|-----|
+| Priority | Phase | Est. | Why | Status |
+|----------|-------|------|-----|--------|
 | — | **B3** (Delivery Stability) | 8 hrs | ✅ Done |
-| 1 | **0e** (Stabilize & Clean) | 2 hrs | Fix payment filter pagination bug (maps showing wrong paid/unpaid data) |
-| 2 | **0d** (Reference Tables) | 1.5 hrs | Performance: fix 212K-row filter queries |
-| 3 | **M2** (Show All + Counts) | 3 hrs | Map UX improvement, clustering for performance |
-| 4 | **M1** (Map Unification) | 30 min | Quick win — staff sees overlay data |
-| 5 | **Phase E** (Flag Management) | 4 hrs | Flag admin page for managing staff-flagged items |
-| 6 | **M3** (JSON Marker Chunks) | 1.5 hrs | Egress optimization for map data |
-| 7 | **0f** (Schema Restructuring) | 6 hrs | Foundation for delivery+house tables |
-| 8 | **Phase C** (Admin Dashboard) | 3 hrs | Staff performance visibility |
-| 9 | **Phase F** (Auto-Route) | 3 hrs | Route optimization |
-| 10 | **Phase G** (Live Monitoring) | 3 hrs | Real-time admin view |
-| 11 | **Phase RBAC** (Approval Chain) | 3 hrs | Access control |
-| 12 | **Phase D** (Visual Rehaul) | 4 hrs | UI polish |
-| 13 | **Phase Z** (App Audit Cleanup) | 4 hrs | Deep cleanup (deferred) |
-| 14 | **Audit P1-P6** | 21 hrs | Production hardening (deferred) |
+| 1 | **0e** (Stabilize & Clean) | 2 hrs | Fix payment filter pagination bug (maps showing wrong paid/unpaid data) | ⏳ |
+| 2 | **0d** (Reference Tables) | 1.5 hrs | Performance: fix 212K-row filter queries | ⏳ |
+| 3 | **M2** (Show All + Counts) | ~1.5 hrs | Backend done; clustering, badges, toggle remaining | 🔜 |
+| 4 | **M1** (Map Unification) | 30 min | Quick win — staff sees overlay data | ⏳ |
+| 5 | **Phase E** (Flag Management) | ~3 hrs | Flag button done; `/flagged-units` page remaining | 🔜 |
+| 6 | **M3** (JSON Marker Chunks) | 1.5 hrs | Egress optimization for map data | ⏳ |
+| 7 | **0f** (Schema Restructuring) | 6 hrs | Foundation for delivery+house tables | ⏳ |
+| 8 | **Phase C** (Admin Dashboard) | ~1 hr remaining | Quality tab + stats done; perf notes/ratings remaining | 🔜 |
+| 9 | **Phase D** (Visual Rehaul) | ~1 hr remaining | Canvas, supersede, Zustand, CircleMarker done; route guard + sidebar persistence + theme remaining | 🔜 |
+| 10 | **Phase F** (Auto-Route) | 3 hrs | Route optimization | ⏳ |
+| 11 | **Phase G** (Live Monitoring) | 3 hrs | Real-time admin view | ⏳ |
+| 12 | **Phase RBAC** (Approval Chain) | 3 hrs | Access control | ⏳ |
+| 13 | **Phase Z** (App Audit Cleanup) | 4 hrs | Deep cleanup | ⏸️ |
+| 14 | **Audit P1-P6** | 21 hrs | Production hardening | ⏸️ |
 
 ### Appendix Gaps — Quick Fixes (from Appendix above)
 
@@ -670,11 +677,11 @@
 
 | Metric | Count |
 |--------|-------|
-| **Total phases (Section 10 + R Series + Audit P + Notifications + Ingest + Corrections + today's 8 steps)** | 44 |
+| **Total phases** | 44 |
 | **✅ Completed** | 30 |
-| **🔜 In Progress** | 0 |
-| **⏳ Not Started** | 11 |
-| **⏸️ Deferred** | 3 |
+| **🔜 In Progress (partial)** | 4 (C, D, E, M2) |
+| **⏳ Not Started** | 9 (0d, 0e, 0f, M1, M3, F, G, RBAC) |
+| **⏸️ Deferred** | 3 (Z, Audit P5, C3 GPS) |
 | **Completed work estimate** | ~44 hrs |
 | **Remaining work estimate (Section 10 phases only)** | ~39 hrs |
 | **Appendix Gaps (A-D): ⏳ Not Started** | 9 items |
