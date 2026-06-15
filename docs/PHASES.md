@@ -1,7 +1,7 @@
 # Billing SaaS App — Complete Phase Reference
 
-> **Source of truth**: `docs/MASTER.md` Sections 10, 25, 28.10, Appendix C.
-> **Last updated**: 2026-06-12
+> **Source of truth**: `docs/MASTER.md` (reference-only), `docs/SESSION.md` (session log), `docs/PHASES.md` (phase catalog), `.opencode/context.json` (machine-readable handoff state)
+> **Last updated**: 2026-06-14
 
 ---
 
@@ -420,9 +420,15 @@
 
 ### 2026-06-13 — Staff Delivery Harden & Efficiency (8 Steps)
 | | |
-|---|---|
+|---|---|---|
 | **Status** | ✅ Done |
 | **Description** | Settings fetch silent failure toast. Server error branch in `/deliver`. Double GPS watcher consolidation (sheet uses singleton `useUserLocation`). Dead `isDelivering` state removal from `useDeliverUnit`. "Flag for Review" button on HDS. Mobile touch targets (larger buttons, list items). Structured IndexedDB migration pattern. |
+
+### 2026-06-14 — Context Handoff System + Proxy Rename
+| | |
+|---|---|
+| **Status** | ✅ Done |
+| **Description** | Renamed `src/middleware.ts` → `src/proxy.ts` (Next.js 16 convention). Narrowed proxy matcher to exclude `/api/*` (80% fewer invocations). Created `.opencode/context.json` (machine-readable handoff state). Created `docs/SESSION.md` (replaces session logs in MASTER.md). Restructured MASTER.md (session logs extracted). Corrected PHASES.md phase status discrepancies. |
 
 ---
 
@@ -448,9 +454,9 @@
 
 | Migration | File | Status | Action Needed |
 |-----------|------|--------|---------------|
-| 030 | `scripts/sql/030-delivery-photos.sql` | ⏳ Not Applied | Requires PAT token execution |
-| 036 | `scripts/sql/036-test-mc-data.sql` | ⏳ Not Applied | Test data for MC filtering, requires PAT |
-| 037 | `scripts/sql/037-notifications.sql` | ⏳ Not Applied | Notifications schema, requires PAT |
+| 036 | `scripts/sql/036-test-mc-data.sql` | ⏳ Not Applied | Test data for MC filtering (separate from 036-index-created-at which was applied) |
+| 037 | `scripts/sql/037-notifications.sql` | ⏳ Not Applied | Notifications schema |
+| 038 | `scripts/sql/038-unsent-mode-setting.sql` | ⏳ Not Applied | "Always Unsent" mode setting |
 
 ---
 

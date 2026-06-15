@@ -12,6 +12,7 @@ export function SurveyList() {
   const filters = useBillingStore((s) => s.filters)
   const selectedCity = useBillingStore((s) => s.selectedCity)
   const selectHouse = useBillingStore((s) => s.selectHouse)
+  const setHouseSource = useBillingStore((s) => s.setHouseSource)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
   const setMapZoom = useBillingStore((s) => s.setMapZoom)
   const setView = useBillingStore((s) => s.setView)
@@ -39,7 +40,8 @@ export function SurveyList() {
     const inPage = items.some((i) => i.survey_id === selectedHouseId)
     if (selectedHouseId && inPage) return
     selectHouse(items[0].survey_id, items, data?.total)
-  }, [items, data?.total, activeView]) // eslint-disable-line react-hooks/exhaustive-deps
+    setHouseSource('list')
+  }, [items, data?.total, activeView, setHouseSource]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const showOnMap = (s: (typeof items)[0]) => {
     if (s.lat && s.lng) {
@@ -77,7 +79,7 @@ export function SurveyList() {
               <div
                 key={s.survey_id}
                 className="rounded-lg border border-border bg-card hover:bg-muted/50 transition-colors overflow-hidden cursor-pointer active:bg-muted/70"
-                onClick={() => selectHouse(s.survey_id, items, data?.total)}
+                onClick={() => { selectHouse(s.survey_id, items, data?.total); setHouseSource('list') }}
               >
                 <div className="flex items-center min-h-0">
                   {s.image_urls?.[0] && (

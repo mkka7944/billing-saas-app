@@ -14,7 +14,6 @@ import type { AssignmentItemWithUnit } from '@/types'
 import { shortenMCName, compareMC } from '@/lib/mc-utils'
 import { AppShell } from '@/components/layout/AppShell'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
-import { useAssignmentRealtime } from '@/hooks/use-assignment-realtime'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
 
 const PAGE_SIZE = 50
@@ -47,7 +46,6 @@ export default function DeliverPage() {
   const [ucDropdownOpen, setUcDropdownOpen] = useState(false)
   const [dbUnsyncedCount, setDbUnsyncedCount] = useState(0)
 
-  useAssignmentRealtime(user?.id || null)
   const { queueCount, isProcessing, processQueue, processingIndex, totalToProcess, currentFileSize, uploadSpeed } = usePhotoQueue()
 
   const { data, isLoading, isError, refetch } = useStaffAssignment(user?.id || null)

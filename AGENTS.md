@@ -57,6 +57,8 @@ All plans, data model, workflow, and edge case decisions live in `docs/MASTER.md
    - `STALE_TIMES.PERFORMANCE` (2min) for staff stats/performance
 7. **Mutate → invalidate pattern**: Every mutation must invalidate the query keys it affects. Invalidating the prefix (e.g., `['assignment-totals']`) invalidates all sub-keys (e.g., `['assignment-totals', month, district]`).
 8. **Column constants in API routes** — define once at the top of the route file (e.g., `const COLS = 'col1, col2, col3'`). These are per-route because each endpoint needs different columns. Only shared column lists (like `SURVEY_UNIT_COLS`) go in `src/lib/queries/constants.ts`.
+9. **MAP_COLS must include `image_urls`** — `survey-repository.ts` uses `COLS` for paginated views and `MAP_COLS` for map markers (`pageSize > BATCH_SIZE`). `MAP_COLS` must include `image_urls` because both the delivery sheet hero image and HDS portal gallery read it from the marker object. Excluding it causes missing images with no fallback. The old bottleneck was the cross-table `payment_history` join, not column size — now replaced by `.eq('is_paid', true/false)`.
+10. **HDS: conditional `useSurveyById`, `houseListSurvey` priority** — `useSurveyById(houseListSurvey ? null : selectedHouseId)` skips fetching when the record exists in the navigation list. `survey = houseListSurvey || apiSurvey` gives `houseListSurvey` priority (immediate correct data with `image_urls`). `keepPreviousData` is restored to prevent flicker during the rare fallback fetch.
 
 ## Two User Modes
 - **Field Staff:** Mobile-first. Route: `/deliver`. Sees only assigned bills. Full-screen map, bottom sheet detail, photo capture flow, progress bar.
@@ -240,7 +242,7 @@ supabase.table("survey_units").upsert(rows, on_conflict="survey_id").execute()
 
 ### Schema
 - Base: `scripts/sql/reset-and-create.sql`
-- Migrations: `scripts/sql/` files `005`–`043` (apply in order via `npx supabase db query --linked --file <file>`)
+- Migrations: `scripts/sql/` files `005`–`047` (apply in order via `npx supabase db query --linked --file <file>`)
 - RPCs: `scripts/sql/007-data-insight-rpcs.sql` — admin-only aggregate functions
 - Triggers: `scripts/sql/009-triggers-and-automation.sql`, `010-reference-tables.sql`, `026-staff-sync-trigger.sql``
 

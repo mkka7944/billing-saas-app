@@ -1571,10 +1571,6 @@ App (Next.js SSR)                     Local Server (office PC)
 
 **Total: ~6 hrs for full pipeline streamlining.** This is additive to the DQ items in 16.9.6. The first 3 items (P0-P3, ~1 hr) are the critical path â€” everything else can be done incrementally.
 
----
-## 12. Session Log
-### 2026-05-25 (Domain Separation Discovery) â€” Location: Home
-
 ## 26. Delivery KPI Queries (Future)
 
 After 2-3 months of `started_at` data collection:

@@ -3,14 +3,20 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import type { SurveyUnit, FilterState, BillInfo } from '@/types'
 import { MAP_PAGE_SIZE } from '@/lib/queries/constants'
+import { useBillingStore } from '@/stores/billing-store'
 
 export function useSurveyData(filters: FilterState, page = 1, pageSize = 50, showAll = false) {
   const actualPage = showAll ? 1 : page
   const actualPageSize = showAll ? MAP_PAGE_SIZE : pageSize
+  const setIsFetching = useBillingStore((s) => s.setIsFetching)
+  const setQueryDuration = useBillingStore((s) => s.setQueryDuration)
 
   return useQuery({
     queryKey: ['surveys', filters, actualPage, actualPageSize],
     queryFn: async () => {
+      const start = performance.now()
+      setIsFetching(true)
+
       const params = new URLSearchParams()
       for (const d of filters.districts) params.append('district', d)
       for (const t of filters.tehsils) params.append('tehsil', t)
@@ -25,10 +31,16 @@ export function useSurveyData(filters: FilterState, page = 1, pageSize = 50, sho
       params.set('page', String(actualPage))
       params.set('pageSize', String(actualPageSize))
 
-      const res = await fetch(`/api/surveys?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch surveys')
-      const json = await res.json()
-      return { data: (json.data || []) as SurveyUnit[], total: json.total as number }
+      try {
+        const res = await fetch(`/api/surveys?${params}`)
+        if (!res.ok) throw new Error('Failed to fetch surveys')
+        const json = await res.json()
+        return { data: (json.data || []) as SurveyUnit[], total: json.total as number }
+      } finally {
+        const elapsed = performance.now() - start
+        setQueryDuration(elapsed)
+        setIsFetching(false)
+      }
     },
     staleTime: 5 * 60 * 1000,
     placeholderData: keepPreviousData,

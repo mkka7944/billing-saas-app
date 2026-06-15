@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useToast } from '@/hooks/use-toast'
+import { useSettings } from '@/hooks/use-settings'
 import { usePhotoQueueStore } from '@/stores/photo-queue-store'
 import {
   addToQueue,
@@ -182,16 +183,14 @@ export function usePhotoQueue() {
     }
   }, [refreshCount, processQueue])
 
+  const { data: appSettings } = useSettings()
+
+  useEffect(() => {
+    manualSyncRef.current = appSettings?.unsent_mode?.enabled === true
+  }, [appSettings])
+
   useEffect(() => {
     refreshCount()
-
-    fetch('/api/settings')
-      .then(r => r.json())
-      .then(data => { manualSyncRef.current = data?.unsent_mode?.enabled === true })
-      .catch((err) => {
-        console.error('Failed to fetch settings:', err)
-        toast('Could not load settings — some features may be unavailable', 'warning')
-      })
 
     const handleOnline = () => {
       if (!manualSyncRef.current) processQueue()

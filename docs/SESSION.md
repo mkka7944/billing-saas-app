@@ -3237,5 +3237,58 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - PHASES.md has correct statuses for all 44 phases
 - AGENTS.md updated with handoff instructions
 
+---
 
+## 2026-06-15 — Performance Optimization + Bug Fix Audit
+
+### Phase: Performance Optimization
+
+### What
+- **MAP_COLS** — kept `image_urls` in `MAP_COLS` for immediate portal images in delivery sheet and HDS; the old 9s bottleneck was the cross-table join (eliminated by migration 045 `is_paid` column), not the column size
+- **HDS `useSurveyById`** — reverted to conditional `useSurveyById(houseListSurvey ? null : selectedHouseId)`, `survey = houseListSurvey || apiSurvey` priority, restored `keepPreviousData`
+- **MapMarkerCount** — removed duplicate `useSurveyData()` subscription; reads from store `mapMarkers` array instead
+- **`setInterval` 100ms timers** — removed from both AppHeader and filter-panel; replaced with static "..." during fetch
+- **`mapMarkers` sync guard** — only closes HDS when current unit is filtered out; no unnecessary `selectHouse()` calls on data refresh
+- **Migration 047** (`uc_name` + `uc_status` indexes) — applied; map query uses Bitmap Index Scan (0.6ms) instead of seq scan
+
+### Bugs Fixed
+- Delivery sheet portal images not showing (MAP_COLS was missing `image_urls`)
+- HDS showing wrong portal images during navigation (`keepPreviousData` stale data)
+- HDS drive images not showing (wrong `psid` from stale `survey` data)
+- HDS double re-render on every nav (unconditional `useSurveyById`)
+- Map marker pill triggering duplicate survey fetch (independent `useSurveyData`)
+- AppHeader/filter-panel re-rendering 10x/sec during loading (100ms `setInterval`)
+- HDS re-rendering on every map data refresh (unconditional `selectHouse` in sync effect)
+
+### Key Decisions
+- MAP_COLS keeps `image_urls` — portal images immediate, map query fast enough with `is_paid` denormalization
+- Conditional `useSurveyById` + `houseListSurvey` priority — zero extra fetches during HDS navigation
+- `keepPreviousData` restored — prevents flash of empty content on the rare fallback fetch
+- Store-based marker count eliminates duplicate query entirely
+- Static "..." timer display avoids per-frame re-renders
+
+### Files Modified
+- `src/lib/repositories/survey-repository.ts` — MAP_COLS includes image_urls
+- `src/components/house-detail-sheet.tsx` — conditional useSurveyById, houseListSurvey priority
+- `src/hooks/use-survey-data.ts` — restored keepPreviousData
+- `src/components/map-marker-count.tsx` — removed duplicate useSurveyData
+- `src/components/layout/AppHeader.tsx` — removed 100ms setInterval
+- `src/components/filter-panel.tsx` — removed 100ms setInterval + unused useIsFetching
+- `src/app/map/page.tsx` — guarded mapMarkers sync effect
+- `src/components/survey-list.tsx` — setHouseSource on open
+- `src/components/data-insight.tsx` — setHouseSource on open
+- `.opencode/context.json` — updated
+- `docs/SESSION.md` — appended
+
+### Verification
+- `npx tsc --noEmit` — 0 errors
+- `npx next build` — compiled successfully
+- All 6 performance regressions identified and fixed
+
+### Next
+1. Phase E — Flag Management UI (admin page, backend exists)
+2. Phase C.2 — Staff performance admin UI (ratings form, backend exists)
+3. Phase D.1 — Staff route guard (role-based redirect in proxy.ts)
+4. Phase M2 — Marker clustering (leaflet.markercluster)
+5. Apply migration 038 (unsent-mode-setting.sql)
 

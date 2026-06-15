@@ -271,6 +271,7 @@ export function DataInsight() {
   const sharedFilters = useBillingStore((s) => s.filters)
   const selectedCity = useBillingStore((s) => s.selectedCity)
   const selectHouse = useBillingStore((s) => s.selectHouse)
+  const setHouseSource = useBillingStore((s) => s.setHouseSource)
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [page, setPage] = useState(1)
@@ -415,6 +416,7 @@ export function DataInsight() {
                 onOpen={(row) => {
                   const items = unitRows as unknown as SurveyUnit[]
                   selectHouse(row.survey_id, items, totalRecords)
+                  setHouseSource('data-insight')
                 }}
                 showFlag={statusFilter !== 'active'}
               />

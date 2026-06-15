@@ -31,15 +31,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Second call without district/tehsil filter — only for tehsil_breakdown (all cities)
-  const { data: allData } = await sup.rpc('get_charts_data', {
-    p_district: '',
-    p_tehsil: '',
-    p_month: month,
-  } as any)
-
   const raw = (data || {}) as any
-  const rawAll = (allData || {}) as any
+
+  // Only fetch unfiltered tehsil_breakdown when no specific district/tehsil is selected
+  let unfilteredTehsilBreakdown: any[] | null = null
+  if (!district && !tehsil) {
+    const { data: allData } = await sup.rpc('get_charts_data', {
+      p_district: '',
+      p_tehsil: '',
+      p_month: month,
+    } as any)
+    unfilteredTehsilBreakdown = ((allData || {}) as any).tehsil_breakdown || null
+  }
   const curves: MonthlyCurveRow[] = (raw.monthly_curves || []).map((r: any) => ({
     bill_month: r.bill_month,
     day: r.day,
@@ -52,7 +55,7 @@ export async function GET(request: Request) {
     monthly_trend: raw.monthly_trend || [],
     daily_detail: raw.daily_detail || [],
     category_summary: raw.category_summary || [],
-    tehsil_breakdown: rawAll.tehsil_breakdown || raw.tehsil_breakdown || [],
+    tehsil_breakdown: unfilteredTehsilBreakdown || raw.tehsil_breakdown || [],
     monthly_curves: curves,
     kpi: raw.kpi || { total_units: 0, collected: 0 },
   }

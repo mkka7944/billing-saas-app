@@ -78,17 +78,20 @@ export async function POST(request: Request) {
       }
     }
 
-    // Validate no-photo setting if skipping photo
-    if (!hasPhoto) {
-      const { data: noPhotoSetting } = await sup
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'allow_no_photo')
-        .maybeSingle()
+    // Read app settings (allow_no_photo + gps_enforcement) in one query
+    const { data: settingsRows } = await sup
+      .from('app_settings')
+      .select('key, value')
+      .in('key', ['allow_no_photo', 'gps_enforcement'])
 
-      if (!noPhotoSetting?.value) {
-        return NextResponse.json({ error: 'Photo required — no-photo delivery not enabled by admin' }, { status: 400 })
-      }
+    const settingsMap: Record<string, any> = {}
+    for (const row of settingsRows || []) {
+      settingsMap[row.key] = row.value
+    }
+
+    // Validate no-photo setting if skipping photo
+    if (!hasPhoto && !settingsMap.allow_no_photo) {
+      return NextResponse.json({ error: 'Photo required — no-photo delivery not enabled by admin' }, { status: 400 })
     }
 
     const startedAt = new Date().toISOString()
@@ -97,14 +100,10 @@ export async function POST(request: Request) {
     // Read GPS enforcement settings
     let enforceGps = true
     let gpsThreshold = 50
-    const { data: gpsSetting } = await sup
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'gps_enforcement')
-      .maybeSingle()
-    if (gpsSetting?.value) {
-      enforceGps = gpsSetting.value.enforce !== false
-      gpsThreshold = typeof gpsSetting.value.threshold === 'number' ? gpsSetting.value.threshold : 50
+    const gpsSetting = settingsMap.gps_enforcement
+    if (gpsSetting) {
+      enforceGps = gpsSetting.enforce !== false
+      gpsThreshold = typeof gpsSetting.threshold === 'number' ? gpsSetting.threshold : 50
     }
 
     // Calculate distance and determine status

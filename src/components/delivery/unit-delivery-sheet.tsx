@@ -6,6 +6,7 @@ import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronL
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
+import { useSettings } from '@/hooks/use-settings'
 import { useAuthStore } from '@/stores/auth-store'
 import { compressImage } from '@/lib/image/compress'
 import { uploadToGAS } from '@/lib/drive-upload'
@@ -59,16 +60,13 @@ export default function UnitDeliverySheet({
   const { mark } = useDeliverUnit()
   const { enqueuePhoto, queueCount } = usePhotoQueue()
   const { location: gpsLocation, isTracking: gpsIsTracking, error: gpsError } = useUserLocation()
+  const { data: appSettings } = useSettings()
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.json())
-      .then(data => {
-        setAllowNoPhoto(data?.allow_no_photo === true)
-        setManualSync(data?.unsent_mode?.enabled === true)
-      })
-      .catch(() => { toast('Could not load settings — some features may be unavailable', 'warning') })
-  }, [])
+    if (!appSettings) return
+    setAllowNoPhoto(appSettings?.allow_no_photo === true)
+    setManualSync(appSettings?.unsent_mode?.enabled === true)
+  }, [appSettings])
 
   const userId = useAuthStore((s) => s.user?.id)
   const userEmail = useAuthStore((s) => s.user?.email) || ''

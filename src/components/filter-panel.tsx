@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { useQueryClient, useIsFetching } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
 import { useHierarchy } from '@/hooks/use-hierarchy'
@@ -519,10 +519,11 @@ function ActionButtons() {
   const applyFilters = useBillingStore((s) => s.applyFilters)
   const cancelFilters = useBillingStore((s) => s.cancelFilters)
   const queryClient = useQueryClient()
-  const isFetching = useIsFetching()
   const mapType = useBillingStore((s) => s.mapType)
   const setMapType = useBillingStore((s) => s.setMapType)
 
+  const queryDuration = useBillingStore((s) => s.queryDuration)
+  const storeIsFetching = useBillingStore((s) => s.isFetching)
   const [showSuccess, setShowSuccess] = useState(false)
   const successTimer = useRef<number>(0)
 
@@ -531,22 +532,21 @@ function ActionButtons() {
     [filters, pendingFilters]
   )
 
+  const isRefreshing = storeIsFetching
+
+  // Show "✓ duration" after fetch completes
+  useEffect(() => {
+    if (!storeIsFetching && queryDuration != null) {
+      setShowSuccess(true)
+      window.clearTimeout(successTimer.current)
+      successTimer.current = window.setTimeout(() => setShowSuccess(false), 2000)
+    }
+    return () => { window.clearTimeout(successTimer.current) }
+  }, [isRefreshing, queryDuration])
+
   const handleUpdate = useCallback(() => {
     queryClient.invalidateQueries()
-    window.clearTimeout(successTimer.current)
-    successTimer.current = window.setTimeout(() => {
-      if (isFetching === 0) {
-        setShowSuccess(true)
-        window.setTimeout(() => setShowSuccess(false), 2000)
-      }
-    }, 300)
-  }, [queryClient, isFetching])
-
-  useEffect(() => {
-    return () => window.clearTimeout(successTimer.current)
-  }, [])
-
-  const isRefreshing = isFetching > 0
+  }, [queryClient])
 
   return (
     <div className="flex items-center gap-1.5 shrink-0 ml-auto">
@@ -581,11 +581,11 @@ function ActionButtons() {
       </div>
 
       {isRefreshing && (
-        <span className="text-[10px] text-muted-foreground font-medium animate-pulse">Syncing...</span>
+        <span className="text-[10px] text-muted-foreground font-medium tabular-nums">...</span>
       )}
 
       {showSuccess && !isRefreshing && (
-        <span className="text-[10px] text-green-600 dark:text-green-300 font-medium animate-in fade-in duration-150">Updated</span>
+        <span className="text-[10px] text-green-600 dark:text-green-300 font-medium tabular-nums animate-in fade-in duration-150">✓ {(queryDuration! / 1000).toFixed(1)}s</span>
       )}
 
       {hasUnapplied && (

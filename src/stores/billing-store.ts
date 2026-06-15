@@ -21,6 +21,10 @@ interface BillingState {
   houseListIndex: number
   houseListTotal: number
   listPage: number
+  queryDuration: number | null
+  isFetching: boolean
+  mapMarkers: SurveyUnit[]
+  houseSource: 'map' | 'list' | 'data-insight' | null
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setListPage: (page: number) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
@@ -42,6 +46,10 @@ interface BillingState {
   setMapCenter: (center: [number, number]) => void
   setMapZoom: (zoom: number) => void
   setMapType: (type: 'streets' | 'satellite') => void
+  setQueryDuration: (duration: number | null) => void
+  setIsFetching: (fetching: boolean) => void
+  setMapMarkers: (markers: SurveyUnit[]) => void
+  setHouseSource: (source: 'map' | 'list' | 'data-insight' | null) => void
 }
 
 const defaultFilters: FilterState = {
@@ -79,6 +87,10 @@ export const useBillingStore = create<BillingState>()(
       houseListIndex: 0,
       houseListTotal: 0,
       listPage: 1,
+      queryDuration: null,
+      isFetching: false,
+      mapMarkers: [],
+      houseSource: null,
       mapCenter: [32.0836, 72.6712],
       mapZoom: 12,
       mapType: 'streets',
@@ -204,6 +216,10 @@ export const useBillingStore = create<BillingState>()(
       setMapZoom: (zoom) => set({ mapZoom: zoom }),
       setMapType: (type) => set({ mapType: type }),
       setListPage: (page) => set({ listPage: Math.max(1, page) }),
+      setQueryDuration: (duration) => set({ queryDuration: duration }),
+      setIsFetching: (fetching) => set({ isFetching: fetching }),
+      setMapMarkers: (markers) => set({ mapMarkers: markers }),
+      setHouseSource: (source) => set({ houseSource: source }),
     }),
     {
       name: 'billing-store',

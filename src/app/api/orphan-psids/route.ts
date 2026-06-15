@@ -1,35 +1,27 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+interface OrphanRow {
+  psid: string
+  bill_month: string
+  amount_paid: number
+  paid_date: string
+  city_district: string
+  tehsil: string
+  uc_name: string
+}
+
 export async function GET(request: Request) {
   try {
     const sp = new URL(request.url).searchParams
-    const month = sp.get('month') || ''
+    const month = sp.get('month') || undefined
     const sup = await createClient()
 
-    const { data: matched, error: matchErr } = await sup
-      .from('survey_units')
-      .select('psid')
-      .not('psid', 'is', null)
+    const { data, error } = await sup.rpc('get_orphan_psids', { p_month: month || null })
 
-    if (matchErr) return NextResponse.json({ error: matchErr.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    const psidSet = new Set((matched || []).map(r => r.psid))
-
-    let query = sup
-      .from('payment_history')
-      .select('psid, bill_month, amount_paid, paid_date, city_district, tehsil, uc_name')
-      .eq('payment_status', 'paid')
-      .order('bill_month', { ascending: false })
-      .order('paid_date', { ascending: false })
-
-    if (month) query = query.eq('bill_month', month)
-
-    const { data: allPaid, error: paidErr } = await query
-
-    if (paidErr) return NextResponse.json({ error: paidErr.message }, { status: 500 })
-
-    const orphans = (allPaid || []).filter(r => !psidSet.has(r.psid))
+    const orphans = (data || []) as OrphanRow[]
 
     const monthTotals = orphans.reduce<Record<string, { psids: number; amount: number }>>((acc, row) => {
       const m = row.bill_month

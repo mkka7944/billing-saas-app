@@ -4,10 +4,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { useSurveyById, useSurveyPayments, useSurveyBillInfo } from '@/hooks/use-survey-data'
-import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
-import { useDrivePhotos } from '@/hooks/use-drive-photos'
-import { useFlaggedPsids } from '@/hooks/use-flagged-psids'
+import { useSurveyById } from '@/hooks/use-survey-data'
+import { useHouseDetailExtra } from '@/hooks/use-house-detail-extra'
 import { shortenMCName } from '@/lib/mc-utils'
 import { currentMonth } from '@/lib/constants'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
@@ -36,6 +34,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   const houseList = useBillingStore((s) => s.houseList)
   const houseListIndex = useBillingStore((s) => s.houseListIndex)
   const houseListTotal = useBillingStore((s) => s.houseListTotal)
+  const houseSource = useBillingStore((s) => s.houseSource)
   const nextHouse = useBillingStore((s) => s.nextHouse)
   const prevHouse = useBillingStore((s) => s.prevHouse)
   const firstHouse = useBillingStore((s) => s.firstHouse)
@@ -49,10 +48,15 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   const { data: apiSurvey } = useSurveyById(houseListSurvey ? null : selectedHouseId)
 
   const survey = houseListSurvey || apiSurvey
-  const { data: billData } = useSurveyPayments(selectedHouseId)
-  const { data: billInfo } = useSurveyBillInfo(selectedHouseId)
-  const { data: deliveryPhotos = [] } = useDeliveryPhotos(survey?.psid || null)
-  const { data: drivePhotos = [] } = useDrivePhotos(survey?.survey_id || null)
+
+  const { data: extra } = useHouseDetailExtra(selectedHouseId, survey?.psid || null)
+  const billData = extra?.billData || null
+  const billInfo = extra?.billInfo || null
+  const deliveryPhotos = extra?.deliveryPhotos || []
+  const drivePhotos = extra?.drivePhotos || []
+  const flaggedData = extra?.flaggedData || null
+  const flaggedSummary = flaggedData?.summary || null
+  const flaggedEntries = flaggedData?.entries || []
 
   const [imgIdx, setImgIdx] = useState(0)
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -64,9 +68,6 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   useEffect(() => { setImgIdx(0); setGalleryOpen(false) }, [selectedHouseId])
 
   const queryClient = useQueryClient()
-  const { data: flaggedData } = useFlaggedPsids(survey?.survey_id || null, survey?.psid || null)
-  const flaggedSummary = flaggedData?.summary || null
-  const flaggedEntries = flaggedData?.entries || []
 
   interface GalleryImage {
     src: string
@@ -135,7 +136,8 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   if (!survey) return null
 
   const payments = billData?.payments
-  const currentImage = allImages[imgIdx] || null
+  const safeIdx = Math.min(imgIdx, Math.max(0, allImages.length - 1))
+  const currentImage = allImages[safeIdx] || null
   const slides = allImages.map((img) => ({ src: img.src }))
 
   const hasNext = houseListIndex < houseList.length - 1
@@ -209,7 +211,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
       <div ref={contentRef} className="flex-1 overflow-y-auto min-h-0">
         {/* Hero Image Gallery */}
         <div className="relative bg-muted">
-          {allImages.length > 0 ? (
+          {allImages.length > 0 && currentImage ? (
             <>
               <button
                 onClick={() => openGallery(imgIdx)}
@@ -218,7 +220,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
               >
                 <div className="w-full h-full relative">
                   <img
-                    src={currentImage!.src}
+                    src={currentImage.src}
                     alt=""
                     className="w-full h-full object-cover"
                     onError={(e) => {
@@ -568,6 +570,9 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
             <div className="text-center min-w-0 px-2">
               <p className="text-xs font-medium text-foreground font-mono">
                 {houseListIndex + 1} / {houseListTotal.toLocaleString()}
+              </p>
+              <p className="text-[9px] text-muted-foreground">
+                on {houseSource === 'map' ? 'map' : houseSource === 'list' ? 'list' : houseSource === 'data-insight' ? 'results' : ''}
               </p>
             </div>
 

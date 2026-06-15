@@ -35,6 +35,9 @@ export default function MapPage() {
   const nextDeliverable = useBillingStore((s) => s.nextDeliverable)
   const prevDeliverable = useBillingStore((s) => s.prevDeliverable)
   const selectHouse = useBillingStore((s) => s.selectHouse)
+  const mapMarkers = useBillingStore((s) => s.mapMarkers)
+  const houseSource = useBillingStore((s) => s.houseSource)
+  const setHouseSource = useBillingStore((s) => s.setHouseSource)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const roleName = useAuthStore((s) => s.roleName)
   const user = useAuthStore((s) => s.user)
@@ -95,6 +98,16 @@ export default function MapPage() {
     }
   }
 
+  // Filter reactivity: when mapMarkers change and HDS is open from map view,
+  // keep HDS in sync with current marker set; close if current unit is filtered out
+  useEffect(() => {
+    if (houseSource !== 'map' || !selectedHouseId) return
+    const stillVisible = mapMarkers.some((m) => m.survey_id === selectedHouseId)
+    if (!stillVisible) {
+      selectHouse(null)
+    }
+  }, [mapMarkers, selectedHouseId, houseSource, selectHouse])
+
   const hdsLayoutMode: 'fixed-list' | 'sliding' = activeView === 'list' ? 'fixed-list' : 'sliding'
 
   return (
@@ -137,7 +150,10 @@ export default function MapPage() {
               onViewDetails={() => {
                 setDeliverTarget(null, null)
                 const unitSurveyId = deliveryUnit?.survey_id
-                if (unitSurveyId) selectHouse(unitSurveyId)
+                if (unitSurveyId) {
+                  selectHouse(unitSurveyId, mapMarkers)
+                  setHouseSource('map')
+                }
               }}
               onClose={() => setDeliverTarget(null)}
               onPrev={prevDeliverable}

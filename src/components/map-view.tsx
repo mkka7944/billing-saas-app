@@ -6,6 +6,7 @@ import { useMap } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyData } from '@/hooks/use-survey-data'
 import { useMapZoom } from '@/hooks/use-map-zoom'
+import { MapMarkerCount } from '@/components/map-marker-count'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const MapContainer = dynamic(
@@ -46,11 +47,16 @@ export function MapView() {
   const showAll = filters.ucs.length > 0
   const { data, isLoading } = useSurveyData(filters, 1, 50, showAll)
   const { data: mapZoom = 18 } = useMapZoom()
+  const setMapMarkers = useBillingStore((s) => s.setMapMarkers)
 
   const mapRef = useRef<HTMLDivElement>(null)
 
   const markers = useMemo(() => data?.data || [], [data])
   const tileUrl = TILE_URLS[mapType]
+
+  useEffect(() => {
+    setMapMarkers(markers)
+  }, [markers, setMapMarkers])
 
   if (isLoading) {
     return (
@@ -64,7 +70,8 @@ export function MapView() {
   }
 
   return (
-    <div ref={mapRef} className="w-full h-full">
+    <div ref={mapRef} className="w-full h-full relative">
+      <MapMarkerCount />
       <MapContainer
         center={[32.0836, 72.6712]}
         zoom={mapZoom}

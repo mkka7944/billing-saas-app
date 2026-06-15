@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useState, useEffect, useRef } from 'react'
-import { useQueryClient, useIsFetching } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth-store'
+import { useBillingStore } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { Building2, Menu, RefreshCw, Check } from 'lucide-react'
@@ -19,31 +20,25 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
   const toggleSidebar = useBillingUIStore((s) => s.toggleSidebar)
   const pageTitle = useBillingUIStore((s) => s.pageTitle)
   const queryClient = useQueryClient()
-  const isFetching = useIsFetching()
-  const isRefreshing = isFetching > 0
+  const queryDuration = useBillingStore((s) => s.queryDuration)
+  const storeIsFetching = useBillingStore((s) => s.isFetching)
+  const isRefreshing = storeIsFetching
   const [showSuccess, setShowSuccess] = useState(false)
   const successTimer = useRef<number>(0)
 
-  const handleUpdate = useCallback(() => {
-    queryClient.invalidateQueries()
-  }, [queryClient])
-
+  // Show "✓ duration" after fetch completes
   useEffect(() => {
-    if (isFetching === 0 && showSuccess) {
+    if (!storeIsFetching && queryDuration != null) {
+      setShowSuccess(true)
       window.clearTimeout(successTimer.current)
       successTimer.current = window.setTimeout(() => setShowSuccess(false), 2000)
     }
-    return () => window.clearTimeout(successTimer.current)
-  }, [isFetching, showSuccess])
-
-  useEffect(() => {
-    if (isFetching > 0) setShowSuccess(false)
-  }, [isFetching])
+    return () => { window.clearTimeout(successTimer.current) }
+  }, [isRefreshing, queryDuration])
 
   const handleRefresh = useCallback(() => {
-    setShowSuccess(true)
-    handleUpdate()
-  }, [handleUpdate])
+    queryClient.invalidateQueries()
+  }, [queryClient])
 
   const displayTitle = title || pageTitle || 'TMT'
 
@@ -67,10 +62,10 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
         {actions ?? (
           <div className="flex items-center gap-1 shrink-0">
             {isRefreshing && (
-              <span className="text-[10px] text-muted-foreground font-medium animate-pulse whitespace-nowrap">Syncing...</span>
+              <span className="text-[10px] text-muted-foreground font-medium tabular-nums whitespace-nowrap">...</span>
             )}
             {showSuccess && !isRefreshing && (
-              <span className="text-[10px] text-green-600 dark:text-green-300 font-medium whitespace-nowrap">Updated</span>
+              <span className="text-[10px] text-green-600 dark:text-green-300 font-medium tabular-nums whitespace-nowrap">✓ {(queryDuration! / 1000).toFixed(1)}s</span>
             )}
             <div className="relative">
               <button
