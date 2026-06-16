@@ -3285,10 +3285,44 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - `npx next build` — compiled successfully
 - All 6 performance regressions identified and fixed
 
+---
+
+## 2026-06-16 — H.1 Compound Endpoint + HDS Redesign
+
+### Phase: H.1 + HDS Redesign + F.2 Cleanup
+
+### What
+- **H.1 — Compound endpoint:** Added `surveyData` to `GET /api/house-detail/extra`, removed `useSurveyById` from HDS (1 call instead of 2). Drive photos separated into independent `useDrivePhotos` hook (non-blocking, async load, no longer blocks extra endpoint).
+- **HDS hero overlay:** Name + address + UC chip rendered on gradient bar at bottom of hero image. `pointer-events-none` on overlay allows click-through to gallery. All interactive elements (nav arrows, dots, counter, status badge, source badge) have `z-30`.
+- **Gallery accordion:** First 3 thumbnails in a 3-col grid, "Show all (X more)" button expands inline with chevron. Thumbnails call `setImgIdx(i)` only (change hero image) — hero tap opens lightbox.
+- **2-column content layout:** Left: PSID + collapsible PaymentHistoryCard. Right: Bill #/total, paid/since, Current Month badge, Current Bill badge (red, uses `billData.bill.amount_due`), survey info (surveyor, tehsil, date, time, category), flagged/archived banners, route info (wraps with `break-words`).
+- **Route info moved** to bottom of right column, wraps with `break-words`.
+- **Current Month badge** on its own line with emerald badge + month name.
+- **Current Bill badge** changed from blue to red.
+- **Status badge** moved from `bottom-3 left-3` to `bottom-3 right-3` (no overlap with UC chip in overlay).
+- **F.2 — Dead fields removed:** `unitType` removed from FilterState, defaultFilters, useSurveyData, filter-panel, data-insight. `'overdue'` removed from payment status SelectItem.
+- **Floating search instant-apply:** Changed `setPendingFilter({ search: v })` → `setFilters({ search: v })`.
+- **Floating actions UI:** Labels visible next to buttons, larger icons, stronger shadow, bigger badge with ring-2 cutout.
+- **Dots position:** `bottom-3` with `z-30` (was `bottom-12 z-10` — overlapped with overlay text).
+- **Nav arrows:** Added `z-30` (were hidden under overlay).
+
+### Key Decisions
+- HDS compound endpoint approach: add to existing extra route (not new route) — simpler, backward compatible
+- Drive photos via separate `useDrivePhotos` hook (already existed, was unused) — removes 5s webhook bottleneck from HDS response
+- Hero overlay: `pointer-events-none` prevents blocking gallery click, all interactive elements get explicit `z-30`
+- Gallery: accordion over inline +X more button that opened lightbox — keeps user in context
+- Two-column layout at all widths (no mobile single-column) — content wraps with `break-words`
+
+### Build Verification
+- `npx tsc --noEmit` — 0 errors
+- Commits: `dc7b8f4`, `c619e90`, `d0e0809`, `0db5830`
+
 ### Next
-1. Phase E — Flag Management UI (admin page, backend exists)
-2. Phase C.2 — Staff performance admin UI (ratings form, backend exists)
-3. Phase D.1 — Staff route guard (role-based redirect in proxy.ts)
-4. Phase M2 — Marker clustering (leaflet.markercluster)
-5. Apply migration 038 (unsent-mode-setting.sql)
+1. H.6 — URL-encode PSID in api/surveys/payments (5m, critical)
+2. Plan S — Unified map for staff (remove StaffMap branch, StaffMarkerLayer, city override)
+3. F.1 — Eliminate pendingFilters fully from store
+4. F.3 — Add PSID to search ILIKE
+5. F.4-F.8 — Filter chips, UC selector, mobile UX, city switcher
+6. H.2 — Collapsible sections in HDS
+7. H.4-H.7 — Skeletons, proxy, prefetch
 

@@ -268,21 +268,19 @@ The HDS renders all sections expanded simultaneously:
 
 ### 4.5 Implementation Steps
 
-#### H.1 — Compound Endpoint (High Impact)
+#### ~~H.1 — Compound Endpoint (High Impact)~~ ✅ COMPLETED
 
-Create `GET /api/house-detail/:survey_id` that returns survey data + payments + bill-info + extra data in one server-side call. Server runs `Promise.all` for independent sub-queries.
+~~Create `GET /api/house-detail/:survey_id` that returns survey data + payments + bill-info + extra data in one server-side call. Server runs `Promise.all` for independent sub-queries. Reduces 4 API calls → 1. Creates `useHouseDetail(surveyId)` hook that replaces `useSurveyById` + `useSurveyPayments` + `useSurveyBillInfo` + `useHouseDetailExtra` for the HDS context.~~
 
-Reduces 4 API calls → 1. Creates `useHouseDetail(surveyId)` hook that replaces `useSurveyById` + `useSurveyPayments` + `useSurveyBillInfo` + `useHouseDetailExtra` for the HDS context.
+Implemented: Added `surveyData` to existing `GET /api/house-detail/extra` response. Removed `useSurveyById` from HDS. Drive photos separated into independent `useDrivePhotos` hook (non-blocking).
 
-#### H.2 — Collapsible Sections
+#### ~~H.2 — Collapsible Sections~~ ✅ COMPLETED (inline accordion)
 
-Bill Summary, Payment History, Delivery History, Issues all start collapsed. Only the header (consumer name + amount + psid) is always visible. Tap to expand a section. This saves render cost and prevents visual overload.
+Payment History uses `PaymentHistoryCard` with collapsible "View All / Show Less" (3 items preview, rest expandable).
 
-Uses `<Accordion>` pattern — only one section open at a time.
+#### ~~H.3 — Unified Gallery~~ ✅ COMPLETED
 
-#### H.3 — Unified Gallery
-
-Merge "Portal Images" and "Drive Images" into one gallery. Most recent delivery photos first, portal images second. Each thumbnail has a small badge/label showing source ("Portal" vs "Delivery").
+Portal images + drive photos + delivery photos in a single 3-column grid with source badges. Gallery accordion: first 3 images visible, "Show all (X more)" expands inline.
 
 #### H.4 — Section-Level Skeletons
 
@@ -313,18 +311,21 @@ When `nextHouse`/`prevHouse` navigates, prefetch the next unit's data in the bac
 
 ## 5. Recommended Implementation Order
 
-| Priority | Plan | Steps | Est. Time | Impact |
-|----------|------|-------|-----------|--------|
-| P0 | H.6 — URL-encode PSID | 1 step | 5m | **Critical bug fix** |
-| P1 | **S** — Staff sees all data | S.1-S.5 | 1h | Big UX win for field staff |
-| P2 | **F** — Filter streamlining | F.1-F.8 | 3.5h | Removes dead complexity, unifies roles |
-| P3 | H.1 — Compound HDS endpoint | 1 step | 1h | 75% fewer API calls per HDS open |
-| P4 | H.2-H.5 — HDS UX | 4 steps | 1.5h | Polished, fast HDS |
-| P5 | H.7 — HDS prefetch | 1 step | 45m | Instant navigation feel |
+| Priority | Plan | Steps | Est. Time | Impact | Status |
+|----------|------|-------|-----------|--------|--------|
+| P0 | H.6 — URL-encode PSID | 1 step | 5m | **Critical bug fix** | 🔴 Not started |
+| P0 | H.1 — Compound HDS endpoint | 1 step | 1h | 75% fewer API calls per HDS open | ✅ **Completed** |
+| P1 | **S** — Staff sees all data | S.1-S.5 | 1h | Big UX win for field staff | 🔴 Not started |
+| P2 | **F** — Filter streamlining | F.1-F.8 | 3.5h | Removes dead complexity, unifies roles | 🟡 F.2 done |
+| P4 | H.2-H.5 — HDS UX | 4 steps | 1.5h | Polished, fast HDS | 🟡 H.2/H.3 done, H.4/H.5 pending |
+| P5 | H.7 — HDS prefetch | 1 step | 45m | Instant navigation feel | 🔴 Not started |
 
 ### Quick Wins (can be done in parallel)
 
-- **F.2** — Remove dead fields (`unitType`, `overdue`) — 15m, no risk
+- ✅ **F.2** — Remove dead fields (`unitType`, `overdue`) — **done (2026-06-16)**
+- ✅ **Floating search** — Changed to instant-apply (no longer uses `pendingFilters`) — **done (2026-06-16)**
+- ✅ **H.1** — Compound HDS endpoint — **done (2026-06-16)**
+- ✅ **H.3** — Unified gallery — **done (2026-06-16)**
 - **F.3** — Add PSID to search — 10m, no risk
 - **H.6** — URL-encode PSID — 5m, critical bug
 - **S.1 + S.2** — Unified MapPage — 45m, big win
