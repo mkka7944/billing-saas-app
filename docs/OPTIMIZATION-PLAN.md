@@ -1,6 +1,7 @@
 # Optimization Plan — Filters, Staff Data Access & HDS
 
 > Generated 2026-06-15 after office session (Performance Optimization + Bug Fix Audit).
+> Last updated: 2026-06-16 (Plan S scrapped, current state reviewed).
 > Author: AI analysis based on full codebase audit.
 
 ---
@@ -67,7 +68,9 @@ Desktop bar mixes both patterns — confusing for users. Mobile sheet has no exp
 
 ---
 
-## 2. Plan S: Staff Sees All Data + Own Assignments
+## ~~2. Plan S: Staff Sees All Data + Own Assignments~~ SCRAPPED 2026-06-16
+
+> **Decision: Not worth the risk.** StaffMap stays separate. Swapping map instances on mode switch is fast, and staff rarely switches modes. Risk of breaking marker clicks, fly-to behavior, and GPS marker outweighs marginal benefit of avoiding a 1-second map reset.
 
 ### Concept: Unified Map with Role-Specific Layers
 
@@ -313,9 +316,9 @@ When `nextHouse`/`prevHouse` navigates, prefetch the next unit's data in the bac
 
 | Priority | Plan | Steps | Est. Time | Impact | Status |
 |----------|------|-------|-----------|--------|--------|
-| P0 | H.6 — URL-encode PSID | 1 step | 5m | **Critical bug fix** | 🔴 Not started |
+| P0 | H.6 — URL-encode PSID | 1 step | 5m | **Critical bug fix** | 🔴 Not started (deferred) |
 | P0 | H.1 — Compound HDS endpoint | 1 step | 1h | 75% fewer API calls per HDS open | ✅ **Completed** |
-| P1 | **S** — Staff sees all data | S.1-S.5 | 1h | Big UX win for field staff | 🔴 Not started |
+| ❌ | **S** — Staff sees all data | S.1-S.5 | 1h | Scrapped — risk > benefit | ❌ **Scrapped** |
 | P2 | **F** — Filter streamlining | F.1-F.8 | 3.5h | Removes dead complexity, unifies roles | 🟡 F.2 done |
 | P4 | H.2-H.5 — HDS UX | 4 steps | 1.5h | Polished, fast HDS | 🟡 H.2/H.3 done, H.4/H.5 pending |
 | P5 | H.7 — HDS prefetch | 1 step | 45m | Instant navigation feel | 🔴 Not started |
@@ -327,5 +330,5 @@ When `nextHouse`/`prevHouse` navigates, prefetch the next unit's data in the bac
 - ✅ **H.1** — Compound HDS endpoint — **done (2026-06-16)**
 - ✅ **H.3** — Unified gallery — **done (2026-06-16)**
 - **F.3** — Add PSID to search — 10m, no risk
-- **H.6** — URL-encode PSID — 5m, critical bug
-- **S.1 + S.2** — Unified MapPage — 45m, big win
+- **H.6** — URL-encode PSID — 5m, critical bug (deferred)
+- ❌ **S.1 + S.2** — Unified MapPage — scrapped

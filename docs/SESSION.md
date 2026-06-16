@@ -3318,11 +3318,31 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - Commits: `dc7b8f4`, `c619e90`, `d0e0809`, `0db5830`
 
 ### Next
-1. H.6 — URL-encode PSID in api/surveys/payments (5m, critical)
-2. Plan S — Unified map for staff (remove StaffMap branch, StaffMarkerLayer, city override)
+1. H.6 — URL-encode PSID in api/surveys/payments (5m, critical, deferred)
+2. ~~Plan S — Unified map for staff~~ **SCRAPPED** — risk > benefit, staff rarely switches modes
 3. F.1 — Eliminate pendingFilters fully from store
 4. F.3 — Add PSID to search ILIKE
 5. F.4-F.8 — Filter chips, UC selector, mobile UX, city switcher
 6. H.2 — Collapsible sections in HDS
 7. H.4-H.7 — Skeletons, proxy, prefetch
+
+---
+
+## 2026-06-16 — Evening Session: Plan Review + Plan S Scrapped
+
+### Phase: Optimization Plan Review
+
+### What
+- Reviewed current state after last session's commits (HDS overhaul, F.2 dead fields, staffMode with pill, map jitter fix)
+- Discussed Plan S (unified map) — decided to scrap. Dual-map (StaffMap + MapView) stays. Risk of breaking marker clicks, fly-to, and GPS marker outweighs marginal benefit of avoiding 1-second map reset on mode switch.
+- Remaining items: H.4 (skeletons), H.5 (proxy images), H.7 (prefetch), F.1 (pendingFilters elimination), F.4-F.8 (filter polish)
+
+### Key Decisions
+- Plan S scrapped — StaffMap stays separate. No unified MapView.
+- Next session will tackle specific remaining plans in discussion order.
+
+### Files Changed
+- `.opencode/context.json` — updated nextActions, removed Plan S from pending
+- `docs/OPTIMIZATION-PLAN.md` — Plan S section marked as SCRAPPED, priority table updated
+- `docs/SESSION.md` — this entry appended
 
