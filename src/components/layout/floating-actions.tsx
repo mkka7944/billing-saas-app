@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
-import { Search, SlidersHorizontal, Layers, Image, X } from 'lucide-react'
+import { useAuthStore } from '@/stores/auth-store'
+import { Search, SlidersHorizontal, Layers, Image, X, Crosshair, Map } from 'lucide-react'
 import { MobileFilterSheet } from '@/components/filter-panel'
 import { UnsentModal } from '@/components/delivery/unsent-badge'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
@@ -17,6 +18,9 @@ export function FloatingActions() {
   const setMapType = useBillingStore((s) => s.setMapType)
   const search = useBillingStore((s) => s.filters.search)
   const setPendingFilter = useBillingStore((s) => s.setPendingFilter)
+  const staffMode = useBillingStore((s) => s.staffMode)
+  const setStaffMode = useBillingStore((s) => s.setStaffMode)
+  const roleName = useAuthStore((s) => s.roleName)
   const { queueCount: unsentCount } = usePhotoQueue()
 
   useEffect(() => {
@@ -58,6 +62,16 @@ export function FloatingActions() {
               <ActionButton icon={Search} label="Search" onClick={handleSearch} />
               <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} />
               <ActionButton icon={Layers} label={mapType === 'streets' ? 'Satellite' : 'Street'} onClick={handleSatellite} active={mapType === 'satellite'} />
+              {roleName === 'field_staff' && (
+                <div className="relative">
+                  <ActionButton
+                    icon={staffMode === 'delivery' ? Crosshair : Map}
+                    label={staffMode === 'delivery' ? 'Browse City' : 'Deliver'}
+                    onClick={() => setStaffMode(staffMode === 'delivery' ? 'browse' : 'delivery')}
+                    active={staffMode === 'browse'}
+                  />
+                </div>
+              )}
               <div className="relative">
                 <ActionButton icon={Image} label="Photos" onClick={handleUnsent} />
                 {unsentCount > 0 && (

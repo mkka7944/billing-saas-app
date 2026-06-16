@@ -38,6 +38,7 @@ export default function MapPage() {
   const mapMarkers = useBillingStore((s) => s.mapMarkers)
   const houseSource = useBillingStore((s) => s.houseSource)
   const setHouseSource = useBillingStore((s) => s.setHouseSource)
+  const staffMode = useBillingStore((s) => s.staffMode)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const roleName = useAuthStore((s) => s.roleName)
   const user = useAuthStore((s) => s.user)
@@ -108,6 +109,19 @@ export default function MapPage() {
     }
   }, [mapMarkers, selectedHouseId, houseSource, selectHouse])
 
+  // Browse mode: non-assignment marker clicks open HDS directly, skip delivery sheet
+  useEffect(() => {
+    if (staffMode !== 'browse' || !deliverTargetId || !deliveryUnit) return
+    if (!deliveryItemId) {
+      const unitSurveyId = deliveryUnit.survey_id
+      if (unitSurveyId) {
+        selectHouse(unitSurveyId, mapMarkers)
+        setHouseSource('map')
+      }
+      setDeliverTarget(null, null)
+    }
+  }, [staffMode, deliverTargetId, deliveryUnit, deliveryItemId, selectHouse, setDeliverTarget, setHouseSource, mapMarkers])
+
   const hdsLayoutMode: 'fixed-list' | 'sliding' = activeView === 'list' ? 'fixed-list' : 'sliding'
 
   return (
@@ -117,7 +131,7 @@ export default function MapPage() {
         <div className="flex-1 relative min-h-0 min-w-0 h-full">
           {/* Map layer — always rendered, stays hidden via opacity (Leaflet needs layout) */}
           <div className={cn(activeView !== 'map' && 'invisible pointer-events-none', 'absolute inset-0')}>
-            {roleName === 'field_staff' ? (
+            {roleName === 'field_staff' && staffMode === 'delivery' ? (
               <StaffMap items={staffItems} userLocation={userLocation} />
             ) : (
               <MapView />

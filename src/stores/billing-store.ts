@@ -25,6 +25,7 @@ interface BillingState {
   isFetching: boolean
   mapMarkers: SurveyUnit[]
   houseSource: 'map' | 'list' | 'data-insight' | null
+  staffMode: 'delivery' | 'browse'
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setListPage: (page: number) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
@@ -50,6 +51,7 @@ interface BillingState {
   setIsFetching: (fetching: boolean) => void
   setMapMarkers: (markers: SurveyUnit[]) => void
   setHouseSource: (source: 'map' | 'list' | 'data-insight' | null) => void
+  setStaffMode: (mode: 'delivery' | 'browse') => void
 }
 
 const defaultFilters: FilterState = {
@@ -91,6 +93,7 @@ export const useBillingStore = create<BillingState>()(
       isFetching: false,
       mapMarkers: [],
       houseSource: null,
+      staffMode: 'delivery',
       mapCenter: [32.0836, 72.6712],
       mapZoom: 12,
       mapType: 'streets',
@@ -220,6 +223,7 @@ export const useBillingStore = create<BillingState>()(
       setIsFetching: (fetching) => set({ isFetching: fetching }),
       setMapMarkers: (markers) => set({ mapMarkers: markers }),
       setHouseSource: (source) => set({ houseSource: source }),
+      setStaffMode: (mode) => set({ staffMode: mode }),
     }),
     {
       name: 'billing-store',

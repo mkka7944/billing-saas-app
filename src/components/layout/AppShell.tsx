@@ -18,7 +18,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const roleName = useAuthStore((s) => s.roleName)
   const assignedCity = useAuthStore((s) => s.assignedCity)
-  const selectedCity = useBillingStore((s) => s.selectedCity)
   const setCity = useBillingStore((s) => s.setCity)
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
@@ -26,11 +25,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Auto-select assigned city for field staff on mount
   useEffect(() => {
-    if (roleName === 'field_staff' && assignedCity && selectedCity !== assignedCity) {
+    if (roleName === 'field_staff' && assignedCity) {
       const cfg = CITY_CONFIG[assignedCity]
       if (cfg) setCity(assignedCity, cfg.district, cfg.tehsil)
     }
-  }, [roleName, assignedCity, selectedCity, setCity])
+  }, [roleName, assignedCity, setCity])
 
   // QR scanner state
   const [showScanner, setShowScanner] = useState(false)
