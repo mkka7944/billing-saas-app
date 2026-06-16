@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import type { BillInfo } from '@/types'
+import type { BillInfo, SurveyUnit } from '@/types'
 import type { DeliveryPhoto } from '@/hooks/use-delivery-photos'
 import type { DrivePhoto } from '@/hooks/use-drive-photos'
 
@@ -17,6 +17,7 @@ interface FlaggedResponse {
 }
 
 interface HouseDetailExtra {
+  surveyData: SurveyUnit | null
   billData: { bill: any; payments: any[]; allMonths: string[] } | null
   billInfo: BillInfo | null
   deliveryPhotos: DeliveryPhoto[]

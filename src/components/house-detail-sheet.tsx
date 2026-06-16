@@ -4,13 +4,13 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { useSurveyById } from '@/hooks/use-survey-data'
 import { useHouseDetailExtra } from '@/hooks/use-house-detail-extra'
+import { useDrivePhotos } from '@/hooks/use-drive-photos'
 import { shortenMCName } from '@/lib/mc-utils'
 import { currentMonth } from '@/lib/constants'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
 import { cn } from '@/lib/utils'
-import { X, MapPin, Copy, Camera, ChevronLeft, ChevronRight, Image, ChevronsLeft, ChevronsRight, Flag, ChevronDown, Loader2 } from 'lucide-react'
+import { X, MapPin, Copy, Camera, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Flag, ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
@@ -44,27 +44,26 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
     return houseList.find((h) => h.survey_id === selectedHouseId) || null
   }, [houseList, selectedHouseId])
 
-  const { data: apiSurvey } = useSurveyById(houseListSurvey ? null : selectedHouseId)
-
-  const survey = houseListSurvey || apiSurvey
-
-  const { data: extra } = useHouseDetailExtra(selectedHouseId, survey?.psid || null)
+  const { data: extra } = useHouseDetailExtra(selectedHouseId, houseListSurvey?.psid || null)
+  const survey = houseListSurvey || extra?.surveyData || null
   const billData = extra?.billData || null
   const billInfo = extra?.billInfo || null
   const deliveryPhotos = extra?.deliveryPhotos || []
-  const drivePhotos = extra?.drivePhotos || []
+  const { data: driveData } = useDrivePhotos(selectedHouseId)
+  const drivePhotos = driveData || []
   const flaggedData = extra?.flaggedData || null
   const flaggedSummary = flaggedData?.summary || null
   const flaggedEntries = flaggedData?.entries || []
 
   const [imgIdx, setImgIdx] = useState(0)
   const [galleryOpen, setGalleryOpen] = useState(false)
+  const [showAllGallery, setShowAllGallery] = useState(false)
   const [flagging, setFlagging] = useState(false)
   const [flagDone, setFlagDone] = useState(false)
   const [showOtherPsids, setShowOtherPsids] = useState(false)
   const roleName = useAuthStore((s) => s.roleName)
 
-  useEffect(() => { setImgIdx(0); setGalleryOpen(false) }, [selectedHouseId])
+  useEffect(() => { setImgIdx(0); setGalleryOpen(false); setShowAllGallery(false) }, [selectedHouseId])
 
   const queryClient = useQueryClient()
 
@@ -150,17 +149,6 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
     selectHouse(null)
   }
 
-  const infoValues: string[] = [
-    ...(survey.uc_name ? [shortenMCName(survey.uc_name)] : []),
-    ...(survey.tehsil ? [survey.tehsil] : []),
-    ...(survey.surveyor_name ? [survey.surveyor_name] : []),
-    ...(survey.survey_date ? [new Date(survey.survey_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })] : []),
-    ...(survey.survey_time ? [survey.survey_time] : []),
-    ...(survey.billing_category ? [survey.billing_category] : []),
-    ...(survey.monthly_fee > 0 ? [`Rs.${survey.monthly_fee}/mo`] : []),
-    ...(survey.route_name ? [survey.route_name] : []),
-  ]
-
   return (
     <div
       className={cn(
@@ -207,13 +195,13 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
 
       {/* Scrollable content */}
       <div ref={contentRef} className="flex-1 overflow-y-auto min-h-0">
-        {/* Hero Image Gallery */}
+        {/* Hero Image with Overlay */}
         <div className="relative bg-muted">
           {allImages.length > 0 && currentImage ? (
             <>
               <button
                 onClick={() => openGallery(imgIdx)}
-                className="w-full h-52 cursor-pointer text-left"
+                className="w-full h-64 lg:h-72 cursor-pointer text-left"
                 aria-label="Open gallery"
               >
                 <div className="w-full h-full relative">
@@ -234,7 +222,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                 </div>
               </button>
               {currentImage && (
-                <div className="absolute bottom-2 right-2 flex gap-1 z-10">
+                <div className="absolute top-2 right-2 flex gap-1 z-10">
                   <div className="bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full backdrop-blur-sm uppercase tracking-wider">
                     {currentImage.source === 'drive' ? 'Drive' : currentImage.source === 'portal' ? 'Portal' : 'Delivery'}
                   </div>
@@ -250,7 +238,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                   {imgIdx > 0 && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setImgIdx(imgIdx - 1) }}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer transition-colors"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer transition-colors z-30"
                       aria-label="Previous image"
                     >
                       <ChevronLeft className="h-5 w-5" />
@@ -259,13 +247,13 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                   {imgIdx < allImages.length - 1 && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setImgIdx(imgIdx + 1) }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer transition-colors"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 cursor-pointer transition-colors z-30"
                       aria-label="Next image"
                     >
                       <ChevronRight className="h-5 w-5" />
                     </button>
                   )}
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-30">
                     {allImages.map((_, i) => (
                       <button
                         key={i}
@@ -277,13 +265,13 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                       />
                     ))}
                   </div>
-                  <div className="absolute top-2 left-2 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  <div className="absolute top-2 left-2 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full z-10">
                     {imgIdx + 1} / {allImages.length}
                   </div>
                 </>
               )}
               {(deliveryImageList.length > 0 || noPhotoDeliveries > 0) && (
-                <div className="absolute top-2 right-2 flex gap-1">
+                <div className="absolute top-9 right-2 flex gap-1 z-10">
                   {deliveryImageList.length > 0 && (
                     <span className="bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                       <Camera className="h-3 w-3" /> {deliveryImageList.length}
@@ -296,27 +284,77 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                   )}
                 </div>
               )}
-              <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+              <div className="absolute bottom-3 left-3 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full z-30">
                 {survey.status || 'UNKNOWN'}
               </div>
             </>
           ) : (
-            <div className="h-52 flex items-center justify-center bg-muted">
+            <div className="h-64 lg:h-72 flex items-center justify-center bg-muted">
               <Camera className="h-8 w-8 text-muted-foreground/30" />
             </div>
           )}
+
+          {/* Overlay text — always present, pointer-events-none so clicks pass through to gallery */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-14 pb-3 px-4 pointer-events-none">
+            <h2 className="text-white text-lg lg:text-xl font-bold line-clamp-2 break-words">{survey.consumer_name || 'Unknown'}</h2>
+            {survey.address && (
+              <p className="text-white/90 text-sm mt-0.5 break-words">{survey.address}</p>
+            )}
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {survey.uc_name && (
+                <span className="text-[10px] font-bold bg-white/20 text-white rounded px-1.5 py-0.5">
+                  {shortenMCName(survey.uc_name)}
+                </span>
+              )}
+              {survey.monthly_fee > 0 && (
+                <span className="text-[10px] font-bold bg-emerald-500/80 text-white rounded px-1.5 py-0.5">
+                  Current Bill Rs.{((survey.monthly_fee ?? 0) + (survey.arrears ?? 0)).toLocaleString()}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Identity — 2-column with divider */}
-        <div className="px-4 pt-4 pb-3 border-b border-border">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="border-r border-border pr-4">
-              <h1 className="text-lg font-bold leading-tight">{survey.consumer_name || 'Unknown'}</h1>
-              {survey.address && (
-                <p className="text-xs text-muted-foreground mt-1">{survey.address}</p>
-              )}
+        {/* Gallery Thumbnails — 3-col, accordion */}
+        {allImages.length > 0 && (
+          <div className="px-4 pt-3 pb-2 border-b border-border">
+            <div className="grid grid-cols-3 gap-2">
+              {allImages.slice(0, showAllGallery ? allImages.length : 3).map((img, i) => (
+                <button
+                  key={i}
+                  onClick={() => openGallery(i)}
+                  className="aspect-square rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer relative"
+                >
+                  <img src={img.thumb} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                  <div className={`absolute bottom-0 left-0 right-0 text-[7px] font-bold text-white text-center leading-[1.2] py-[1px] ${
+                    img.source === 'drive' ? 'bg-blue-600/80' :
+                    img.source === 'portal' ? 'bg-green-700/80' :
+                    'bg-amber-600/80'
+                  }`}>
+                    {img.source === 'drive' ? 'DRIVE' : img.source === 'portal' ? 'PORTAL' : 'DELIV'}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {allImages.length > 3 && (
+              <button
+                onClick={() => setShowAllGallery(!showAllGallery)}
+                className="w-full mt-2 flex items-center justify-center gap-1 rounded-lg border border-border bg-muted/30 hover:bg-muted transition-colors cursor-pointer py-2 text-[11px] font-semibold text-muted-foreground"
+              >
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showAllGallery && 'rotate-180')} />
+                {showAllGallery ? 'Show Less' : `Show all (${allImages.length - 3} more)`}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 2-column Content: PSID + Payments | Bill Info + Survey Info */}
+        <div className="px-4 py-3 border-b border-border">
+          <div className="grid grid-cols-2 gap-4 min-w-0">
+            {/* Left: PSID + Payment History */}
+            <div className="border-r border-border pr-4 min-w-0 break-words space-y-2">
               {survey.psid && (
-                <div className="flex items-center gap-1.5 mt-2">
+                <div className="flex items-center gap-1.5">
                   <span className="text-xs font-mono font-bold text-blue-500 dark:text-blue-300">{survey.psid}</span>
                   <button
                     onClick={() => navigator.clipboard.writeText(survey.psid!)}
@@ -327,14 +365,68 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                   </button>
                 </div>
               )}
+              <PaymentHistoryCard payments={payments || []} allMonths={billData?.allMonths} currentMonthTag={currentMonth()} />
+            </div>
 
-              {/* Status indication for flagged/archived */}
+            {/* Right: Bill + Survey Info + Flagged */}
+            <div className="pl-1 min-w-0 break-words space-y-2">
+              {billInfo ? (
+                <div className="space-y-1.5">
+                  {billInfo.billNumber != null && billInfo.billTotal != null && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded px-1.5 py-0.5 shrink-0">
+                        Bill #{billInfo.billNumber}/{billInfo.billTotal}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                    <span className="text-muted-foreground">Paid:</span>
+                    <span className="font-bold">{billInfo.paidMonths}</span>
+                    {billInfo.startMonth && (
+                      <>
+                        <span className="text-muted-foreground">Since:</span>
+                        <span className="font-medium">{billInfo.startMonth}</span>
+                      </>
+                    )}
+                  </div>
+                  {billInfo.currentBillMonth && (
+                    <div>
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5">
+                        Current Month
+                      </span>
+                      <span className="text-xs font-medium ml-1.5">{billInfo.currentBillMonth}</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-center">
+                  <p className="text-xs text-muted-foreground/60 dark:text-muted-foreground/80 italic">Loading...</p>
+                </div>
+              )}
+
+              {/* Survey info */}
+              <div className="space-y-0.5 text-xs">
+                {survey.surveyor_name && (
+                  <p><span className="text-muted-foreground">Surveyor:</span> <span className="font-medium">{survey.surveyor_name}</span></p>
+                )}
+                {survey.survey_date && (
+                  <p><span className="text-muted-foreground">Date:</span> <span className="font-medium">{new Date(survey.survey_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span></p>
+                )}
+                {survey.survey_time && (
+                  <p><span className="text-muted-foreground">Time:</span> <span className="font-medium">{survey.survey_time}</span></p>
+                )}
+                {survey.billing_category && (
+                  <p><span className="text-muted-foreground">Category:</span> <span className="font-medium">{survey.billing_category}</span></p>
+                )}
+              </div>
+
+              {/* Flagged banner */}
               {flaggedSummary && (() => {
                 const isStop = flaggedSummary.action === 'DO_NOT_DELIVER'
                 const isCheck = flaggedSummary.action === 'DELIVER'
                 return (
                   <div className={cn(
-                    'mt-2 px-2 py-1.5 rounded border-l-3 text-xs',
+                    'px-2 py-1.5 rounded border-l-3 text-xs',
                     isStop && 'border-l-red-500 bg-red-50 dark:bg-red-950/20',
                     isCheck && 'border-l-green-500 bg-green-50 dark:bg-green-950/20',
                     !isStop && !isCheck && 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/20',
@@ -360,7 +452,6 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                         )}>+{flaggedSummary.plus_count - 1}</span>
                       )}
                     </div>
-                    {/* Surplus PSIDs collapsible */}
                     {flaggedSummary.plus_count > 1 && (
                       <>
                         <button
@@ -391,7 +482,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
               })()}
 
               {survey.status === 'ARCHIVED' && !flaggedSummary && (
-                <div className="mt-2 px-2 py-1.5 rounded border-l-3 border-l-gray-400 bg-gray-50 dark:bg-gray-900/20 text-xs">
+                <div className="px-2 py-1.5 rounded border-l-3 border-l-gray-400 bg-gray-50 dark:bg-gray-900/20 text-xs">
                   <div className="flex items-center gap-1.5">
                     <Flag className="h-3 w-3 text-gray-500 shrink-0" />
                     <span className="font-bold text-[11px] text-gray-600 dark:text-gray-400">Archived — removed from portal</span>
@@ -399,92 +490,12 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                 </div>
               )}
 
-              {survey.monthly_fee > 0 && (
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5 shrink-0">
-                    Current Bill
-                  </span>
-                  <span className="text-xs font-bold">Rs.{((survey.monthly_fee ?? 0) + (survey.arrears ?? 0)).toLocaleString()}</span>
-                </div>
-              )}
-            </div>
-            <div className="pl-1">
-              <PaymentHistoryCard payments={payments || []} allMonths={billData?.allMonths} currentMonthTag={currentMonth()} />
-            </div>
-          </div>
-        </div>
-
-        {/* Info + Bill Summary + Gallery — 2-column with divider */}
-        <div className="px-4 py-3 border-b border-border">
-          <p className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-2">Information</p>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="border-r border-border pr-4 space-y-1.5">
-              {infoValues.map((val, i) => (
-                <p key={i} className="text-xs font-medium truncate">{val}</p>
-              ))}
-            </div>
-            <div className="pl-1 space-y-3">
-              {billInfo ? (
-                <div className="space-y-1.5">
-                  {billInfo.billNumber != null && billInfo.billTotal != null && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded px-1.5 py-0.5 shrink-0">
-                        Bill #{billInfo.billNumber}/{billInfo.billTotal}
-                      </span>
-                      {billInfo.routeName && (
-                        <span className="text-[10px] font-medium text-muted-foreground">{billInfo.routeName}</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Paid months:</span>
-                    <span className="font-bold">{billInfo.paidMonths}</span>
-                    {billInfo.startMonth && (
-                      <>
-                        <span className="text-muted-foreground">Since:</span>
-                        <span className="font-medium">{billInfo.startMonth}</span>
-                      </>
-                    )}
-                  </div>
-                  {billInfo.currentBillMonth && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/30 rounded px-1.5 py-0.5">
-                        Current Month
-                      </span>
-                      <span className="text-xs font-medium">{billInfo.currentBillMonth}</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center">
-                  <p className="text-xs text-muted-foreground/60 dark:text-muted-foreground/80 italic">Loading...</p>
-                </div>
-              )}
-
-              {/* Gallery thumbnails */}
-              {allImages.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
-                    <Image className="h-3 w-3" /> Photos ({allImages.length})
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {allImages.map((img, i) => (
-                      <button
-                        key={i}
-                        onClick={() => openGallery(i)}
-                        className="aspect-square rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer relative"
-                      >
-                        <img src={img.thumb} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                        <div className={`absolute bottom-0 left-0 right-0 text-[7px] font-bold text-white text-center leading-[1.2] py-[1px] ${
-                          img.source === 'drive' ? 'bg-blue-600/80' :
-                          img.source === 'portal' ? 'bg-green-700/80' :
-                          'bg-amber-600/80'
-                        }`}>
-                          {img.source === 'drive' ? 'DRIVE' : img.source === 'portal' ? 'PORTAL' : 'DELIV'}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+              {/* Route info — wraps, at bottom */}
+              {billInfo?.routeName && (
+                <div className="text-xs break-words">
+                  <span className="text-muted-foreground">Route:</span>{' '}
+                  <span className="font-medium">{billInfo.routeName}</span>
+                  {billInfo.routeSeq != null && <span className="font-medium ml-1">· Seq {billInfo.routeSeq}</span>}
                 </div>
               )}
             </div>

@@ -5,8 +5,6 @@ import { currentMonth, MONTHS } from '@/lib/constants'
 import { join } from 'path'
 import { readFileSync } from 'fs'
 
-const WEBHOOK_URL = process.env.NEXT_PUBLIC_DRIVE_WEBHOOK_URL
-
 function monthKey(m: string): number {
   const re = m.match(/^([A-Z]{3})(\d{4})$/)
   if (!re) return 0
@@ -47,7 +45,18 @@ export async function GET(request: Request) {
 
   const sep2025 = 'SEP2025'
 
-  const [paymentsResult, billInfoResult, deliveryPhotosResult, drivePhotosResult, flaggedResult] = await Promise.all([
+  const [surveyUnitResult, paymentsResult, billInfoResult, deliveryPhotosResult, flaggedResult] = await Promise.all([
+    // Survey unit data
+    (async () => {
+      try {
+        const { data } = await sup.from('survey_units')
+          .select('survey_id, consumer_name, address, lat, lng, city_district, tehsil, uc_name, surveyor_name, survey_date, survey_time, monthly_fee, billing_category, status, psid, arrears, route_name, route_seq, current_bill_month, image_urls')
+          .eq('survey_id', surveyId)
+          .single()
+        return data
+      } catch { return null }
+    })(),
+
     // Payments
     (async () => {
       try {
@@ -121,23 +130,6 @@ export async function GET(request: Request) {
       } catch { return [] }
     })(),
 
-    // Drive photos
-    (async () => {
-      try {
-        if (!WEBHOOK_URL) return []
-        const resp = await fetch(`${WEBHOOK_URL}?action=get_images&surveyId=${encodeURIComponent(surveyId)}`, { signal: AbortSignal.timeout(5000) })
-        if (!resp.ok) return []
-        const result = await resp.json()
-        if (result.status !== 'success' || !Array.isArray(result.files)) return []
-        return result.files.map((f: { id: string; createdTime?: string }) => ({
-          id: f.id,
-          photo_url: `https://drive.google.com/thumbnail?id=${f.id}&sz=w800`,
-          thumbnail_url: `https://drive.google.com/thumbnail?id=${f.id}&sz=w200`,
-          captured_at: f.createdTime || null,
-        }))
-      } catch { return [] }
-    })(),
-
     // Flagged psids
     (async () => {
       try {
@@ -148,10 +140,10 @@ export async function GET(request: Request) {
   ])
 
   return NextResponse.json({
+    surveyData: surveyUnitResult,
     billData: paymentsResult,
     billInfo: billInfoResult,
     deliveryPhotos: deliveryPhotosResult,
-    drivePhotos: drivePhotosResult,
     flaggedData: flaggedResult,
   })
 }
