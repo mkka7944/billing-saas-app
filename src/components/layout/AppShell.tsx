@@ -23,9 +23,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setView = useBillingStore((s) => s.setView)
   const { setSidebarOpen } = useBillingUIStore()
 
-  // Auto-select assigned city for field staff on mount
+  // Auto-select assigned city for field staff on mount (skip if already set)
   useEffect(() => {
     if (roleName === 'field_staff' && assignedCity) {
+      const { selectedCity } = useBillingStore.getState()
+      if (selectedCity === assignedCity) return
       const cfg = CITY_CONFIG[assignedCity]
       if (cfg) setCity(assignedCity, cfg.district, cfg.tehsil)
     }
