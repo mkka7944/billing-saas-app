@@ -49,8 +49,7 @@ export interface FilterState {
   tehsils: string[]
   ucs: string[]
   surveyor: string | null
-  paymentStatus: 'all' | 'paid' | 'unpaid' | 'overdue'
-  unitType: string | null
+  paymentStatus: 'all' | 'paid' | 'unpaid'
   search: string
   billMonth: string | null
   sort: SortConfig

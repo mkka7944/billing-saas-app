@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { useMap } from 'react-leaflet'
+import { useMemo } from 'react'
+import { Marker } from 'react-leaflet'
 import L from 'leaflet'
 
 const RING_SIZE = 40
@@ -19,37 +19,12 @@ interface PulsingRingProps {
 }
 
 export default function PulsingRing({ center }: PulsingRingProps) {
-  const map = useMap()
-  const divRef = useRef<HTMLDivElement>(null)
+  const pulseIcon = useMemo(() => L.divIcon({
+    className: '',
+    html: `<div style="width:${RING_SIZE}px;height:${RING_SIZE}px;border-radius:50%;border:2.5px solid rgba(255,255,255,0.9);box-shadow:0 0 8px rgba(0,0,0,0.5);animation:${KEYFRAME} 1.5s ease-in-out infinite"></div>`,
+    iconSize: [RING_SIZE, RING_SIZE],
+    iconAnchor: [RING_SIZE / 2, RING_SIZE / 2],
+  }), [])
 
-  useEffect(() => {
-    const el = divRef.current
-    if (!el) return
-
-    const update = () => {
-      const pt = map.latLngToContainerPoint(L.latLng(center[0], center[1]))
-      el.style.left = `${pt.x - RING_SIZE / 2}px`
-      el.style.top = `${pt.y - RING_SIZE / 2}px`
-    }
-    update()
-    map.on('move zoom', update)
-    return () => { map.off('move zoom', update) }
-  }, [map, center[0], center[1]])
-
-  return (
-    <div
-      ref={divRef}
-      style={{
-        position: 'absolute',
-        width: RING_SIZE,
-        height: RING_SIZE,
-        borderRadius: '50%',
-        border: '2.5px solid rgba(255,255,255,0.9)',
-        boxShadow: '0 0 8px rgba(0,0,0,0.5)',
-        animation: `${KEYFRAME} 1.5s ease-in-out infinite`,
-        pointerEvents: 'none',
-        zIndex: 1000,
-      }}
-    />
-  )
+  return <Marker position={center} icon={pulseIcon} interactive={false} />
 }

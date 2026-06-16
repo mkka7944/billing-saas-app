@@ -17,7 +17,7 @@ export function FloatingActions() {
   const mapType = useBillingStore((s) => s.mapType)
   const setMapType = useBillingStore((s) => s.setMapType)
   const search = useBillingStore((s) => s.filters.search)
-  const setPendingFilter = useBillingStore((s) => s.setPendingFilter)
+  const setFilters = useBillingStore((s) => s.setFilters)
   const staffMode = useBillingStore((s) => s.staffMode)
   const setStaffMode = useBillingStore((s) => s.setStaffMode)
   const roleName = useAuthStore((s) => s.roleName)
@@ -58,7 +58,7 @@ export function FloatingActions() {
       <div className="fixed right-3 top-1/2 -translate-y-1/2 z-[800]">
         {open ? (
           <div className="flex flex-col items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
-            <div className="flex flex-col gap-1 p-1.5 rounded-xl bg-background/80 backdrop-blur-md border border-border shadow-lg">
+            <div className="flex flex-col gap-1 p-2 rounded-xl bg-background/95 backdrop-blur-md border border-border shadow-2xl">
               <ActionButton icon={Search} label="Search" onClick={handleSearch} />
               <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} />
               <ActionButton icon={Layers} label={mapType === 'streets' ? 'Satellite' : 'Street'} onClick={handleSatellite} active={mapType === 'satellite'} />
@@ -75,7 +75,7 @@ export function FloatingActions() {
               <div className="relative">
                 <ActionButton icon={Image} label="Photos" onClick={handleUnsent} />
                 {unsentCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 h-3.5 min-w-[14px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[8px] font-bold px-0.5 pointer-events-none">
+                  <span className="absolute -top-1 -right-1 h-4 min-w-[16px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[9px] font-bold px-1 pointer-events-none shadow-sm ring-2 ring-background">
                     {unsentCount > 99 ? '99+' : unsentCount}
                   </span>
                 )}
@@ -93,13 +93,13 @@ export function FloatingActions() {
           <div className="relative">
             <button
               onClick={() => setOpen(true)}
-              className="h-10 w-10 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-md border border-border shadow-lg hover:bg-muted cursor-pointer"
+              className="h-10 w-10 flex items-center justify-center rounded-full bg-background/80 backdrop-blur-md border border-border shadow-lg shadow-primary/20 hover:bg-muted cursor-pointer"
               aria-label="Open actions"
             >
               <span className="text-base font-bold text-muted-foreground leading-none">&#x2726;</span>
             </button>
             {unsentCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[9px] font-bold px-1 pointer-events-none shadow-sm">
+              <span className="absolute -top-1 -right-1 h-5 min-w-[20px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-bold px-1.5 pointer-events-none shadow-md ring-2 ring-background">
                 {unsentCount > 99 ? '99+' : unsentCount}
               </span>
             )}
@@ -110,7 +110,7 @@ export function FloatingActions() {
       {searchVisible && (
         <SlideDownSearch
           value={search}
-          onChange={(v) => setPendingFilter({ search: v })}
+          onChange={(v) => setFilters({ search: v })}
           onClose={() => setSearchVisible(false)}
         />
       )}
@@ -135,13 +135,14 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      className={`h-9 w-9 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer transition-colors ${
-        active ? 'text-blue-500' : 'text-muted-foreground hover:text-foreground'
+      className={`flex items-center gap-2 h-10 w-full px-2 rounded-lg hover:bg-muted cursor-pointer transition-colors ${
+        active ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground hover:text-foreground'
       }`}
       title={label}
       aria-label={label}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-5 w-5 shrink-0" />
+      <span className="text-xs font-medium truncate">{label}</span>
     </button>
   )
 }

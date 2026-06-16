@@ -22,7 +22,6 @@ export function useSurveyData(filters: FilterState, page = 1, pageSize = 50, sho
       for (const t of filters.tehsils) params.append('tehsil', t)
       for (const u of filters.ucs) params.append('uc', u)
       if (filters.surveyor) params.set('surveyor', filters.surveyor)
-      if (filters.unitType) params.set('unitType', filters.unitType)
       if (filters.search) params.set('search', filters.search)
       if (filters.billMonth) params.set('billMonth', filters.billMonth)
       if (filters.paymentStatus !== 'all') params.set('paymentStatus', filters.paymentStatus)

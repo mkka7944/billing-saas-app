@@ -329,8 +329,7 @@ const PENDING_DEFAULTS = {
   tehsils: [] as string[],
   ucs: [] as string[],
   surveyor: null as string | null,
-  paymentStatus: 'all' as 'all' | 'paid' | 'unpaid' | 'overdue',
-  unitType: null as string | null,
+  paymentStatus: 'all' as 'all' | 'paid' | 'unpaid',
   search: '',
   billMonth: currentMonth(),
   sort: { field: 'survey_id', direction: 'desc' },
@@ -393,7 +392,6 @@ export function DesktopFilterBar() {
       ucs: [],
       surveyor: null,
       paymentStatus: 'all',
-      unitType: null,
       search: '',
       billMonth: currentMonth(),
       sort: filters.sort,
@@ -438,7 +436,6 @@ export function DesktopFilterBar() {
           <SelectItem value="all">All Status</SelectItem>
           <SelectItem value="paid">Paid</SelectItem>
           <SelectItem value="unpaid">Unpaid</SelectItem>
-          <SelectItem value="overdue">Overdue</SelectItem>
         </SelectContent>
       </Select>
 

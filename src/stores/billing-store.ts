@@ -58,7 +58,6 @@ const defaultFilters: FilterState = {
   ucs: [],
   surveyor: null,
   paymentStatus: 'all',
-  unitType: null,
   search: '',
   billMonth: currentMonth(),
   sort: { field: 'survey_id', direction: 'desc' },
