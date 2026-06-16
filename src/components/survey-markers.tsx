@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import PulsingRing from '@/components/ui/pulsing-ring'
 import type { SurveyUnit, AssignmentItemUnit } from '@/types'
+import type { LeafletMouseEvent } from 'leaflet'
 
 const UC_COLORS = [
   '#0072f5', '#e5484d', '#ffb224', '#36a2eb', '#ff6384',
@@ -45,7 +46,7 @@ function toAssignmentUnit(s: SurveyUnit): AssignmentItemUnit | null {
   }
 }
 
-export default function SurveyMarkers({ data }: SurveyMarkersProps) {
+const SurveyMarkers = memo(function SurveyMarkers({ data }: SurveyMarkersProps) {
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
   const setDeliverableList = useBillingStore((s) => s.setDeliverableList)
@@ -59,12 +60,19 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
     [markers]
   )
 
-  const handleClick = useMemo(() => {
-    const fn = (psid: string, unit: AssignmentItemUnit | null) => () => {
-      setDeliverTarget(psid, unit)
-    }
-    return fn
+  const markersRef = useRef(markers)
+  markersRef.current = markers
+
+  const handleMarkerClick = useCallback((e: LeafletMouseEvent) => {
+    const surveyId = (e.target as any)?.surveyId
+    if (!surveyId) return
+    const s = markersRef.current.find((m) => m.survey_id === surveyId)
+    if (!s?.psid) return
+    const unit = toAssignmentUnit(s)
+    if (unit) setDeliverTarget(s.psid, unit)
   }, [setDeliverTarget])
+
+  const clickHandlers = useMemo(() => ({ click: handleMarkerClick }), [handleMarkerClick])
 
   useEffect(() => {
     setDeliverableList(deliverableList)
@@ -94,7 +102,8 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
                 fillOpacity: 1,
                 weight: 2,
               }}
-              eventHandlers={{ click: handleClick(s.psid!, unit) }}
+              ref={(el) => { if (el) (el as any).surveyId = s.survey_id }}
+              eventHandlers={clickHandlers}
             >
               <Tooltip
                 direction="top"
@@ -110,4 +119,6 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
       })}
     </>
   )
-}
+})
+
+export default SurveyMarkers

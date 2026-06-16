@@ -1,17 +1,18 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useRef, useCallback, memo } from 'react'
 import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import PulsingRing from '@/components/ui/pulsing-ring'
 import { STATUS_COLORS } from '@/lib/delivery-status'
 import type { AssignmentItemUnit } from '@/types'
+import type { LeafletMouseEvent } from 'leaflet'
 
 interface StaffMapMarkersProps {
   items: { id: string; status: string; psid: string; unit: AssignmentItemUnit | null }[]
 }
 
-export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
+const StaffMapMarkers = memo(function StaffMapMarkers({ items }: StaffMapMarkersProps) {
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
 
@@ -20,16 +21,23 @@ export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
     [items]
   )
 
-  const handleClick = useMemo(() => {
-    const fn = (psid: string, unit: AssignmentItemUnit | null, currentTarget: string | null) => () => {
-      if (currentTarget === psid) {
-        setDeliverTarget(null)
-      } else {
-        setDeliverTarget(psid, unit)
-      }
+  const markersRef = useRef(markers)
+  markersRef.current = markers
+
+  const handleMarkerClick = useCallback((e: LeafletMouseEvent) => {
+    const psid = (e.target as any)?.psid
+    if (!psid) return
+    const item = markersRef.current.find((i) => i.psid === psid)
+    if (!item?.unit) return
+    const currentTarget = useBillingStore.getState().deliverTargetId
+    if (currentTarget === psid) {
+      setDeliverTarget(null)
+    } else {
+      setDeliverTarget(psid, item.unit)
     }
-    return fn
   }, [setDeliverTarget])
+
+  const clickHandlers = useMemo(() => ({ click: handleMarkerClick }), [handleMarkerClick])
 
   return (
     <>
@@ -53,7 +61,8 @@ export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
                 fillOpacity: 1,
                 weight: 2,
               }}
-              eventHandlers={{ click: handleClick(item.psid, item.unit, deliverTargetId) }}
+              ref={(el) => { if (el) (el as any).psid = item.psid }}
+              eventHandlers={clickHandlers}
             >
               <Tooltip
                 direction="top"
@@ -69,4 +78,6 @@ export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
       })}
     </>
   )
-}
+})
+
+export default StaffMapMarkers

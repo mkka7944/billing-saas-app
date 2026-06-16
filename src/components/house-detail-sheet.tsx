@@ -30,7 +30,6 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const selectHouse = useBillingStore((s) => s.selectHouse)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
-  const setMapZoom = useBillingStore((s) => s.setMapZoom)
   const houseList = useBillingStore((s) => s.houseList)
   const houseListIndex = useBillingStore((s) => s.houseListIndex)
   const houseListTotal = useBillingStore((s) => s.houseListTotal)
@@ -76,27 +75,27 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
     synced?: boolean
   }
 
-  const surveyImages = (survey?.image_urls)?.filter(Boolean) || []
-  const driveImageList = (drivePhotos || []).map((p) => ({
+  const surveyImages = useMemo(() => (survey?.image_urls)?.filter(Boolean) || [], [survey?.image_urls])
+  const driveImageList = useMemo(() => (drivePhotos || []).map((p) => ({
     src: p.photo_url,
     thumb: p.thumbnail_url,
     source: 'drive' as const,
-  }))
-  const deliveryImageList = (deliveryPhotos || [])
+  })), [drivePhotos])
+  const deliveryImageList = useMemo(() => (deliveryPhotos || [])
     .filter((p) => p.photo_url)
     .map((p) => ({
       src: p.photo_url!,
       thumb: p.photo_url!,
       source: 'delivery' as const,
       synced: p.synced_to_drive,
-    }))
+    })), [deliveryPhotos])
   const noPhotoDeliveries = (deliveryPhotos || []).filter((p) => !p.photo_url).length
 
-  const allImages: GalleryImage[] = [
+  const allImages: GalleryImage[] = useMemo(() => [
     ...surveyImages.map((url) => ({ src: url, thumb: url, source: 'portal' as const })),
     ...driveImageList,
     ...deliveryImageList,
-  ].filter((img, i, arr) => arr.findIndex((x) => x.src === img.src) === i)
+  ].filter((img, i, arr) => arr.findIndex((x) => x.src === img.src) === i), [surveyImages, driveImageList, deliveryImageList])
 
   const openGallery = (idx: number) => {
     setImgIdx(idx)
@@ -147,7 +146,6 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   const openOnMap = () => {
     if (survey.lat && survey.lng) {
       setMapCenter([survey.lat, survey.lng])
-      setMapZoom(18)
     }
     selectHouse(null)
   }

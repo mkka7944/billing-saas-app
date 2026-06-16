@@ -14,7 +14,6 @@ export function SurveyList() {
   const selectHouse = useBillingStore((s) => s.selectHouse)
   const setHouseSource = useBillingStore((s) => s.setHouseSource)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
-  const setMapZoom = useBillingStore((s) => s.setMapZoom)
   const setView = useBillingStore((s) => s.setView)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const activeView = useBillingStore((s) => s.activeView)
@@ -46,7 +45,6 @@ export function SurveyList() {
   const showOnMap = (s: (typeof items)[0]) => {
     if (s.lat && s.lng) {
       setMapCenter([s.lat, s.lng])
-      setMapZoom(18)
     }
     setView('map')
   }

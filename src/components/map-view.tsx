@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useRef, useMemo, memo } from 'react'
 import dynamic from 'next/dynamic'
 import { useMap } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
@@ -22,6 +22,8 @@ const SurveyMarkers = dynamic(
   { ssr: false }
 )
 
+import type { SurveyUnit } from '@/types'
+
 const GOOGLE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3']
 
 const TILE_URLS = {
@@ -41,7 +43,34 @@ function MapFollower() {
   return null
 }
 
-export function MapView() {
+function FitBoundsOnFilter({ markers }: { markers: SurveyUnit[] }) {
+  const map = useMap()
+  const filters = useBillingStore((s) => s.filters)
+  const prevKey = useRef<string | null>(null)
+  const firstRun = useRef(true)
+
+  useEffect(() => {
+    const key = JSON.stringify(filters)
+    if (firstRun.current) {
+      firstRun.current = false
+      prevKey.current = key
+      return
+    }
+    if (prevKey.current !== key && markers.length > 0) {
+      const coords = markers
+        .filter((m) => m.lat && m.lng)
+        .map((m) => [m.lat, m.lng] as [number, number])
+      if (coords.length > 0) {
+        map.flyToBounds(coords, { padding: [50, 50], maxZoom: 16, duration: 1 })
+      }
+    }
+    prevKey.current = key
+  }, [markers, filters, map])
+
+  return null
+}
+
+export const MapView = memo(function MapView() {
   const filters = useBillingStore((s) => s.filters)
   const mapType = useBillingStore((s) => s.mapType)
   const showAll = filters.ucs.length > 0
@@ -87,8 +116,9 @@ export function MapView() {
           attribution='&copy; Google'
         />
         <MapFollower />
+        <FitBoundsOnFilter markers={markers} />
         <SurveyMarkers data={markers} />
       </MapContainer>
     </div>
   )
-}
+})

@@ -15,7 +15,6 @@ interface BillingState {
   deliverableList: AssignmentItemUnit[]
   deliverableIndex: number
   mapCenter: [number, number]
-  mapZoom: number
   mapType: 'streets' | 'satellite'
   houseList: SurveyUnit[]
   houseListIndex: number
@@ -45,7 +44,6 @@ interface BillingState {
   nextDeliverable: () => void
   prevDeliverable: () => void
   setMapCenter: (center: [number, number]) => void
-  setMapZoom: (zoom: number) => void
   setMapType: (type: 'streets' | 'satellite') => void
   setQueryDuration: (duration: number | null) => void
   setIsFetching: (fetching: boolean) => void
@@ -95,7 +93,6 @@ export const useBillingStore = create<BillingState>()(
       houseSource: null,
       staffMode: 'delivery',
       mapCenter: [32.0836, 72.6712],
-      mapZoom: 12,
       mapType: 'streets',
 
       setCity: (city, district, tehsil) => {
@@ -216,7 +213,6 @@ export const useBillingStore = create<BillingState>()(
         }
       },
       setMapCenter: (center) => set({ mapCenter: center }),
-      setMapZoom: (zoom) => set({ mapZoom: zoom }),
       setMapType: (type) => set({ mapType: type }),
       setListPage: (page) => set({ listPage: Math.max(1, page) }),
       setQueryDuration: (duration) => set({ queryDuration: duration }),
@@ -227,7 +223,7 @@ export const useBillingStore = create<BillingState>()(
     }),
     {
       name: 'billing-store',
-      partialize: (state) => ({ selectedCity: state.selectedCity, mapCenter: state.mapCenter, mapZoom: state.mapZoom }),
+      partialize: (state) => ({ selectedCity: state.selectedCity, mapCenter: state.mapCenter }),
       merge: (persisted, current) => {
         const merged = { ...current, ...(persisted as Partial<BillingState>) } as BillingState
         if (merged.selectedCity) {

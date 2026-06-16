@@ -39,6 +39,7 @@ function UserMarker({ location: propLocation }: { location?: UserLocation | null
 function FitStaffBounds({ items }: { items: AssignmentItemWithUnit[] }) {
   const map = useMap()
   const hasFittedRef = useRef(false)
+  const { data: mapZoom = 18 } = useMapZoom()
 
   useEffect(() => {
     if (hasFittedRef.current || !items?.length) return
@@ -55,10 +56,10 @@ function FitStaffBounds({ items }: { items: AssignmentItemWithUnit[] }) {
       map.flyToBounds(bounds, { padding: [60, 60], maxZoom: 20, duration: 1.2 })
       hasFittedRef.current = true
     } else if (coords.length === 1) {
-      map.flyTo(coords[0], 15, { duration: 1.2 })
+      map.flyTo(coords[0], mapZoom, { duration: 1.2 })
       hasFittedRef.current = true
     }
-  }, [items, map])
+  }, [items, map, mapZoom])
 
   return null
 }
