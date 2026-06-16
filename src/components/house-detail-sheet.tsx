@@ -284,7 +284,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                   )}
                 </div>
               )}
-              <div className="absolute bottom-3 left-3 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full z-30">
+              <div className="absolute bottom-3 right-3 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full z-30">
                 {survey.status || 'UNKNOWN'}
               </div>
             </>
@@ -302,7 +302,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
             )}
             <div className="flex flex-wrap gap-1.5 mt-1.5">
               {survey.uc_name && (
-                <span className="text-[10px] font-bold bg-white/20 text-white rounded px-1.5 py-0.5">
+                <span className="text-[10px] font-bold bg-blue-600/80 text-white rounded px-1.5 py-0.5 backdrop-blur-sm">
                   {shortenMCName(survey.uc_name)}
                 </span>
               )}
@@ -317,7 +317,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
               {allImages.slice(0, showAllGallery ? allImages.length : 3).map((img, i) => (
                 <button
                   key={i}
-                  onClick={() => openGallery(i)}
+                  onClick={() => setImgIdx(i)}
                   className="aspect-square rounded-lg overflow-hidden bg-muted border border-border hover:opacity-80 transition-opacity cursor-pointer relative"
                 >
                   <img src={img.thumb} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
@@ -397,7 +397,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                     if (amt <= 0) return null
                     return (
                       <div>
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded px-1.5 py-0.5">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/30 rounded px-1.5 py-0.5">
                           Current Bill
                         </span>
                         <span className="text-xs font-bold ml-1.5">Rs.{amt.toLocaleString()}</span>
