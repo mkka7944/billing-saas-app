@@ -72,7 +72,7 @@ export default function MapPage() {
       .map((i) => i.unit)
       .filter((u): u is NonNullable<typeof u> => u !== null)
     setDeliverableList(list)
-  }, [roleName, staffItems, setDeliverableList])
+  }, [roleName, staffItems, staffMode, setDeliverableList])
 
   // When deliverableList updates (e.g., staff data loads), sync deliverTargetUnit
   // if there is a pending targetId from the URL param that has no unit yet
@@ -118,7 +118,7 @@ export default function MapPage() {
       <FloatingActions />
       <div className="flex flex-col lg:flex-row h-full">
         <div className="flex-1 relative min-h-0 min-w-0 h-full">
-          <MapMarkerCount staffCount={staffItems.length} />
+          <MapMarkerCount staffCount={roleName === 'field_staff' && staffMode === 'delivery' ? staffItems.length : undefined} />
           {/* Map layer — always rendered, stays hidden via opacity (Leaflet needs layout) */}
           <div className={cn(activeView !== 'map' && 'invisible pointer-events-none', 'absolute inset-0')}>
             {roleName === 'field_staff' && staffMode === 'delivery' ? (

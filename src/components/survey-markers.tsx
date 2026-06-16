@@ -51,6 +51,8 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
   const setDeliverableList = useBillingStore((s) => s.setDeliverableList)
 
+  const staffMode = useBillingStore((s) => s.staffMode)
+
   const markers = useMemo(() => {
     return data.filter((s) => s.lat && s.lng && s.psid)
   }, [data])
@@ -75,8 +77,9 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
   const clickHandlers = useMemo(() => ({ click: handleMarkerClick }), [handleMarkerClick])
 
   useEffect(() => {
+    if (staffMode !== 'browse') return
     setDeliverableList(deliverableList)
-  }, [deliverableList, setDeliverableList])
+  }, [deliverableList, setDeliverableList, staffMode])
 
   if (!markers.length) return null
 

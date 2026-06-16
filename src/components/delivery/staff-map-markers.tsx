@@ -10,10 +10,10 @@ import type { LeafletMouseEvent } from 'leaflet'
 
 interface StaffMapMarkersProps {
   items: { id: string; status: string; psid: string; unit: AssignmentItemUnit | null }[]
+  selectedPsid: string | null
 }
 
-export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
-  const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
+export default function StaffMapMarkers({ items, selectedPsid }: StaffMapMarkersProps) {
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
 
   const markers = useMemo(
@@ -44,7 +44,7 @@ export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
       {markers.map((item) => {
         const lat = item.unit!.lat!
         const lng = item.unit!.lng!
-        const isSelected = deliverTargetId != null && item.psid === deliverTargetId
+        const isSelected = selectedPsid != null && item.psid === selectedPsid
         const color = STATUS_COLORS[item.status] || STATUS_COLORS.pending
 
         return (

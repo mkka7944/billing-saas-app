@@ -6,7 +6,6 @@ import { useMap } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import { useSurveyData } from '@/hooks/use-survey-data'
 import { useMapZoom } from '@/hooks/use-map-zoom'
-import { MapMarkerCount } from '@/components/map-marker-count'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const MapContainer = dynamic(
@@ -46,6 +45,7 @@ function MapFollower() {
 function FitBoundsOnFilter({ markers }: { markers: SurveyUnit[] }) {
   const map = useMap()
   const filters = useBillingStore((s) => s.filters)
+  const { data: mapZoom = 18 } = useMapZoom()
   const prevKey = useRef<string | null>(null)
   const firstRun = useRef(true)
 
@@ -54,6 +54,14 @@ function FitBoundsOnFilter({ markers }: { markers: SurveyUnit[] }) {
     if (firstRun.current) {
       firstRun.current = false
       prevKey.current = key
+      if (markers.length > 0) {
+        const coords = markers
+          .filter((m) => m.lat && m.lng)
+          .map((m) => [m.lat, m.lng] as [number, number])
+        if (coords.length > 0) {
+          map.flyToBounds(coords, { padding: [50, 50], maxZoom: mapZoom, duration: 1 })
+        }
+      }
       return
     }
     if (prevKey.current !== key && markers.length > 0) {
@@ -61,11 +69,35 @@ function FitBoundsOnFilter({ markers }: { markers: SurveyUnit[] }) {
         .filter((m) => m.lat && m.lng)
         .map((m) => [m.lat, m.lng] as [number, number])
       if (coords.length > 0) {
-        map.flyToBounds(coords, { padding: [50, 50], maxZoom: 16, duration: 1 })
+        map.flyToBounds(coords, { padding: [50, 50], maxZoom: mapZoom, duration: 1 })
       }
     }
     prevKey.current = key
   }, [markers, filters, map])
+
+  return null
+}
+
+function MapFlyToTarget() {
+  const map = useMap()
+  const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
+  const mapMarkers = useBillingStore((s) => s.mapMarkers)
+  const staffMode = useBillingStore((s) => s.staffMode)
+  const { data: mapZoom = 18 } = useMapZoom()
+  const lastTargetRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (staffMode !== 'browse' || !deliverTargetId) {
+      lastTargetRef.current = null
+      return
+    }
+    if (lastTargetRef.current === deliverTargetId) return
+    lastTargetRef.current = deliverTargetId
+    const marker = mapMarkers.find((m) => m.psid === deliverTargetId)
+    if (marker?.lat && marker?.lng) {
+      map.flyTo([marker.lat, marker.lng], mapZoom, { duration: 0.5 })
+    }
+  }, [deliverTargetId, staffMode, mapMarkers, map, mapZoom])
 
   return null
 }
@@ -116,6 +148,7 @@ export const MapView = memo(function MapView() {
         />
         <MapFollower />
         <FitBoundsOnFilter markers={markers} />
+        <MapFlyToTarget />
         <SurveyMarkers data={markers} />
       </MapContainer>
     </div>

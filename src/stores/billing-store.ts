@@ -74,10 +74,10 @@ export const CITY_CONFIG: Record<string, { district: string; tehsil: string; lat
 export const useBillingStore = create<BillingState>()(
   persist(
     (set, get) => ({
-      selectedCity: null,
+      selectedCity: 'Sargodha',
       activeView: 'map',
-      filters: { ...defaultFilters },
-      pendingFilters: { ...defaultFilters },
+      filters: { ...defaultFilters, districts: ['SARGODHA'], tehsils: ['SARGODHA'], ucs: ['MC-1, NEW SATELLITE TOWN, BLOCK Z, SARGODHA'] },
+      pendingFilters: { ...defaultFilters, districts: ['SARGODHA'], tehsils: ['SARGODHA'], ucs: ['MC-1, NEW SATELLITE TOWN, BLOCK Z, SARGODHA'] },
       selectedHouseId: null,
       deliverTargetId: null,
       deliverTargetUnit: null,
@@ -134,7 +134,7 @@ export const useBillingStore = create<BillingState>()(
         return {
           deliverTargetId: id,
           deliverTargetUnit: unit ?? s.deliverTargetUnit,
-          deliverableIndex: idx >= 0 ? idx : s.deliverableIndex,
+          deliverableIndex: idx >= 0 ? idx : 0,
           activeView: 'map',
         }
       }),
@@ -144,6 +144,7 @@ export const useBillingStore = create<BillingState>()(
       }),
       nextDeliverable: () => {
         const { deliverableList, deliverableIndex } = get()
+        if (deliverableList.length === 0) return
         if (deliverableIndex < deliverableList.length - 1) {
           const next = deliverableList[deliverableIndex + 1]
           set({ deliverableIndex: deliverableIndex + 1, deliverTargetId: next.psid, deliverTargetUnit: next })
@@ -151,6 +152,7 @@ export const useBillingStore = create<BillingState>()(
       },
       prevDeliverable: () => {
         const { deliverableList, deliverableIndex } = get()
+        if (deliverableList.length === 0) return
         if (deliverableIndex > 0) {
           const prev = deliverableList[deliverableIndex - 1]
           set({ deliverableIndex: deliverableIndex - 1, deliverTargetId: prev.psid, deliverTargetUnit: prev })
