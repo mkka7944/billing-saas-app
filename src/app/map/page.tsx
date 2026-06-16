@@ -12,6 +12,7 @@ import { HouseDetailSheet } from '@/components/house-detail-sheet'
 import { DataInsight } from '@/components/data-insight'
 import { AppShell } from '@/components/layout/AppShell'
 import { FloatingActions } from '@/components/layout/floating-actions'
+import { MapMarkerCount } from '@/components/map-marker-count'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { cn } from '@/lib/utils'
 import UnitDeliverySheet from '@/components/delivery/unit-delivery-sheet'
@@ -110,19 +111,6 @@ export default function MapPage() {
     }
   }, [mapMarkers, selectedHouseId, houseSource, selectHouse])
 
-  // Browse mode: non-assignment marker clicks open HDS directly, skip delivery sheet
-  useEffect(() => {
-    if (staffMode !== 'browse' || !deliverTargetId || !deliveryUnit) return
-    if (!deliveryItemId) {
-      const unitSurveyId = deliveryUnit.survey_id
-      if (unitSurveyId) {
-        selectHouse(unitSurveyId, mapMarkers)
-        setHouseSource('map')
-      }
-      setDeliverTarget(null, null)
-    }
-  }, [staffMode, deliverTargetId, deliveryUnit, deliveryItemId, selectHouse, setDeliverTarget, setHouseSource, mapMarkers])
-
   const hdsLayoutMode: 'fixed-list' | 'sliding' = activeView === 'list' ? 'fixed-list' : 'sliding'
 
   return (
@@ -130,6 +118,7 @@ export default function MapPage() {
       <FloatingActions />
       <div className="flex flex-col lg:flex-row h-full">
         <div className="flex-1 relative min-h-0 min-w-0 h-full">
+          <MapMarkerCount staffCount={staffItems.length} />
           {/* Map layer — always rendered, stays hidden via opacity (Leaflet needs layout) */}
           <div className={cn(activeView !== 'map' && 'invisible pointer-events-none', 'absolute inset-0')}>
             {roleName === 'field_staff' && staffMode === 'delivery' ? (

@@ -5,19 +5,20 @@ import { useBillingStore } from '@/stores/billing-store'
 import { shortenMCName } from '@/lib/mc-utils'
 import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 
-export function MapMarkerCount() {
+export function MapMarkerCount({ staffCount }: { staffCount?: number }) {
   const filters = useBillingStore((s) => s.filters)
   const selectedCity = useBillingStore((s) => s.selectedCity)
   const queryDuration = useBillingStore((s) => s.queryDuration)
   const storeIsFetching = useBillingStore((s) => s.isFetching)
   const mapMarkers = useBillingStore((s) => s.mapMarkers)
+  const staffMode = useBillingStore((s) => s.staffMode)
   const showAll = filters.ucs.length > 0
 
-  const count = mapMarkers.length
+  const count = staffCount != null ? staffCount : mapMarkers.length
 
   const label = useMemo(() => {
-    const parts: string[] = []
-    if (filters.ucs.length > 0) {
+    const parts: string[] = [staffMode === 'browse' ? 'Browse' : 'Delivery']
+    if (showAll) {
       const cityCfg = selectedCity ? CITY_TEHSIL_MAP[selectedCity] : undefined
       const shortNames = filters.ucs.map((u) => shortenMCName(u, cityCfg?.district, cityCfg?.tehsil))
       if (filters.ucs.length <= 3) {
@@ -39,9 +40,7 @@ export function MapMarkerCount() {
       parts.push(`"${filters.search}"`)
     }
     return parts.join(' · ')
-  }, [filters, selectedCity])
-
-  if (!showAll) return null
+  }, [filters, selectedCity, staffMode, showAll])
 
   const durationText = storeIsFetching
     ? '...'

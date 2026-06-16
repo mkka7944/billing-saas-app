@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useCallback, memo } from 'react'
+import { useEffect, useMemo, useRef, useCallback } from 'react'
 import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import PulsingRing from '@/components/ui/pulsing-ring'
@@ -46,7 +46,7 @@ function toAssignmentUnit(s: SurveyUnit): AssignmentItemUnit | null {
   }
 }
 
-const SurveyMarkers = memo(function SurveyMarkers({ data }: SurveyMarkersProps) {
+export default function SurveyMarkers({ data }: SurveyMarkersProps) {
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
   const setDeliverableList = useBillingStore((s) => s.setDeliverableList)
@@ -119,6 +119,4 @@ const SurveyMarkers = memo(function SurveyMarkers({ data }: SurveyMarkersProps) 
       })}
     </>
   )
-})
-
-export default SurveyMarkers
+}

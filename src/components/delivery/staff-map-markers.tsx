@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useCallback, memo } from 'react'
+import { useMemo, useRef, useCallback } from 'react'
 import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import PulsingRing from '@/components/ui/pulsing-ring'
@@ -12,7 +12,7 @@ interface StaffMapMarkersProps {
   items: { id: string; status: string; psid: string; unit: AssignmentItemUnit | null }[]
 }
 
-const StaffMapMarkers = memo(function StaffMapMarkers({ items }: StaffMapMarkersProps) {
+export default function StaffMapMarkers({ items }: StaffMapMarkersProps) {
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
 
@@ -78,6 +78,4 @@ const StaffMapMarkers = memo(function StaffMapMarkers({ items }: StaffMapMarkers
       })}
     </>
   )
-})
-
-export default StaffMapMarkers
+}

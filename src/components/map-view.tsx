@@ -100,7 +100,6 @@ export const MapView = memo(function MapView() {
 
   return (
     <div ref={mapRef} className="w-full h-full relative">
-      <MapMarkerCount />
       <MapContainer
         center={[32.0836, 72.6712]}
         zoom={mapZoom}

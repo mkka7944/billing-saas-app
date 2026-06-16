@@ -8,6 +8,7 @@ import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
 import { useSettings } from '@/hooks/use-settings'
 import { useAuthStore } from '@/stores/auth-store'
+import { useBillingStore } from '@/stores/billing-store'
 import { compressImage } from '@/lib/image/compress'
 import { uploadToGAS } from '@/lib/drive-upload'
 import { useToast } from '@/hooks/use-toast'
@@ -71,6 +72,7 @@ export default function UnitDeliverySheet({
   const userId = useAuthStore((s) => s.user?.id)
   const userEmail = useAuthStore((s) => s.user?.email) || ''
   const roleName = useAuthStore((s) => s.roleName)
+  const staffMode = useBillingStore((s) => s.staffMode)
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
   const { toast, updateToast } = useToast()
   const confirm = useConfirm()
@@ -575,7 +577,7 @@ export default function UnitDeliverySheet({
                 <span className="text-[10px] text-amber-300/70 text-center">Needs attention — GPS was out of range</span>
               )}
               <div className="flex items-stretch gap-2">
-                {assignmentItemId ? (
+                {assignmentItemId && staffMode !== 'browse' ? (
                   <button
                     onClick={openCamera}
                     disabled={isDelivering || inputCooldown}
@@ -590,12 +592,12 @@ export default function UnitDeliverySheet({
                     onClick={() => onViewDetails()}
                     disabled={isDelivering || inputCooldown}
                     className={
-                      assignmentItemId
+                      assignmentItemId && staffMode !== 'browse'
                         ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm disabled:opacity-50"
                         : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md disabled:opacity-50"
                     }
                   >
-                    {assignmentItemId ? (
+                {assignmentItemId && staffMode !== 'browse' ? (
                       <>Details <ChevronRight className="h-3.5 w-3.5" /></>
                     ) : (
                       <>View Details <ChevronRight className="h-4 w-4" /></>
@@ -603,7 +605,7 @@ export default function UnitDeliverySheet({
                   </button>
                 )}
               </div>
-              {allowNoPhoto && assignmentItemId && (
+              {allowNoPhoto && assignmentItemId && staffMode !== 'browse' && (
                 <button
                   onClick={handleSkipPhoto}
                   disabled={isDelivering || inputCooldown}
