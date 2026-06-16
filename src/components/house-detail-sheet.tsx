@@ -306,11 +306,6 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                   {shortenMCName(survey.uc_name)}
                 </span>
               )}
-              {survey.monthly_fee > 0 && (
-                <span className="text-[10px] font-bold bg-emerald-500/80 text-white rounded px-1.5 py-0.5">
-                  Current Bill Rs.{((survey.monthly_fee ?? 0) + (survey.arrears ?? 0)).toLocaleString()}
-                </span>
-              )}
             </div>
           </div>
         </div>
@@ -397,6 +392,18 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                       <span className="text-xs font-medium ml-1.5">{billInfo.currentBillMonth}</span>
                     </div>
                   )}
+                  {(() => {
+                    const amt = billData?.bill?.amount_due ?? ((survey.monthly_fee ?? 0) + (survey.arrears ?? 0))
+                    if (amt <= 0) return null
+                    return (
+                      <div>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 rounded px-1.5 py-0.5">
+                          Current Bill
+                        </span>
+                        <span className="text-xs font-bold ml-1.5">Rs.{amt.toLocaleString()}</span>
+                      </div>
+                    )
+                  })()}
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-center">
@@ -408,6 +415,9 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
               <div className="space-y-0.5 text-xs">
                 {survey.surveyor_name && (
                   <p><span className="text-muted-foreground">Surveyor:</span> <span className="font-medium">{survey.surveyor_name}</span></p>
+                )}
+                {survey.tehsil && (
+                  <p><span className="text-muted-foreground">Tehsil:</span> <span className="font-medium">{survey.tehsil}</span></p>
                 )}
                 {survey.survey_date && (
                   <p><span className="text-muted-foreground">Date:</span> <span className="font-medium">{new Date(survey.survey_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span></p>
