@@ -103,6 +103,7 @@ export default function MapPage() {
   // keep HDS in sync with current marker set; close if current unit is filtered out
   useEffect(() => {
     if (houseSource !== 'map' || !selectedHouseId) return
+    if (mapMarkers.length === 0) return
     const stillVisible = mapMarkers.some((m) => m.survey_id === selectedHouseId)
     if (!stillVisible) {
       selectHouse(null)
