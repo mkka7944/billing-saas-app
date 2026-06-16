@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
 import { useStaffAssignment } from '@/hooks/use-assignments'
 import { useOnlineStatus } from '@/hooks/use-online-status'
+import { useToast } from '@/hooks/use-toast'
 import { cacheAssignment, getCachedAssignment } from '@/lib/offline-cache'
 import type { CachedAssignment } from '@/lib/offline-cache'
 import { Loader2, WifiOff, CheckCircle2, ArrowLeft, ArrowRight, ChevronDown, Upload } from 'lucide-react'
@@ -39,6 +40,8 @@ export default function DeliverPage() {
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const setView = useBillingStore((s) => s.setView)
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
+  const staffMode = useBillingStore((s) => s.staffMode)
+  const { toast } = useToast()
   const [useCache, setUseCache] = useState(false)
   const [page, setPage] = useState(0)
   const [filterTab, setFilterTab] = useState<'pending' | 'issues' | 'delivered' | 'all'>('pending')
@@ -139,6 +142,10 @@ export default function DeliverPage() {
   const handleSelect = (id: string) => {
     const item = items.find((i) => i.id === id)
     if (!item?.unit) return
+    if (staffMode === 'browse') {
+      toast('Switch to delivery mode to deliver this bill', 'warning')
+      return
+    }
     setDeliverTarget(item.psid)
     setView('map')
     router.push(`/map?target=${encodeURIComponent(item.psid)}`)
