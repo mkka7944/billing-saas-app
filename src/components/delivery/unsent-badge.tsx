@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
-import { getAllQueued } from '@/lib/photo-queue'
-import { Loader2, Upload, X, Image } from 'lucide-react'
+import { getAllQueued, removeFromQueue } from '@/lib/photo-queue'
+import { Loader2, Upload, X, Image, Trash2 } from 'lucide-react'
 import type { QueuedPhoto } from '@/lib/photo-queue'
 
 interface UnsentModalProps {
@@ -88,6 +88,13 @@ export function UnsentModal({ open, onClose }: UnsentModalProps) {
                       <p className="text-[9px] text-red-500 truncate mt-0.5">{p.lastError}</p>
                     )}
                   </div>
+                  <button
+                    onClick={async () => { await removeFromQueue(p.id!); loadPhotos() }}
+                    className="h-6 w-6 flex items-center justify-center rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-500 transition-colors shrink-0 cursor-pointer"
+                    title="Remove from queue"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
                 </div>
               )
             })}
