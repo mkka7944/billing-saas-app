@@ -1,8 +1,8 @@
 # Live Monitoring — Implementation Plan
 
 > Last updated: 2026-06-18
-> Status: Plan (not started)
-> Effort: Phase 1 ~3 hours, Phase 2 ~2 hours
+> Status: Phase 1 complete, Phase 2 pending (start tomorrow morning)
+> Effort: Phase 1 ~3 hours (done), Phase 2 ~2 hours (pending)
 
 ---
 
@@ -373,55 +373,66 @@ All KPIs come from the same live endpoint or can be computed client-side from th
 
 ## 11. Implementation Order
 
-### Step 1: Store + Sidebar (15 min)
-- Add `'live'` to `activeView` type in billing-store
-- Add Live Monitoring to BillingSidebar
-- Create `live-store.ts` with live-specific state
+### Phase 1 — Complete (2026-06-18)
 
-### Step 2: API endpoint — Delivery Trail (30 min)
-- Create `GET /api/live/delivery-trail?city=SARGODHA`
-- Returns: markers + activities for today
+| Step | Status | Notes |
+|------|--------|-------|
+| Step 1: Store + Sidebar | ✅ Done | `'live'` in `activeView`, sidebar item, `live-store.ts` |
+| Step 2: API endpoint — Delivery Trail | ✅ Done | `GET /api/live/delivery-trail?city=X` — queries by `delivered_at` in PKT range |
+| Step 3: Hook — useDeliveryTrail | ✅ Done | React Query with `refetchInterval: 5000` |
+| Step 4: Map page — Live view render | ✅ Done | `activeView === 'live'` block in `map/page.tsx` |
+| Step 5: Delivery Trail markers | ✅ Done | Green/red/amber CircleMarkers with tooltip + popup |
+| Step 6: Floating actions — Live mode | ✅ Done | Greyed-out search/filters/mode/photos in live mode |
+| Step 7: Live Panel + Summary bar | ✅ Done | Fixed-position panel, draggable, collapsible, KPI row |
+| Step 8: UC cards | ✅ Done | Collapsible UC list, grouped by UC name |
+| Step 9: Staff list | ✅ Done | Stats + GPS toggle button (wired to store, data pending) |
+| Step 10: Activity feed | ✅ Done | Chronological feed, auto-scroll on new events |
+| Step 11: Polish | ✅ Done | TypeScript check; drag fix; column rename (assigned_date→issued_at); PKT timezone fix |
 
-### Step 3: Hook — useDeliveryTrail (15 min)
-- React Query with `refetchInterval: 5000`
-- Returns `{ markers, activities }`
+### Phase 2 — Not started (start **tomorrow morning** — office priority)
 
-### Step 4: Map page — Live view render (30 min)
-- Add `activeView === 'live'` block to map/page.tsx
-- Pass live state from store
-- Guard: block HDS/delivery sheet in live mode
+| Step | Effort | Notes |
+|------|--------|-------|
+| Step 1: DB migration (048-staff-locations.sql) | ~30m | Create `staff_locations` table |
+| Step 2: `POST /api/live/report-location` | ~20m | Staff phone reports GPS position |
+| Step 3: `GET /api/live/staff-positions?city=X` | ~20m | Admin fetches latest per-city positions |
+| Step 4: `useStaffPositions(city?)` hook | ~15m | Polls every 10s |
+| Step 5: `StaffPositionLayers` component | ~25m | Blue dots + name tooltip + pulse animation |
+| Step 6: Update `use-user-location.ts` | ~15m | Add 60s reporter to POST location |
+| Total | ~2 hrs | |
 
-### Step 5: Delivery Trail markers (20 min)
-- Create `live-delivery-trail.tsx`
-- Renders green/red/amber CircleMarkers
+### Phase 2 Implementation Details
 
-### Step 6: Floating actions — Live mode (15 min)
-- Guard floating actions to show simplified buttons in live mode
-
-### Step 7: Live Panel — wrapper + summary bar (20 min)
-- Create `live-panel.tsx` (collapsible, close button)
-- Create `live-summary-bar.tsx`
-
-### Step 8: Live Panel — UC cards (15 min)
-- Create `live-uc-cards.tsx`
-- Collapsed by default, expand on click
-
-### Step 9: Live Panel — Staff list (20 min)
-- Create `live-staff-list.tsx`
-- Shows assigned/delivered/pending/rate + GPS toggle placeholder
-- GPS toggle disabled in Phase 1 (enabled in Phase 2)
-
-### Step 10: Live Panel — Activity feed (20 min)
-- Create `live-activity-feed.tsx`
-- Newest first, auto-scroll, city filtered
-
-### Step 11: TypeScript check + polish (15 min)
-- `npx tsc --noEmit`
-- Verify all views, edge cases
+See Section 6 (Staff Positions) above for full spec.
 
 ---
 
-## 12. Edge Cases
+## 12. Critical Findings (2026-06-18 Session)
+
+### PKT Timezone — All timestamp operations must use `src/lib/pkt.ts`
+
+`new Date().toISOString().slice(0, 10)` returns **UTC date**, not Pakistan date. This caused "today's deliveries" to be empty for deliveries made between 12 AM and 5 AM PKT.
+
+**Fix applied:**
+- `src/lib/pkt.ts` created with `pktToday()`, `pktDayRange()`, `pktCurrentMonth()`
+- `constants.ts` `today()` and `currentMonth()` now delegate to PKT helpers
+- All future code must use these helpers, never raw `toISOString()`
+
+### Delivery trail queries by `delivered_at`, not `issued_at`
+
+The original query filtered `daily_assignments` by `issued_at` (the date the admin created the assignment). This is wrong for two reasons:
+1. `issued_at` tracks assignment creation, not delivery time
+2. The column was renamed from `assigned_date` but the original code still used the old name
+
+**Fix applied:** Query `assignment_items` directly with `delivered_at` in PKT date range.
+
+### LiveDeliveryTrail requires `dynamic(..., { ssr: false })`
+
+React-Leaflet references `window` at module import time. Static import causes SSR crash: "window is not defined". Always use `dynamic(() => import(...), { ssr: false })`.
+
+---
+
+## 13. Edge Cases
 
 | Scenario | Behavior |
 |----------|----------|

@@ -13,6 +13,12 @@ import { DataInsight } from '@/components/data-insight'
 import { AppShell } from '@/components/layout/AppShell'
 import { FloatingActions } from '@/components/layout/floating-actions'
 import { MapMarkerCount } from '@/components/map-marker-count'
+import { LivePanel } from '@/components/live/live-panel'
+
+const LiveDeliveryTrail = dynamic(
+  () => import('@/components/live/live-delivery-trail').then((m) => m.LiveDeliveryTrail),
+  { ssr: false }
+)
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { cn } from '@/lib/utils'
 import UnitDeliverySheet from '@/components/delivery/unit-delivery-sheet'
@@ -134,15 +140,17 @@ export default function MapPage() {
       <FloatingActions />
       <div className="flex flex-col lg:flex-row h-full">
         <div className="flex-1 relative min-h-0 min-w-0 h-full">
-          {activeView !== 'stats' && activeView !== 'data-insight' && (
+          {activeView !== 'stats' && activeView !== 'data-insight' && activeView !== 'live' && (
           <MapMarkerCount staffCount={roleName === 'field_staff' && staffMode === 'delivery' ? staffItems.length : undefined} />
           )}
           {/* Map layer — always rendered, stays hidden via opacity (Leaflet needs layout) */}
-          <div className={cn(activeView !== 'map' && 'invisible pointer-events-none', 'absolute inset-0')}>
+          <div className={cn(activeView !== 'map' && activeView !== 'live' && 'invisible pointer-events-none', 'absolute inset-0')}>
             {roleName === 'field_staff' && staffMode === 'delivery' ? (
               <StaffMap items={staffItems} userLocation={userLocation} />
             ) : (
-              <MapView visible={activeView === 'map'} />
+              <MapView visible={activeView === 'map'}>
+                {activeView === 'live' && <LiveDeliveryTrail />}
+              </MapView>
             )}
           </div>
           {activeView === 'list' && (
@@ -160,6 +168,7 @@ export default function MapPage() {
               <DataInsight />
             </div>
           )}
+          {activeView === 'live' && <LivePanel />}
 
           {/* UnitDeliverySheet overlay — universal action sheet (staff + admin) */}
           {activeView === 'map' && deliverTargetId && deliveryUnit && (

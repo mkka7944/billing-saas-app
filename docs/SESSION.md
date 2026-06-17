@@ -496,7 +496,42 @@ The following session logs were extracted from the original MASTER.md during the
 - Fix staff sync so assignments page works
 - MC-17 test run if time permits: sync staff, verify enrichment, create assignment, test delivery flow
 
-Source files copied from `F:\qoder\billing-system\` + `F:\Routing-Station-Pro` into `scripts/`
+---
+## 2026-06-18 — Live Monitoring Phase 1 + PKT Timezone Fix
+
+### Phase: Live Monitoring (Phase G: partial)
+
+### What
+- **Drag fix** — Live panel drag direction was reversed (right drag increased CSS `right`, pushing panel left). Fixed: `right: 8 + panelPos.x` → `right: 8 - panelPos.x`.
+- **Column name fix** — Delivery-trail API used old column `assigned_date` (renamed to `issued_at` in migration 031). Query returned empty results. Fixed.
+- **PKT timezone utility** — Created `src/lib/pkt.ts` with `pktToday()`, `pktDayRange()`, `pktCurrentMonth()` using `Asia/Karachi` timezone. This is the single source of truth for all Pakistan timezone date/datetime operations.
+- **`today()` / `currentMonth()` fixed** — `src/lib/constants.ts` now delegates to PKT helpers. All consumers (stats pages, staff stats, billing month) automatically use PKT dates.
+- **Delivery-trail query restructured** — Changed from `issued_at` (assignment creation date) to `delivered_at` (actual delivery time) in PKT date range. Queries `assignment_items` directly then joins assignments for staff info and survey_units for geography filter. No longer depends on when assignment was created.
+- **SSR crash fix** — `LiveDeliveryTrail` changed from static import to `dynamic(() => import(...), { ssr: false })` in `map/page.tsx`. React-Leaflet references `window` at module load, causing "window is not defined" during SSR.
+
+### Key Decisions
+- Live Monitoring is a view on `/map` page (not separate page). Panel uses `fixed` + `z-[9999]` to stay above Leaflet layers.
+- `timestamptz` column storage unchanged (UTC is correct). Only **filter computations** and **date-only columns** changed to PKT — zero risk to existing data.
+- Delivery trail should track `delivered_at` (when delivery happened) not `issued_at` (when assignment was created).
+- PKT utility is the single source of truth going forward — all new timestamp/filter code should use it.
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors across all changes
+- App loads without SSR crash (LiveDeliveryTrail dynamically imported)
+
+### Next
+- **HIGH PRIORITY — Tomorrow morning (office): Phase 2 — Staff Positions (live GPS)**
+  - Create `staff_locations` table + migration (048-staff-locations.sql)
+  - `POST /api/live/report-location` endpoint
+  - `GET /api/live/staff-positions` endpoint
+  - `useStaffPositions` hook (polls 10s)
+  - `StaffPositionLayers` component (blue dots + name tooltip)
+  - Update `use-user-location.ts` with 60s GPS reporter
+- Phase H.4 — Section-level shimmer skeletons in HDS (~30m)
+- Phase H.7 — Prefetch adjacent unit data (~45m)
+- Phase F — Auto-Route Generation (3hrs)
+- Phase E — Flag Management UI (~3hrs remaining)
+- Phase M2 — Marker clustering + UC count badges (~1.5hrs remaining)
 ```
 scripts/ root (6 files, 86 KB):
   routingstation.py (46 KB) ΓÇö Daily survey/payment injection into old Supabase

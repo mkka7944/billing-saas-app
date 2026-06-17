@@ -108,7 +108,7 @@ function MapFlyToTarget() {
   return null
 }
 
-export const MapView = memo(function MapView({ visible = true }: { visible?: boolean }) {
+export const MapView = memo(function MapView({ visible = true, children }: { visible?: boolean; children?: React.ReactNode }) {
   const filters = useBillingStore((s) => s.filters)
   const mapType = useBillingStore((s) => s.mapType)
   const showAll = filters.ucs.length > 0
@@ -161,6 +161,7 @@ export const MapView = memo(function MapView({ visible = true }: { visible?: boo
             <SurveyMarkers data={markers} />
           </>
         )}
+        {children}
       </MapContainer>
     </div>
   )

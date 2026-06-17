@@ -3,16 +3,18 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { Search, SlidersHorizontal, Layers, Image, X, Crosshair, Map } from 'lucide-react'
+import { Search, SlidersHorizontal, Layers, Image, X, Crosshair, Map, PanelRightClose } from 'lucide-react'
 import { MobileFilterSheet } from '@/components/filter-panel'
 import { UnsentModal } from '@/components/delivery/unsent-badge'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
+import { useLiveStore } from '@/stores/live-store'
 
 export function FloatingActions() {
   const [open, setOpen] = useState(false)
   const [searchVisible, setSearchVisible] = useState(false)
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [unsentOpen, setUnsentOpen] = useState(false)
+  const activeView = useBillingStore((s) => s.activeView)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const mapType = useBillingStore((s) => s.mapType)
   const setMapType = useBillingStore((s) => s.setMapType)
@@ -20,6 +22,8 @@ export function FloatingActions() {
   const setFilters = useBillingStore((s) => s.setFilters)
   const staffMode = useBillingStore((s) => s.staffMode)
   const setStaffMode = useBillingStore((s) => s.setStaffMode)
+  const panelCollapsed = useLiveStore((s) => s.panelCollapsed)
+  const setPanelCollapsed = useLiveStore((s) => s.setPanelCollapsed)
   const roleName = useAuthStore((s) => s.roleName)
   const { queueCount: unsentCount } = usePhotoQueue()
 
@@ -53,14 +57,16 @@ export function FloatingActions() {
 
   if (selectedHouseId) return null
 
+  const isLive = activeView === 'live'
+
   return (
     <>
       <div className="fixed right-3 top-1/2 -translate-y-1/2 z-[800]">
         {open ? (
           <div className="flex flex-col items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
             <div className="flex flex-col gap-1 p-2 rounded-xl bg-background/95 backdrop-blur-md border border-border shadow-2xl">
-              <ActionButton icon={Search} label="Search" onClick={handleSearch} />
-              <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} />
+              <ActionButton icon={Search} label="Search" onClick={handleSearch} disabled={isLive} />
+              <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} disabled={isLive} />
               <ActionButton icon={Layers} label={mapType === 'streets' ? 'Satellite' : 'Street'} onClick={handleSatellite} active={mapType === 'satellite'} />
               {roleName === 'field_staff' && (
                 <div className="relative">
@@ -69,17 +75,25 @@ export function FloatingActions() {
                     label={staffMode === 'delivery' ? 'Browse City' : 'Deliver'}
                     onClick={() => setStaffMode(staffMode === 'delivery' ? 'browse' : 'delivery')}
                     active={staffMode === 'browse'}
+                    disabled={isLive}
                   />
                 </div>
               )}
               <div className="relative">
-                <ActionButton icon={Image} label="Photos" onClick={handleUnsent} />
-                {unsentCount > 0 && (
+                <ActionButton icon={Image} label="Photos" onClick={handleUnsent} disabled={isLive} />
+                {unsentCount > 0 && !isLive && (
                   <span className="absolute -top-1 -right-1 h-4 min-w-[16px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[9px] font-bold px-1 pointer-events-none shadow-sm ring-2 ring-background">
                     {unsentCount > 99 ? '99+' : unsentCount}
                   </span>
                 )}
               </div>
+              {isLive && (
+                <ActionButton
+                  icon={panelCollapsed ? PanelRightClose : PanelRightClose}
+                  label={panelCollapsed ? 'Expand Panel' : 'Collapse Panel'}
+                  onClick={() => setPanelCollapsed(!panelCollapsed)}
+                />
+              )}
             </div>
             <button
               onClick={() => setOpen(false)}
@@ -98,7 +112,7 @@ export function FloatingActions() {
             >
               <span className="text-base font-bold text-muted-foreground leading-none">&#x2726;</span>
             </button>
-            {unsentCount > 0 && (
+            {unsentCount > 0 && !isLive && (
               <span className="absolute -top-1 -right-1 h-5 min-w-[20px] flex items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-bold px-1.5 pointer-events-none shadow-md ring-2 ring-background">
                 {unsentCount > 99 ? '99+' : unsentCount}
               </span>
@@ -126,19 +140,25 @@ function ActionButton({
   label,
   onClick,
   active,
+  disabled,
 }: {
   icon: React.ComponentType<{ className?: string }>
   label: string
   onClick: () => void
   active?: boolean
+  disabled?: boolean
 }) {
   return (
     <button
-      onClick={onClick}
-      className={`flex items-center gap-2 h-10 w-full px-2 rounded-lg hover:bg-muted cursor-pointer transition-colors ${
+      onClick={disabled ? undefined : onClick}
+      className={`flex items-center gap-2 h-10 w-full px-2 rounded-lg transition-colors ${
+        disabled
+          ? 'opacity-30 cursor-default text-muted-foreground'
+          : 'hover:bg-muted cursor-pointer'
+      } ${
         active ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground hover:text-foreground'
       }`}
-      title={label}
+      title={disabled ? `Unavailable in Live mode` : label}
       aria-label={label}
     >
       <Icon className="h-5 w-5 shrink-0" />

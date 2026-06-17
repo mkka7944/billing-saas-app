@@ -6,7 +6,7 @@ import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 
 interface BillingState {
   selectedCity: string | null
-  activeView: 'map' | 'list' | 'stats' | 'detail' | 'data-insight'
+  activeView: 'map' | 'list' | 'stats' | 'detail' | 'data-insight' | 'live'
   filters: FilterState
   pendingFilters: FilterState
   selectedHouseId: string | null
@@ -27,7 +27,7 @@ interface BillingState {
   staffMode: 'delivery' | 'browse'
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setListPage: (page: number) => void
-  setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight') => void
+  setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight' | 'live') => void
   setDeliverTarget: (id: string | null, unit?: AssignmentItemUnit | null) => void
   setDeliverableList: (list: AssignmentItemUnit[]) => void
   setFilters: (partial: Partial<FilterState>) => void
@@ -108,7 +108,7 @@ export const useBillingStore = create<BillingState>()(
 
       setView: (view) => set((s) => {
         if (s.activeView === view) return {}
-        return { activeView: view, selectedHouseId: (view === 'stats' || view === 'data-insight') ? null : s.selectedHouseId }
+        return { activeView: view, selectedHouseId: (view === 'stats' || view === 'data-insight' || view === 'live') ? null : s.selectedHouseId }
       }),
       setFilters: (partial) => set((s) => ({
         filters: { ...s.filters, ...partial },

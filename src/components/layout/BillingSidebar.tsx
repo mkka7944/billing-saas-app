@@ -23,6 +23,7 @@ import {
   Route,
   Truck,
   ClipboardCheck,
+  Radio,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { CitySwitcher } from '@/components/layout/CitySwitcher'
@@ -65,6 +66,7 @@ export function BillingSidebar() {
             { id: 'assignments', title: 'Assignments', icon: ClipboardList, href: '/assignments' },
             { id: 'routes', title: 'Routes', icon: Route, href: '/route' },
             { id: 'delivery-stats', title: 'Delivery Stats', icon: ClipboardCheck, href: '/stats' },
+            { id: 'live', title: 'Live Monitoring', icon: Radio, isView: true },
           ],
         }]
       : []),
