@@ -1,5 +1,12 @@
 # Billing SaaS App — Development Rules
 
+## Priority: Plain-Language Communication
+**This rule overrides all other technical instructions when explaining things to the user.**
+1. Always explain what the user cares about in everyday language first
+2. Explain what happened in plain words, what caused it, and what the fix does
+3. Say WHY a choice was made, not just the technical details
+4. If technical terms are unavoidable, explain them right after in plain words
+
 ## Source of Truth
 **At session start:** Read `.opencode/context.json` (machine-readable state) and `docs/SESSION.md` (running session log).
 **At session end:** Update `.opencode/context.json` and append to `docs/SESSION.md`.
@@ -150,16 +157,6 @@ Every task is broken into short atomic steps (max 1-2 file changes per step).
 5. Present the next step
 **Never skip ahead or batch multiple steps without explicit approval.**
 **When in a phase/step and the user asks a question:** Answer the question, then return to the current phase/step without advancing unless told to proceed.
-
-## Plain-Language Communication Rule
-When explaining errors, features, or how the code works:
-1. Do not start with jargon or technical terms (e.g., don't lead with "zustand store key" or "Leaflet's size calculation").
-2. First say what the user cares about in everyday language — "the map is slow because the map thinks it has zero height" instead of "Leaflet returns 0x0 from getSize when container has display:none".
-3. If technical terms are unavoidable, explain them right after in plain words.
-4. For errors: say what happened, what caused it (in plain words), and what the fix does. Example:
-   - Bad: "MapFollower's flyTo subscription re-triggers on mapCenter changes causing unnecessary re-renders"
-   - Good: "The map was jumping back to the admin's selected location every time the GPS updated, so it never let you scroll around freely"
-5. For implementation decisions: say WHY the choice was made, not just the technical what.
 
 ## Pre-Edit Ripple Check
 Before making any code change, check four things to avoid accidentally breaking other features:
