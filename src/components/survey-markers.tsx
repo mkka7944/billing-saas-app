@@ -74,7 +74,7 @@ const MarkerItem = memo(function MarkerItem({ s, isSelected, color, clickHandler
           offset={[0, -8]}
           className="survey-tooltip"
           opacity={1}
-          permanent={isSelected}
+          permanent={false}
         >
           {s.survey_id}
         </Tooltip>
