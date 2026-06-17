@@ -316,10 +316,10 @@ When `nextHouse`/`prevHouse` navigates, prefetch the next unit's data in the bac
 
 | Priority | Plan | Steps | Est. Time | Impact | Status |
 |----------|------|-------|-----------|--------|--------|
-| P0 | H.6 — URL-encode PSID | 1 step | 5m | **Critical bug fix** | 🔴 Not started (deferred) |
+| ❌ | H.6 — URL-encode PSID | 1 step | 5m | Not needed — `URLSearchParams` auto-encodes | ❌ **No action needed** |
 | P0 | H.1 — Compound HDS endpoint | 1 step | 1h | 75% fewer API calls per HDS open | ✅ **Completed** |
 | ❌ | **S** — Staff sees all data | S.1-S.5 | 1h | Scrapped — risk > benefit | ❌ **Scrapped** |
-| P2 | **F** — Filter streamlining | F.1-F.8 | 3.5h | Removes dead complexity, unifies roles | 🟡 F.2 done |
+| P2 | **F** — Filter streamlining | F.1-F.8 | 3.5h | Removes dead complexity, unifies roles | 🟡 F.2/F.3 done |
 | P4 | H.2-H.5 — HDS UX | 4 steps | 1.5h | Polished, fast HDS | 🟡 H.2/H.3 done, H.4/H.5 pending |
 | P5 | H.7 — HDS prefetch | 1 step | 45m | Instant navigation feel | 🔴 Not started |
 
@@ -329,6 +329,6 @@ When `nextHouse`/`prevHouse` navigates, prefetch the next unit's data in the bac
 - ✅ **Floating search** — Changed to instant-apply (no longer uses `pendingFilters`) — **done (2026-06-16)**
 - ✅ **H.1** — Compound HDS endpoint — **done (2026-06-16)**
 - ✅ **H.3** — Unified gallery — **done (2026-06-16)**
-- **F.3** — Add PSID to search — 10m, no risk
-- **H.6** — URL-encode PSID — 5m, critical bug (deferred)
+- ✅ **F.3** — Add PSID to search — **done (2026-06-17)**
+- ❌ **H.6** — URL-encode PSID — not needed, `URLSearchParams` auto-encodes
 - ❌ **S.1 + S.2** — Unified MapPage — scrapped

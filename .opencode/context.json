@@ -1,7 +1,7 @@
 {
   "lastSession": "2026-06-16",
   "currentPhase": "Evening discussion — Plan S scrapped, remaining plan review",
-  "currentStep": "Reviewed current state after HDS overhaul + F.2 + staffMode commits. Discussed Plan S (unified map) — decided to scrap: marginal perf benefit, high risk, staff rarely switches modes. Remaining: H.4 (skeletons), H.5 (proxy images), H.7 (prefetch), F.1 (pendingFilters elimination), F.4-F.8 (filter polish). All deferred to next office session.",
+  "currentStep": "F.3 done: PSID added to search ILIKE. H.6: no action needed (URLSearchParams auto-encodes). Plan S scrapped confirmed.",
   "phaseProgress": {
     "0d": "done",
     "0e": "done",

@@ -24,7 +24,7 @@ function applyFilters(qb: any, q: SurveyQuery) {
   if (q.tehsils.length) qb = qb.in('tehsil', q.tehsils)
   if (q.ucs.length) qb = qb.in('uc_name', q.ucs)
   if (q.surveyor) qb = qb.eq('surveyor_name', q.surveyor)
-  if (q.search) qb = qb.or(`consumer_name.ilike.%${q.search}%,survey_id.ilike.%${q.search}%`)
+  if (q.search) qb = qb.or(`consumer_name.ilike.%${q.search}%,survey_id.ilike.%${q.search}%,psid.ilike.%${q.search}%`)
   return qb
 }
 

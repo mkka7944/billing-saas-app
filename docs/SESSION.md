@@ -3346,3 +3346,37 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - `docs/OPTIMIZATION-PLAN.md` — Plan S section marked as SCRAPPED, priority table updated
 - `docs/SESSION.md` — this entry appended
 
+---
+
+## 2026-06-17 — F.3 PSID Search + H.6 Closure
+
+### Phase: Optimization Plan — F.3, H.6
+
+### What
+- **F.3 — Added PSID to search:** Changed `survey-repository.ts:27` — added `psid.ilike.%${q.search}%` to the OR clause. Staff can now search by PSID and get results.
+- **H.6 — Closed as "no action needed":** Analysis showed `URLSearchParams.set()` already auto-encodes values. PSIDs are alphanumeric with hyphens — no encoding bug exists. The plan's file reference to `api/surveys/payments/route.ts` was incorrect (that route takes `surveyId` and looks up PSID server-side).
+
+### Key Decisions
+- H.6 requires no fix — `URLSearchParams` handles encoding correctly
+- F.3 implemented as a 9-character inline change (not a search module) — dedicated search module deferred to future optimization pass
+
+### Files Changed
+- `src/lib/repositories/survey-repository.ts` — 1-line edit
+- `.opencode/context.json` — updated
+- `docs/OPTIMIZATION-PLAN.md` — priority table + quick wins updated
+- `docs/SESSION.md` — this entry appended
+
+### Build Verification
+- `npx tsc --noEmit` — 0 errors
+
+### Next
+1. F.1 — Eliminate pendingFilters from store (~1h)
+2. F.4 — Active filter chips (~30m)
+3. F.5 — Unify UC selector (~45m)
+4. F.6 — Mobile filter sheet Show Results (~30m)
+5. F.7 — CitySwitcher browse-all for staff (~15m)
+6. F.8 — ucs[] across API routes (~30m)
+7. H.4 — Section skeletons (~30m)
+8. H.5 — Proxy images (~30m)
+9. H.7 — Prefetch adjacent (~45m)
+
