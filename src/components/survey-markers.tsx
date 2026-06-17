@@ -87,11 +87,12 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
+  const selectHouse = useBillingStore((s) => s.selectHouse)
   const setDeliverableList = useBillingStore((s) => s.setDeliverableList)
   const houseList = useBillingStore((s) => s.houseList)
 
   const markers = useMemo(() => {
-    const mapMarkers = data.filter((s) => s.lat && s.lng && s.psid)
+    const mapMarkers = data.filter((s) => s.lat && s.lng)
     const listMarkers = houseList.filter((s) => s.lat && s.lng)
     const seen = new Set(mapMarkers.map((s) => s.survey_id))
     return [...mapMarkers, ...listMarkers.filter((s) => !seen.has(s.survey_id))]
@@ -109,10 +110,14 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
     const surveyId = (e.target as any)?.surveyId
     if (!surveyId) return
     const s = markersRef.current.find((m) => m.survey_id === surveyId)
-    if (!s?.psid) return
-    const unit = toAssignmentUnit(s)
-    if (unit) setDeliverTarget(s.psid, unit)
-  }, [setDeliverTarget])
+    if (!s) return
+    if (s.psid) {
+      const unit = toAssignmentUnit(s)
+      if (unit) setDeliverTarget(s.psid, unit)
+    } else {
+      selectHouse(surveyId, markersRef.current)
+    }
+  }, [setDeliverTarget, selectHouse])
 
   const clickHandlers = useMemo(() => ({ click: handleMarkerClick }), [handleMarkerClick])
 
