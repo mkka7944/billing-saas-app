@@ -206,8 +206,8 @@ def main():
                     "status": "ARCHIVED" if deleted == "YES" else None,
                 }
             else:
-                # Multiple PSIDs for same survey — sum amounts, keep first psid
-                enrichment[sid]["arrears"] += safe_int(row.get(arrears_col, "0"))
+                # Multiple rows for same survey — keep first occurrence, skip extras
+                pass
 
             count += 1
 

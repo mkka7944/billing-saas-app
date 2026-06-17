@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { useIsFetching } from '@tanstack/react-query'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { shortenMCName } from '@/lib/mc-utils'
@@ -10,7 +11,7 @@ export function MapMarkerCount({ staffCount }: { staffCount?: number }) {
   const filters = useBillingStore((s) => s.filters)
   const selectedCity = useBillingStore((s) => s.selectedCity)
   const queryDuration = useBillingStore((s) => s.queryDuration)
-  const storeIsFetching = useBillingStore((s) => s.isFetching)
+  const storeIsFetching = useIsFetching() > 0
   const mapMarkers = useBillingStore((s) => s.mapMarkers)
   const staffMode = useBillingStore((s) => s.staffMode)
   const roleName = useAuthStore((s) => s.roleName)

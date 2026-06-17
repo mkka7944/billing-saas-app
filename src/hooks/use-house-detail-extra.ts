@@ -18,7 +18,7 @@ interface FlaggedResponse {
 
 interface HouseDetailExtra {
   surveyData: SurveyUnit | null
-  billData: { bill: any; payments: any[]; allMonths: string[] } | null
+  billData: { bill: any; payments: any[]; allMonths: string[]; latestArrears: number | null } | null
   billInfo: BillInfo | null
   deliveryPhotos: DeliveryPhoto[]
   drivePhotos: DrivePhoto[]

@@ -88,7 +88,11 @@ export async function GET(request: Request) {
         const earliestMonth = monthKey(earliestRaw) < monthKey(sep2025) ? sep2025 : earliestRaw
         allMonths = generateMonthRange(earliestMonth, currentMonth())
 
-        return { bill, payments, allMonths }
+        const latestArrears = matchingBills.length > 0
+          ? matchingBills.sort((a: any, b: any) => monthKey(b.bill_month) - monthKey(a.bill_month))[0].arrears
+          : null
+
+        return { bill, payments, allMonths, latestArrears }
       } catch { return null }
     })(),
 

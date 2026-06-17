@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -38,6 +38,9 @@ export default function MapPage() {
   const selectHouse = useBillingStore((s) => s.selectHouse)
   const mapMarkers = useBillingStore((s) => s.mapMarkers)
   const houseSource = useBillingStore((s) => s.houseSource)
+  const houseList = useBillingStore((s) => s.houseList)
+  const houseListIndex = useBillingStore((s) => s.houseListIndex)
+  const setMapCenter = useBillingStore((s) => s.setMapCenter)
   const setHouseSource = useBillingStore((s) => s.setHouseSource)
   const staffMode = useBillingStore((s) => s.staffMode)
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
@@ -100,6 +103,19 @@ export default function MapPage() {
     }
   }
 
+  // HDS navigation: only fly the map when it's visible (don't animate invisible map)
+  const lastHouseCenter = useRef<string | null>(null)
+  useEffect(() => {
+    if (activeView !== 'map') return
+    if (!selectedHouseId) return
+    const house = houseList[houseListIndex]
+    if (!house?.lat || !house?.lng) return
+    const key = `${house.lat},${house.lng}`
+    if (lastHouseCenter.current === key) return
+    lastHouseCenter.current = key
+    setMapCenter([house.lat, house.lng])
+  }, [selectedHouseId, houseList, houseListIndex, setMapCenter, activeView])
+
   // Filter reactivity: when mapMarkers change and HDS is open from map view,
   // keep HDS in sync with current marker set; close if current unit is filtered out
   useEffect(() => {
@@ -118,13 +134,15 @@ export default function MapPage() {
       <FloatingActions />
       <div className="flex flex-col lg:flex-row h-full">
         <div className="flex-1 relative min-h-0 min-w-0 h-full">
+          {activeView !== 'stats' && activeView !== 'data-insight' && (
           <MapMarkerCount staffCount={roleName === 'field_staff' && staffMode === 'delivery' ? staffItems.length : undefined} />
+          )}
           {/* Map layer — always rendered, stays hidden via opacity (Leaflet needs layout) */}
           <div className={cn(activeView !== 'map' && 'invisible pointer-events-none', 'absolute inset-0')}>
             {roleName === 'field_staff' && staffMode === 'delivery' ? (
               <StaffMap items={staffItems} userLocation={userLocation} />
             ) : (
-              <MapView />
+              <MapView visible={activeView === 'map'} />
             )}
           </div>
           {activeView === 'list' && (

@@ -35,8 +35,13 @@ function MapFollower() {
   const mapCenter = useBillingStore((s) => s.mapCenter)
   const { data: mapZoom = 18 } = useMapZoom()
 
+  const lastCenterRef = useRef<string | null>(null)
+
   useEffect(() => {
-    map.flyTo(mapCenter, mapZoom, { duration: 1.2 })
+    const key = `${mapCenter[0]},${mapCenter[1]}`
+    if (lastCenterRef.current === key) return
+    lastCenterRef.current = key
+    map.flyTo(mapCenter, mapZoom, { duration: 0.5 })
   }, [map, mapCenter, mapZoom])
 
   return null
@@ -45,6 +50,8 @@ function MapFollower() {
 function FitBoundsOnFilter({ markers }: { markers: SurveyUnit[] }) {
   const map = useMap()
   const filters = useBillingStore((s) => s.filters)
+  const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
+  const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
   const { data: mapZoom = 18 } = useMapZoom()
   const prevKey = useRef<string | null>(null)
   const firstRun = useRef(true)
@@ -54,7 +61,7 @@ function FitBoundsOnFilter({ markers }: { markers: SurveyUnit[] }) {
     if (firstRun.current) {
       firstRun.current = false
       prevKey.current = key
-      if (markers.length > 0) {
+      if (!selectedHouseId && !deliverTargetId && markers.length > 0) {
         const coords = markers
           .filter((m) => m.lat && m.lng)
           .map((m) => [m.lat, m.lng] as [number, number])
@@ -68,12 +75,12 @@ function FitBoundsOnFilter({ markers }: { markers: SurveyUnit[] }) {
       const coords = markers
         .filter((m) => m.lat && m.lng)
         .map((m) => [m.lat, m.lng] as [number, number])
-      if (coords.length > 0) {
+      if (coords.length > 0 && !selectedHouseId && !deliverTargetId) {
         map.flyToBounds(coords, { padding: [50, 50], maxZoom: mapZoom, duration: 1 })
       }
     }
     prevKey.current = key
-  }, [markers, filters, map])
+  }, [markers, filters, map]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return null
 }
@@ -82,12 +89,11 @@ function MapFlyToTarget() {
   const map = useMap()
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
   const mapMarkers = useBillingStore((s) => s.mapMarkers)
-  const staffMode = useBillingStore((s) => s.staffMode)
   const { data: mapZoom = 18 } = useMapZoom()
   const lastTargetRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (staffMode !== 'browse' || !deliverTargetId) {
+    if (!deliverTargetId) {
       lastTargetRef.current = null
       return
     }
@@ -97,12 +103,12 @@ function MapFlyToTarget() {
     if (marker?.lat && marker?.lng) {
       map.flyTo([marker.lat, marker.lng], mapZoom, { duration: 0.5 })
     }
-  }, [deliverTargetId, staffMode, mapMarkers, map, mapZoom])
+  }, [deliverTargetId, mapMarkers, map, mapZoom])
 
   return null
 }
 
-export const MapView = memo(function MapView() {
+export const MapView = memo(function MapView({ visible = true }: { visible?: boolean }) {
   const filters = useBillingStore((s) => s.filters)
   const mapType = useBillingStore((s) => s.mapType)
   const showAll = filters.ucs.length > 0
@@ -116,8 +122,9 @@ export const MapView = memo(function MapView() {
   const tileUrl = TILE_URLS[mapType]
 
   useEffect(() => {
+    if (!visible) return
     setMapMarkers(markers)
-  }, [markers, setMapMarkers])
+  }, [markers, setMapMarkers, visible])
 
   if (isLoading) {
     return (
@@ -146,10 +153,14 @@ export const MapView = memo(function MapView() {
           updateWhenIdle={true}
           attribution='&copy; Google'
         />
-        <MapFollower />
-        <FitBoundsOnFilter markers={markers} />
-        <MapFlyToTarget />
-        <SurveyMarkers data={markers} />
+        {visible && (
+          <>
+            <MapFollower />
+            <FitBoundsOnFilter markers={markers} />
+            <MapFlyToTarget />
+            <SurveyMarkers data={markers} />
+          </>
+        )}
       </MapContainer>
     </div>
   )

@@ -3380,3 +3380,96 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 8. H.5 — Proxy images (~30m)
 9. H.7 — Prefetch adjacent (~45m)
 
+---
+
+## 2026-06-17 — Arrears Pipeline Fix + Remaining Workflow Review
+
+### Phase: Pipeline Fix + Optimization Plan Completion
+
+### What
+- **Root cause identified:** `enrich-survey-units.py` line 210 summed arrears across duplicate XLSX rows (1821 + 1821 = 3642). Changed to skip extras.
+- **5 file changes implemented:**
+  1. `enrich-survey-units.py` — duplicate rows now `pass` instead of summing arrears
+  2. `export-bills-json.py` — added Office PC path fallback (same as enrich pattern)
+  3. `export-bills-json.py` — copied from `archive/` to `scripts/` (active pipeline)
+  4. `ingest-all.py` — added export-bills to Full Monthly Import (runs after enrich, before payments)
+  5. `house-detail/extra/route.ts` — returns `latestArrears` from bills.json
+  6. `house-detail-sheet.tsx` — uses `latestArrears` first, falls back to `survey.arrears`
+- **Remaining workflow surveyed** — comprehensive summary of all unstarted/partial phases saved to docs.
+
+### Key Decisions
+- Duplicate rows: skip extras instead of summing arrears (fixes 1821+1821=3642 bug)
+- F.1 cancelled (keep pendingFilters), F.4 skipped (low value), H.5 dropped (portal images fine direct), F.8 unnecessary (no cross-UC comparison need)
+- F.6/F.7 low priority — revisit if staff requests mobile filter improvements
+- Next big phases: Delivery hardening, Auto-Route, Live Monitoring, Flag Management
+
+### Files Changed
+- `scripts/enrich-survey-units.py` — line 210 sum → pass
+- `scripts/archive/export-bills-json.py` — Office PC path
+- `scripts/export-bills-json.py` — new file (copy from archive/)
+- `scripts/ingest-all.py` — added BILLS_SCRIPT to option 1
+- `src/app/api/house-detail/extra/route.ts` — latestArrears in response
+- `src/components/house-detail-sheet.tsx` — use latestArrears for Current Bill
+- `docs/PHASES.md` — Phase 0d/0e marked Done
+- `.opencode/context.json` — updated with current state and next actions
+- `docs/SESSION.md` — this entry appended
+
+### Build Verification
+- `npx tsc --noEmit` — pending (no TypeScript changes, only logic edits)
+- All edits verified by re-reading each modified section
+
+### Next
+1. Delivery hardening — define specific scope (offline queue, sheet performance, assignment flow)
+2. Phase F — Auto-Route Generation (3hrs)
+3. Phase G — Live Admin Monitoring (3hrs)
+4. Phase E — Flag Management UI (~3hrs remaining)
+5. Phase M2 — Marker clustering + UC count badges (~1.5hrs remaining)
+
+---
+
+## 2026-06-17 — Map Navigation Smoothing + Pulsing Ring Fix
+
+### Phase: Performance Optimization
+
+### What
+- **Full map navigation audit** — identified 3 lag sources and fixed all:
+  1. Invisible map doing full work (fetching 50K markers, rendering all markers, flyTo animation) during list view
+  2. 50K marker re-evaluation on every HDS prev/next step in map view
+  3. Rubber-band zoom-out on view switch (FitBounds then flyTo)
+- **7 performance fixes applied:**
+  1. `Effect B` guarded with `activeView === 'map'` — invisible map stops flying
+  2. `visible` prop on MapView — skips markers, data writes, flyTo subscriptions when hidden
+  3. Markers memoized (`memo(MarkerItem)`) — only 2 markers re-render per HDS step, not 50K
+  4. `MapFollower` duration 1.2s → 0.5s — snappier flyTo
+  5. `FitBoundsOnFilter` skips when house selected — no rubber-band zoom
+  6. `MapFollower` dedup (`lastCenterRef`) — no duplicate animations
+  7. Removed dead `staffMode` subscription — one less re-render trigger
+- **Pulsing ring fixed for new-survey units** (no psid) — `houseList` markers merged into rendered set, psid filter dropped for list markers so ring shows for any house with coordinates
+- **`highlightedPsid` removed entirely** — ring now uses `selectedHouseId` directly, eliminating fragile sync mechanism
+
+### Key Decisions
+- `survey_id` adoption needed for map markers — new-survey units without `psid` should still show ring and render as clickable markers. **Priority work for next home session.**
+- Map performance now at acceptable level — list view zero background work, map view snappy 0.5s animation with minimal re-render
+
+### Files Changed
+- `src/stores/billing-store.ts` — removed `highlightedPsid`/`setHighlightedPsid`
+- `src/components/survey-markers.tsx` — memoized MarkerItem, use `selectedHouseId` directly, merged `houseList` markers, removed `staffMode` subscription, dropped psid filter for list markers
+- `src/components/house-detail-sheet.tsx` — removed `setHighlightedPsid` effect/subscription
+- `src/components/map-view.tsx` — `visible` prop guard, MapFollower dedup + 0.5s, FitBoundsOnFilter skip when selected
+- `src/app/map/page.tsx` — Effect B guarded with `activeView`, dedup ref, pass `visible` to MapView
+- `src/components/survey-list.tsx` — `showOnMap` uses `selectHouse` instead of `setHighlightedPsid`
+- `.opencode/context.json` — updated
+- `docs/SESSION.md` — this entry appended
+
+### Build Verification
+- `npx tsc --noEmit` — clean, zero errors
+- All edits verified by re-reading each modified file
+
+### Next
+1. **`survey_id` adoption for map markers** — modify `handleMarkerClick` + marker rendering to use `survey_id` as primary identifier alongside `psid`. No-psid units render as clickable markers, ring shows, click opens HDS instead of delivery sheet.
+2. Delivery hardening — define specific scope (offline queue, sheet performance, assignment flow)
+3. Phase F — Auto-Route Generation (3hrs)
+4. Phase G — Live Admin Monitoring (3hrs)
+5. Phase E — Flag Management UI (~3hrs remaining)
+6. Phase M2 — Marker clustering + UC count badges (~1.5hrs remaining)
+

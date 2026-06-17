@@ -18,6 +18,7 @@ import os, sys, subprocess, argparse, datetime
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ENRICH_SCRIPT = os.path.join(SCRIPT_DIR, "enrich-survey-units.py")
 PAYMENTS_SCRIPT = os.path.join(SCRIPT_DIR, "load-payments.py")
+BILLS_SCRIPT = os.path.join(SCRIPT_DIR, "export-bills-json.py")
 MIGRATE_SCRIPT = os.path.join(SCRIPT_DIR, "migrate-flagged.py")
 
 
@@ -49,11 +50,12 @@ def interactive_menu():
             month = input("  Month (e.g. May2026): ").strip() or "May2026"
             print(f"\n  Full monthly import for {month}...")
             rc1 = run_script(ENRICH_SCRIPT, ["--month", month], "Survey Enrichment")
-            rc2 = run_script(PAYMENTS_SCRIPT, [], "Payment Load")
-            if rc1 == 0 and rc2 == 0:
+            rc2 = run_script(BILLS_SCRIPT, [], "Export Bills JSON")
+            rc3 = run_script(PAYMENTS_SCRIPT, [], "Payment Load")
+            if rc1 == 0 and rc2 == 0 and rc3 == 0:
                 print(f"\n  Full import complete.")
             else:
-                print(f"\n  Full import finished with errors (rc: {rc1}, {rc2})")
+                print(f"\n  Full import finished with errors (rc: {rc1}, {rc2}, {rc3})")
 
         elif choice == "2":
             print(f"\n  Daily payment update...")

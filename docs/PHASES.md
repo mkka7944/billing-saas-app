@@ -1,7 +1,7 @@
 # Billing SaaS App — Complete Phase Reference
 
 > **Source of truth**: `docs/MASTER.md` (reference-only), `docs/SESSION.md` (session log), `docs/PHASES.md` (phase catalog), `.opencode/context.json` (machine-readable handoff state)
-> **Last updated**: 2026-06-14
+> **Last updated**: 2026-06-17
 
 ---
 
@@ -23,8 +23,8 @@
 
 ### Phase 0d — Reference Tables & Filter Fix
 | | |
-|---|---|
-| **Status** | ⏳ Not Started |
+|---|---|---|
+| **Status** | ✅ Done |
 | **Estimate** | 1.5 hrs |
 | **Description** | Create `hierarchy`, `surveyors`, `bill_months` reference tables for filter dropdowns so we never query 212K-row `survey_units` just to populate filter options. Update APIs to use these tables. Delete 6 dead service files. |
 | **Sub-items** | |
@@ -35,8 +35,8 @@
 
 ### Phase 0e — Stabilize & Clean
 | | |
-|---|---|
-| **Status** | ⏳ Not Started |
+|---|---|---|
+| **Status** | ✅ Done |
 | **Estimate** | 2 hrs |
 | **Description** | Fix payment filter pagination (PSID_PAGE=3000 exceeds Supabase 1000-row limit), billing-stats API returns empty arrays instead of zeros, move routes to API pattern, deduplicate `currentMonth()`, add `survey_units.status` index, fix `FinanceSummary` types. |
 | **Sub-items** | |

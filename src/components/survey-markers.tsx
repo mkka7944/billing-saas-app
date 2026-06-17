@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import PulsingRing from '@/components/ui/pulsing-ring'
@@ -46,16 +46,56 @@ function toAssignmentUnit(s: SurveyUnit): AssignmentItemUnit | null {
   }
 }
 
+const MarkerItem = memo(function MarkerItem({ s, isSelected, color, clickHandlers }: {
+  s: SurveyUnit
+  isSelected: boolean
+  color: string
+  clickHandlers: { click: (e: LeafletMouseEvent) => void }
+}) {
+  return (
+    <div>
+      {isSelected && (
+        <PulsingRing center={[s.lat!, s.lng!]} />
+      )}
+      <CircleMarker
+        center={[s.lat!, s.lng!]}
+        radius={isSelected ? 6 : 5}
+        pathOptions={{
+          color: isSelected ? '#1e40af' : 'rgba(0,0,0,0.35)',
+          fillColor: color,
+          fillOpacity: 1,
+          weight: 2,
+        }}
+        ref={(el) => { if (el) (el as any).surveyId = s.survey_id }}
+        eventHandlers={clickHandlers}
+      >
+        <Tooltip
+          direction="top"
+          offset={[0, -8]}
+          className="survey-tooltip"
+          opacity={1}
+          permanent={isSelected}
+        >
+          {s.survey_id}
+        </Tooltip>
+      </CircleMarker>
+    </div>
+  )
+})
+
 export default function SurveyMarkers({ data }: SurveyMarkersProps) {
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
+  const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
   const setDeliverableList = useBillingStore((s) => s.setDeliverableList)
-
-  const staffMode = useBillingStore((s) => s.staffMode)
+  const houseList = useBillingStore((s) => s.houseList)
 
   const markers = useMemo(() => {
-    return data.filter((s) => s.lat && s.lng && s.psid)
-  }, [data])
+    const mapMarkers = data.filter((s) => s.lat && s.lng && s.psid)
+    const listMarkers = houseList.filter((s) => s.lat && s.lng)
+    const seen = new Set(mapMarkers.map((s) => s.survey_id))
+    return [...mapMarkers, ...listMarkers.filter((s) => !seen.has(s.survey_id))]
+  }, [data, houseList])
 
   const deliverableList = useMemo<AssignmentItemUnit[]>(
     () => markers.map((s) => toAssignmentUnit(s)!).filter((u): u is AssignmentItemUnit => u !== null),
@@ -77,47 +117,26 @@ export default function SurveyMarkers({ data }: SurveyMarkersProps) {
   const clickHandlers = useMemo(() => ({ click: handleMarkerClick }), [handleMarkerClick])
 
   useEffect(() => {
-    if (staffMode !== 'browse') return
     setDeliverableList(deliverableList)
-  }, [deliverableList, setDeliverableList, staffMode])
+  }, [deliverableList, setDeliverableList])
 
   if (!markers.length) return null
 
   return (
     <>
       {markers.map((s) => {
-        const unit = toAssignmentUnit(s)
-        if (!unit) return null
-        const isSelected = deliverTargetId != null && s.psid === deliverTargetId
+        const isSelected = deliverTargetId != null
+          ? s.psid === deliverTargetId
+          : (selectedHouseId != null && s.survey_id === selectedHouseId)
         const color = getUcColor(s.uc_name)
-
         return (
-          <div key={s.survey_id}>
-            {isSelected && (
-              <PulsingRing center={[s.lat!, s.lng!]} />
-            )}
-            <CircleMarker
-              center={[s.lat!, s.lng!]}
-              radius={isSelected ? 6 : 5}
-              pathOptions={{
-                color: isSelected ? '#1e40af' : 'rgba(0,0,0,0.35)',
-                fillColor: color,
-                fillOpacity: 1,
-                weight: 2,
-              }}
-              ref={(el) => { if (el) (el as any).surveyId = s.survey_id }}
-              eventHandlers={clickHandlers}
-            >
-              <Tooltip
-                direction="top"
-                offset={[0, -8]}
-                className="survey-tooltip"
-                opacity={1}
-              >
-                {s.survey_id}
-              </Tooltip>
-            </CircleMarker>
-          </div>
+          <MarkerItem
+            key={s.survey_id}
+            s={s}
+            isSelected={isSelected}
+            color={color}
+            clickHandlers={clickHandlers}
+          />
         )
       })}
     </>

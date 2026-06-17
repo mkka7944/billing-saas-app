@@ -6,6 +6,7 @@ import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useHouseDetailExtra } from '@/hooks/use-house-detail-extra'
 import { useDrivePhotos } from '@/hooks/use-drive-photos'
+import { Skeleton } from '@/components/ui/skeleton'
 import { shortenMCName } from '@/lib/mc-utils'
 import { currentMonth } from '@/lib/constants'
 import { PaymentHistoryCard } from '@/components/payment-history-card'
@@ -34,6 +35,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   const houseListIndex = useBillingStore((s) => s.houseListIndex)
   const houseListTotal = useBillingStore((s) => s.houseListTotal)
   const houseSource = useBillingStore((s) => s.houseSource)
+  const setView = useBillingStore((s) => s.setView)
   const nextHouse = useBillingStore((s) => s.nextHouse)
   const prevHouse = useBillingStore((s) => s.prevHouse)
   const firstHouse = useBillingStore((s) => s.firstHouse)
@@ -44,7 +46,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
     return houseList.find((h) => h.survey_id === selectedHouseId) || null
   }, [houseList, selectedHouseId])
 
-  const { data: extra } = useHouseDetailExtra(selectedHouseId, houseListSurvey?.psid || null)
+  const { data: extra, isLoading } = useHouseDetailExtra(selectedHouseId, houseListSurvey?.psid || null)
   const survey = houseListSurvey || extra?.surveyData || null
   const billData = extra?.billData || null
   const billInfo = extra?.billInfo || null
@@ -66,6 +68,23 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
   useEffect(() => { setImgIdx(0); setGalleryOpen(false); setShowAllGallery(false) }, [selectedHouseId])
 
   const queryClient = useQueryClient()
+
+  // Prefetch adjacent houses for instant navigation
+  useEffect(() => {
+    if (houseList.length === 0) return
+    const timer = setTimeout(() => {
+      const units = [houseList[houseListIndex - 1], houseList[houseListIndex + 1]].filter(Boolean) as typeof houseList
+      units.forEach((u) => {
+        queryClient.prefetchQuery({
+          queryKey: ['house-detail-extra', u.survey_id, u.psid],
+          queryFn: () =>
+            fetch(`/api/house-detail/extra?survey_id=${u.survey_id}&psid=${u.psid}`).then((r) => r.json()),
+          staleTime: 5 * 60 * 1000,
+        })
+      })
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [houseListIndex, houseList, queryClient])
 
   interface GalleryImage {
     src: string
@@ -146,7 +165,8 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
     if (survey.lat && survey.lng) {
       setMapCenter([survey.lat, survey.lng])
     }
-    selectHouse(null)
+    setView('map')
+    // Keep HDS open — don't close the panel
   }
 
   return (
@@ -157,9 +177,7 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
         "fixed inset-0 z-[800]",
         // Desktop: side panel (relative flex sibling)
         "lg:relative lg:inset-auto lg:z-auto",
-        layoutMode === 'fixed-list'
-          ? "lg:w-[420px] lg:shrink-0 lg:border-l"
-          : "lg:w-[380px] lg:shrink-0 lg:border-l"
+        "lg:w-[380px] lg:shrink-0 lg:border-l"
       )}
       onTouchStart={canNav && !galleryOpen ? handleTouchStart : undefined}
       onTouchEnd={canNav && !galleryOpen ? handleTouchEnd : undefined}
@@ -288,6 +306,8 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                 {survey.status || 'UNKNOWN'}
               </div>
             </>
+          ) : isLoading ? (
+            <div className="h-64 lg:h-72 bg-muted animate-pulse" />
           ) : (
             <div className="h-64 lg:h-72 flex items-center justify-center bg-muted">
               <Camera className="h-8 w-8 text-muted-foreground/30" />
@@ -393,7 +413,8 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                     </div>
                   )}
                   {(() => {
-                    const amt = billData?.bill?.amount_due ?? ((survey.monthly_fee ?? 0) + (survey.arrears ?? 0))
+                    const currentArrears = billData?.latestArrears ?? survey.arrears ?? 0
+                    const amt = (survey.monthly_fee ?? 0) + currentArrears
                     if (amt <= 0) return null
                     return (
                       <div>
@@ -404,6 +425,12 @@ export function HouseDetailSheet({ mode = 'admin', layoutMode = 'sliding', assig
                       </div>
                     )
                   })()}
+                </div>
+              ) : isLoading ? (
+                <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3 space-y-2">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                  <Skeleton className="h-6 w-20 rounded-full" />
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3 text-center">

@@ -108,7 +108,7 @@ export const useBillingStore = create<BillingState>()(
 
       setView: (view) => set((s) => {
         if (s.activeView === view) return {}
-        return { activeView: view, selectedHouseId: view === 'detail' ? s.selectedHouseId : null }
+        return { activeView: view, selectedHouseId: (view === 'stats' || view === 'data-insight') ? null : s.selectedHouseId }
       }),
       setFilters: (partial) => set((s) => ({
         filters: { ...s.filters, ...partial },

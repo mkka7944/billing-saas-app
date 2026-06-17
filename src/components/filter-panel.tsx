@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
-import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
+import { useBillingStore } from '@/stores/billing-store'
 import { useHierarchy } from '@/hooks/use-hierarchy'
 import { useBillMonths } from '@/hooks/use-bill-months'
-import { shortenMCName, compareMC } from '@/lib/mc-utils'
+import { getFilteredUcList } from '@/lib/queries/uc-list'
 import { currentMonth } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import { ChevronDown, X, SlidersHorizontal, Search, Check, RefreshCw, Layers } from 'lucide-react'
@@ -130,25 +130,7 @@ function FilterPanelInner({ onClose }: { onClose?: () => void }) {
 
   const [openSection, setOpenSection] = useState<string | null>('mcuc')
 
-  const ucs = useMemo(() => {
-    const seen = new Set<string>()
-    const list: { value: string; label: string; short: string }[] = []
-    for (const [key, group] of Object.entries(hierarchy?.ucs || {})) {
-      if (selectedCity) {
-        const cfg = CITY_CONFIG[selectedCity]
-        if (cfg) {
-          const expected = `${cfg.district}::${cfg.tehsil}`
-          if (key !== expected) continue
-        }
-      }
-      for (const u of group) {
-        if (seen.has(u.value)) continue
-        seen.add(u.value)
-        list.push({ ...u, short: shortenMCName(u.value, selectedCity || undefined) })
-      }
-    }
-    return list.sort((a, b) => compareMC(a.short, b.short))
-  }, [selectedCity, hierarchy])
+  const ucs = useMemo(() => getFilteredUcList(hierarchy, selectedCity), [selectedCity, hierarchy])
 
   const toggleFilter = useCallback(
     (group: 'ucs', value: string) => {
@@ -201,6 +183,49 @@ function FilterPanelInner({ onClose }: { onClose?: () => void }) {
       )}
 
       <div className="overflow-y-auto">
+        {/* Payment Status */}
+        <div className="px-4 py-3 border-b border-border">
+          <Select
+            value={filters.paymentStatus}
+            onValueChange={(v) => setFilters({ paymentStatus: (v || 'all') as 'all' | 'paid' | 'unpaid' })}
+          >
+            <SelectTrigger className="h-10 text-sm w-full">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="unpaid">Unpaid</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Surveyor */}
+        {hierarchy?.surveyors && hierarchy.surveyors.length > 0 && (
+          <div className="px-4 py-3 border-b border-border">
+            <Select
+              value={filters.surveyor || ''}
+              onValueChange={(v) => setFilters({ surveyor: v || null })}
+            >
+              <SelectTrigger className="h-10 text-sm w-full">
+                <SelectValue placeholder="All Surveyors" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Surveyors</SelectItem>
+                {hierarchy.surveyors.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Sort */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <span className="text-xs font-bold uppercase tracking-wider">Sort By</span>
+          <SortSelector />
+        </div>
+
         <FilterAccordion
           label="MC/UC Areas"
           icon="🗺"
@@ -346,25 +371,7 @@ export function DesktopFilterBar() {
 
   const [searchFocused, setSearchFocused] = useState(false)
 
-  const ucs = useMemo(() => {
-    const seen = new Set<string>()
-    const list: { value: string; label: string; short: string }[] = []
-    for (const [key, group] of Object.entries(hierarchy?.ucs || {})) {
-      if (selectedCity) {
-        const cfg = CITY_CONFIG[selectedCity]
-        if (cfg) {
-          const expected = `${cfg.district}::${cfg.tehsil}`
-          if (key !== expected) continue
-        }
-      }
-      for (const u of group) {
-        if (seen.has(u.value)) continue
-        seen.add(u.value)
-        list.push({ ...u, short: shortenMCName(u.value, selectedCity || undefined) })
-      }
-    }
-    return list.sort((a, b) => compareMC(a.short, b.short))
-  }, [selectedCity, hierarchy])
+  const ucs = useMemo(() => getFilteredUcList(hierarchy, selectedCity), [selectedCity, hierarchy])
 
   const activeFilterCount = [
     pendingFilters.ucs.length,
@@ -520,7 +527,7 @@ function ActionButtons() {
   const setMapType = useBillingStore((s) => s.setMapType)
 
   const queryDuration = useBillingStore((s) => s.queryDuration)
-  const storeIsFetching = useBillingStore((s) => s.isFetching)
+  const isFetching = useIsFetching() > 0
   const [showSuccess, setShowSuccess] = useState(false)
   const successTimer = useRef<number>(0)
 
@@ -529,17 +536,17 @@ function ActionButtons() {
     [filters, pendingFilters]
   )
 
-  const isRefreshing = storeIsFetching
+  const isRefreshing = isFetching
 
   // Show "✓ duration" after fetch completes
   useEffect(() => {
-    if (!storeIsFetching && queryDuration != null) {
+    if (!isFetching && queryDuration != null) {
       setShowSuccess(true)
       window.clearTimeout(successTimer.current)
       successTimer.current = window.setTimeout(() => setShowSuccess(false), 2000)
     }
     return () => { window.clearTimeout(successTimer.current) }
-  }, [isRefreshing, queryDuration])
+  }, [isFetching, queryDuration])
 
   const handleUpdate = useCallback(() => {
     queryClient.invalidateQueries()

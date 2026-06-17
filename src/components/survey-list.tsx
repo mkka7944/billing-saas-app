@@ -46,6 +46,7 @@ export function SurveyList() {
     if (s.lat && s.lng) {
       setMapCenter([s.lat, s.lng])
     }
+    selectHouse(s.survey_id, items, data?.total)
     setView('map')
   }
 

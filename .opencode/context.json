@@ -1,7 +1,7 @@
 {
-  "lastSession": "2026-06-16",
-  "currentPhase": "Evening discussion — Plan S scrapped, remaining plan review",
-  "currentStep": "F.3 done: PSID added to search ILIKE. H.6: no action needed (URLSearchParams auto-encodes). Plan S scrapped confirmed.",
+  "lastSession": "2026-06-17 (afternoon)",
+  "currentPhase": "Map Navigation Smoothing + Pulsing Ring Fix",
+  "currentStep": "All 7 perf fixes applied. Ring now works for no-psid units via merged houseList markers.",
   "phaseProgress": {
     "0d": "done",
     "0e": "done",
@@ -9,7 +9,7 @@
     "C": "partial",
     "D": "partial",
     "E": "partial",
-    "F": "partial",
+    "F": "not_started",
     "G": "not_started",
     "M1": "not_started",
     "M2": "partial",
@@ -17,20 +17,32 @@
     "RBAC": "not_started",
     "Z": "deferred"
   },
-  "filesModified": [],
+  "filesModified": [
+    "src/stores/billing-store.ts",
+    "src/components/survey-markers.tsx",
+    "src/components/house-detail-sheet.tsx",
+    "src/components/map-view.tsx",
+    "src/app/map/page.tsx",
+    "src/components/survey-list.tsx",
+    "docs/SESSION.md",
+    ".opencode/context.json"
+  ],
   "keyDecisions": [
-    "Plan S (unified map) scrapped — StaffMap stays separate. Risk outweighs marginal benefit since staff rarely switches modes."
+    "highlightedPsid removed — ring uses selectedHouseId directly. No sync mechanism needed.",
+    "MapView gets visible prop — skips markers/data/flies when invisible. List view zero background work.",
+    "Markers memoized — only 2 re-render per HDS nav step instead of all 50K.",
+    "FitBoundsOnFilter skips when house selected — no rubber-band zoom on view switch.",
+    "MapFollower dedup + 0.5s — snappy flyTo without animation queue buildup.",
+    "survey_id adoption for map markers is next priority (home session) — new-survey units without psid need ring + clickable markers.",
+    "houseList merged into marker set — guarantees ring for current HDS house even if map query misses it."
   ],
   "nextActions": [
-    "H.4 — Section-level shimmer skeletons in HDS (~30m)",
-    "H.5 — Proxy portal images through server (~30m)",
-    "H.7 — Prefetch adjacent unit data on nextHouse/prevHouse (~45m)",
-    "F.1 — Eliminate pendingFilters, single filter state, mobile Show Results button (~1h)",
-    "F.4 — Active filter chips below filter bar (~30m)",
-    "F.5 — Unify UC list selector into shared component (~45m)",
-    "F.6 — MobileFilterSheet gets local copy + Show Results button (~30m)",
-    "F.7 — CitySwitcher browse-all for staff (~15m)",
-    "F.8 — Verify uc[] array across all API routes (~30m)"
+    "survey_id adoption for map markers — modify handleMarkerClick + marker rendering for no-psid units",
+    "Delivery hardening — define specific scope (offline queue, sheet performance, assignment flow)",
+    "Phase F — Auto-Route Generation (3hrs)",
+    "Phase G — Live Admin Monitoring (3hrs)",
+    "Phase E — Flag Management UI (~3hrs remaining)",
+    "Phase M2 — Marker clustering + UC count badges (~1.5hrs remaining)"
   ],
   "blockers": []
 }
