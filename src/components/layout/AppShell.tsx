@@ -5,8 +5,10 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
+import { useNavStore } from '@/stores/navigation-store'
 import { BillingSidebar } from './BillingSidebar'
 import { AppHeader } from './AppHeader'
+import { PageLoader } from '@/components/page-loader'
 import { DesktopFilterBar } from '@/components/filter-panel'
 import { MapIcon, List, Truck, BarChart3, QrCode, X, Loader2, Scan } from 'lucide-react'
 import { Html5Qrcode } from 'html5-qrcode'
@@ -142,6 +144,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Debounced resize handler
   const resizeTimer = useRef<number>(0)
+  const [pulsingTab, setPulsingTab] = useState<string | null>(null)
+  const isNavigating = useNavStore((s) => s.isNavigating)
+  const [showPageLoader, setShowPageLoader] = useState(false)
+
+  useEffect(() => {
+    if (isNavigating) {
+      const timer = setTimeout(() => setShowPageLoader(true), 300)
+      return () => clearTimeout(timer)
+    }
+    setShowPageLoader(false)
+  }, [isNavigating])
   const handleResize = useCallback(() => {
     window.clearTimeout(resizeTimer.current)
     resizeTimer.current = window.setTimeout(() => {
@@ -179,6 +192,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex items-center justify-around border-t bg-card shrink-0 safe-area-bottom lg:hidden">
           {tabs.map((tab) => {
             const isActive = tab.href ? pathname === tab.href : activeView === tab.id
+            const isPulsing = pulsingTab === tab.id
             if (tab.id === 'scan') {
               return (
                 <button
@@ -196,6 +210,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 key={tab.id}
                 onClick={() => {
+                  setPulsingTab(tab.id)
+                  setTimeout(() => setPulsingTab(null), 1500)
+                  useNavStore.getState().start()
                   if (tab.href) router.push(tab.href)
                   else {
                     setView(tab.id as 'map' | 'list' | 'stats' | 'data-insight' | 'detail')
@@ -203,14 +220,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }
                 }}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 py-2 px-3 min-w-0 min-h-[48px] justify-center transition-colors cursor-pointer",
+                  "relative flex flex-col items-center gap-0.5 py-2 px-3 min-w-0 min-h-[48px] justify-center transition-colors cursor-pointer",
                   isActive
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                <tab.icon className={cn("h-5 w-5", isActive && "fill-primary/10")} />
+                <tab.icon className={cn(
+                  "h-5 w-5",
+                  isActive && "fill-primary/30",
+                  isPulsing && "animate-pulse-subtle"
+                )} />
                 <span className="text-[10px] font-semibold">{tab.label}</span>
+                {isActive && (
+                  <span className="absolute bottom-0 left-1/4 w-1/2 h-0.5 bg-primary rounded-full" />
+                )}
               </button>
             )
           })}
@@ -287,6 +311,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
       </div>
+
+      <PageLoader visible={showPageLoader} />
     </div>
   )
 }

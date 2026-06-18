@@ -19,7 +19,7 @@ interface LiveState {
 export const useLiveStore = create<LiveState>()((set) => ({
   selectedCity: 'Sargodha',
   panelCollapsed: false,
-  panelPos: { x: 0, y: 0 },
+  panelPos: { x: -92, y: 0 },
   panelWidth: 320,
   panelHeight: null,
   staffGpsVisible: new Set(),

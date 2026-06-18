@@ -12,7 +12,7 @@ interface UCStat {
   rate: number
 }
 
-export function LiveUcCards() {
+export function LiveUcCards({ onUcClick }: { onUcClick?: (ucName: string) => void }) {
   const selectedCity = useLiveStore((s) => s.selectedCity)
   const { data } = useDeliveryTrail(selectedCity)
   const [expanded, setExpanded] = useState(false)
@@ -55,7 +55,11 @@ export function LiveUcCards() {
       {expanded && (
         <div className="space-y-1">
           {ucStats.slice(0, 10).map((uc) => (
-            <div key={uc.uc_name} className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-muted/40 text-xs">
+            <div
+              key={uc.uc_name}
+              onClick={() => onUcClick?.(uc.uc_name)}
+              className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-muted/40 text-xs cursor-pointer hover:bg-muted/60 transition-colors"
+            >
               <span className="font-medium truncate flex-1">{uc.uc_name}</span>
               <span className="text-muted-foreground shrink-0 ml-2">{uc.delivered}/{uc.total}</span>
               <span className={`font-bold shrink-0 ml-2 w-8 text-right ${uc.rate >= 80 ? 'text-green-600' : uc.rate >= 50 ? 'text-amber-500' : 'text-red-500'}`}>

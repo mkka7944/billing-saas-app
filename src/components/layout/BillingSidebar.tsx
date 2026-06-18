@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
+import { useNavStore } from '@/stores/navigation-store'
 import { APP_VERSION } from '@/lib/version'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -47,6 +49,7 @@ export function BillingSidebar() {
   const { theme, setTheme } = useTheme()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const effectiveCollapsed = isDesktop && sidebarCollapsed
+  const [pulsingItem, setPulsingItem] = useState<string | null>(null)
 
   const navGroups: { category: string; items: NavItem[] }[] = [
     {
@@ -94,6 +97,9 @@ export function BillingSidebar() {
   }
 
   const handleNavClick = (item: NavItem) => {
+    setPulsingItem(item.id)
+    setTimeout(() => setPulsingItem(null), 1500)
+    useNavStore.getState().start()
     if (item.href) {
       router.push(item.href)
     } else if (item.isView) {
@@ -190,6 +196,7 @@ export function BillingSidebar() {
               )}
               {group.items.map((item) => {
                 const active = isActive(item)
+                const isPulsing = pulsingItem === item.id
                 return (
                   <div key={item.id}>
                     <button
@@ -207,7 +214,8 @@ export function BillingSidebar() {
                         className={cn(
                           'shrink-0 transition-colors',
                           effectiveCollapsed ? 'h-5 w-5' : 'h-[18px] w-[18px]',
-                          active ? 'text-sidebar-primary' : ''
+                          active ? 'text-sidebar-primary' : '',
+                          isPulsing && 'animate-pulse-subtle'
                         )}
                       />
                       {!effectiveCollapsed && (
