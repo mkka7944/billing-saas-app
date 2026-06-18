@@ -1,7 +1,7 @@
 {
-  "lastSession": "2026-06-18 (office) — Phase 1 schema done",
+  "lastSession": "2026-06-18 (office) — All 3 commits pushed",
   "currentPhase": "Batch Assignment Model — Phase 1 Schema",
-  "currentStep": "Migration 048 applied: name/target_per_day/uc_names on daily_assignments, supervisor role, assigned_cities on staff. Types updated. Docs updated.",
+  "currentStep": "Migration 048 applied. Page-loader 3-dot animation + nav transitions deployed. All today's work pushed to main.",
   "phaseProgress": {
     "0d": "done",
     "0e": "done",
@@ -19,17 +19,35 @@
   },
   "filesModified": [
     "scripts/sql/048-batch-assignment-model.sql",
-    "src/types/index.ts",
+    "src/stores/billing-store.ts",
+    "src/stores/navigation-store.ts",
+    "src/components/map-view.tsx",
+    "src/components/page-loader.tsx",
+    "src/components/live/live-panel.tsx",
+    "src/components/live/live-staff-list.tsx",
+    "src/components/live/live-activity-feed.tsx",
+    "src/components/live/live-uc-cards.tsx",
+    "src/components/layout/AppShell.tsx",
+    "src/components/layout/BillingSidebar.tsx",
+    "src/hooks/use-delivery-trail.ts",
     "src/hooks/use-assignments.ts",
     "src/lib/repositories/assignment-repository.ts",
+    "src/app/api/live/delivery-trail/route.ts",
     "src/app/api/staff/route.ts",
     "src/app/stats/page.tsx",
+    "src/app/globals.css",
+    "next.config.ts",
+    "src/types/index.ts",
+    "src/stores/live-store.ts",
     "docs/MASTER.md",
     "docs/SCHEMA.md",
     "docs/SESSION.md",
     ".opencode/context.json"
   ],
   "keyDecisions": [
+    "MapFollower must remain mounted during Live view — fixed by adding activeView check to mount condition.",
+    "LiveStaffList rewritten to use useDeliveryTrail; no longer calls /api/staff/stats.",
+    "mapZoom state in billing store decouples zoom from DB settings — city=12, UC=15, house=18 defaults.",
     "Batch = assignment. No new table. daily_assignments gets name, target_per_day, uc_names.",
     "Batch naming: {City}-B{seq} (e.g. Sargodha-B1). Global per-city counter, never resets.",
     "Start date = first delivered_at in batch. No start_date column needed.",
@@ -37,7 +55,8 @@
     "Batch is permanent but staff can change. Admin reassigns by updating staff_id.",
     "Supervisor role: creates batches, full read-only access (no settings, no revoke). City-scoped.",
     "No revoke for supervisor — admin only.",
-    "Manage tab grouped by UC (unchanged). Batch name shown as a column."
+    "Manage tab grouped by UC (unchanged). Batch name shown as a column.",
+    "Page-loader 3-dot animation with 300ms delay, 3s timeout. View transitions enabled."
   ],
   "nextActions": [
     "Phase 2 — Create batches UI: multi-UC selector, auto-naming, target input",

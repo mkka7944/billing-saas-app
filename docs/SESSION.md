@@ -3597,3 +3597,35 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 3. Phase 4 — Staff `/deliver`: batch header with target progress
 4. Phase 5 — Supervisor role gates in API + sidebar
 
+---
+
+## 2026-06-18 (continued) — Page Loader 3-Dot Animation + Final Cleanup
+
+### Phase: UI Polish — Page Transitions
+
+### What
+- Created `PageLoader` component — 3 bouncing dots with staggered animation (300ms delay, 3s timeout)
+- Created `navigation-store` — zustand store that tracks `isNavigating` state
+- Integrated into `AppShell`: watches `useNavStore.isNavigating`, shows PageLoader after 300ms delay
+- Integrated into `BillingSidebar`: calls `useNavStore.start()` on nav link clicks
+- Added `@keyframes bounce-dot` CSS animation in globals.css
+- Enabled `experimental: { viewTransition: true }` in next.config.ts for smooth page transitions
+- Committed leftover changes: `live-store.ts` panelPos offset fix, `live-uc-cards.tsx` onUcClick prop
+- Pushed to main — Vercel auto-deploys
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/components/page-loader.tsx` | New — 3-dot bouncing animation component |
+| `src/stores/navigation-store.ts` | New — nav state store with 3s auto-clear |
+| `src/components/layout/AppShell.tsx` | Import + render PageLoader based on isNavigating |
+| `src/components/layout/BillingSidebar.tsx` | Call useNavStore.start() on nav clicks |
+| `src/app/globals.css` | Added bounce-dot keyframes + animate class |
+| `next.config.ts` | experimental viewTransition: true |
+| `src/stores/live-store.ts` | panelPos offset fix |
+| `src/components/live/live-uc-cards.tsx` | onUcClick prop for map zoom |
+
+### Build Verification
+- `npx tsc --noEmit` — clean, zero errors
+- `git push` — main updated
+
