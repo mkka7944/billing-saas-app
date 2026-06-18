@@ -106,6 +106,9 @@ export interface DailyAssignment {
   staff_id: string
   issued_at: string
   uc_name: string
+  uc_names: string[]
+  name: string | null
+  target_per_day: number | null
   total_items: number
   created_by: string | null
   created_at: string

@@ -36,7 +36,7 @@ export async function GET() {
   const profileIds = fieldStaffProfiles.map(p => p.id)
   const { data: staffRows } = await sup
     .from('staff')
-    .select('id, assigned_city, assigned_ucs, is_active')
+    .select('id, assigned_city, assigned_ucs, assigned_cities, is_active')
     .in('id', profileIds)
 
   const staffMap = new Map((staffRows || []).map(s => [s.id, s]))
@@ -48,6 +48,7 @@ export async function GET() {
       full_name: p.full_name,
       assigned_city: staffEntry?.assigned_city || null,
       assigned_ucs: staffEntry?.assigned_ucs || null,
+      assigned_cities: staffEntry?.assigned_cities || null,
       is_active: staffEntry?.is_active ?? true,
     }
   })

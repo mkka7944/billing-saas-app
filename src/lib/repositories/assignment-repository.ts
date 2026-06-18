@@ -25,7 +25,7 @@ async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
   return all
 }
 
-const ASSIGNMENT_COLS = 'id, staff_id, issued_at, uc_name, total_items, bill_month, created_by, created_at'
+const ASSIGNMENT_COLS = 'id, staff_id, issued_at, uc_name, uc_names, name, target_per_day, total_items, bill_month, created_by, created_at'
 const ITEM_COLS = 'id, assignment_id, psid, survey_id, route_seq, status, delivered_at, gps_lat, gps_lng, notes'
 const PSID_COLS = 'survey_id, consumer_name, address, lat, lng, psid, monthly_fee, arrears, route_seq, route_name, surveyor_name, survey_date, survey_time'
 

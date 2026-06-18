@@ -3547,3 +3547,53 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 1. Continue assignment model discussion (daily target schema fields, Sunday handling, target-vs-actual dashboard)
 2. Section 17 in MASTER.md marks the direction — implement after production readiness
 
+---
+
+## 2026-06-18 (continued) — Batch Assignment Model Phase 1
+
+### Phase: Batch Assignment Model — Schema & Types
+
+### What
+- Discussion and finalized design for batch assignment model:
+  - **Batch = assignment.** No new table. Extended `daily_assignments` with `name`, `target_per_day`, `uc_names`.
+  - **Naming:** `{City}-B{seq}` (global per-city, never resets). Month dropped — batch is permanent.
+  - **Start date:** First `delivered_at` — automatic.
+  - **Monthly refresh:** Admin clicks Refresh — system deletes pending items, inserts fresh from lifecycle, keeps history.
+  - **Staff changes:** Admin reassigns batch by updating `staff_id`. Batch is not permanently tied to a staff.
+  - **Supervisor role:** Creates batches, full read-only (no settings, no revoke). City-scoped via `assigned_cities`.
+  - **Revoke:** Admin only.
+  - **Manage tab:** Grouped by UC (unchanged). Batch name shown as column.
+- Created and applied migration `048-batch-assignment-model.sql` via Supabase CLI
+- Updated TypeScript types: `DailyAssignment`, `AssignmentWithStats`, `StaffMember`
+- Updated `ASSIGNMENT_COLS` in repository to include new columns
+- Added `assigned_cities` to staff API route (`/api/staff`) and stats page
+
+### Key Decisions
+- Batch is permanent but staff is not — reassign, don't recreate.
+- Month not in name — batch identity is permanent, `bill_month` on the row tracks current cycle.
+- Super simplified from earlier discussion: no new tables, no new concepts. Just 3 columns on existing table.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `scripts/sql/048-batch-assignment-model.sql` | New migration: 3 columns + supervisor role + assigned_cities |
+| `src/types/index.ts` | Added `name`, `target_per_day`, `uc_names` to `DailyAssignment` |
+| `src/hooks/use-assignments.ts` | Added fields to `AssignmentWithStats` + `StaffMember` |
+| `src/lib/repositories/assignment-repository.ts` | Added new columns to `ASSIGNMENT_COLS` |
+| `src/app/api/staff/route.ts` | Returns `assigned_cities` |
+| `src/app/stats/page.tsx` | Selects `assigned_cities` |
+| `docs/MASTER.md` | Rewrote Section 17 with finalized design |
+| `docs/SCHEMA.md` | Updated daily_assignments and staff table docs |
+| `.opencode/context.json` | Updated |
+| `docs/SESSION.md` | This entry |
+
+### Build Verification
+- `npx supabase db query --linked --file scripts/sql/048-batch-assignment-model.sql` — migrated successfully
+- `npx tsc --noEmit` — clean, zero errors
+
+### Next
+1. Phase 2 — Create batches UI: multi-UC selector, auto-naming, target input
+2. Phase 3 — Manage tab: batch name column, Refresh button
+3. Phase 4 — Staff `/deliver`: batch header with target progress
+4. Phase 5 — Supervisor role gates in API + sidebar
+

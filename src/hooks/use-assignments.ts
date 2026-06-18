@@ -33,6 +33,7 @@ export interface StaffMember {
   full_name: string | null
   assigned_city: string | null
   assigned_ucs: string[] | null
+  assigned_cities: string[] | null
   is_active: boolean
 }
 
@@ -129,6 +130,8 @@ export interface AssignmentWithStats {
   staff_name: string
   issued_at: string
   uc_name: string
+  name: string | null
+  target_per_day: number | null
   total_items: number
   bill_month: string
   pending: number

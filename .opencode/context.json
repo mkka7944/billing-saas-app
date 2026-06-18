@@ -1,7 +1,7 @@
 {
-  "lastSession": "2026-06-18 (office) — live fixes + assignment docs",
-  "currentPhase": "Live Monitoring — Bug Fixes",
-  "currentStep": "MapFollower unmount in Live view fixed. LiveStaffList rewritten to use useDeliveryTrail (was using issued_at query, returned empty). mapZoom state added to billing store. Assignment model direction documented in MASTER.md Section 17.",
+  "lastSession": "2026-06-18 (office) — Phase 1 schema done",
+  "currentPhase": "Batch Assignment Model — Phase 1 Schema",
+  "currentStep": "Migration 048 applied: name/target_per_day/uc_names on daily_assignments, supervisor role, assigned_cities on staff. Types updated. Docs updated.",
   "phaseProgress": {
     "0d": "done",
     "0e": "done",
@@ -18,34 +18,32 @@
     "Z": "deferred"
   },
   "filesModified": [
-    "src/stores/billing-store.ts",
-    "src/components/map-view.tsx",
-    "src/components/live/live-panel.tsx",
-    "src/components/live/live-staff-list.tsx",
-    "src/hooks/use-delivery-trail.ts",
-    "src/app/api/live/delivery-trail/route.ts",
+    "scripts/sql/048-batch-assignment-model.sql",
+    "src/types/index.ts",
+    "src/hooks/use-assignments.ts",
+    "src/lib/repositories/assignment-repository.ts",
+    "src/app/api/staff/route.ts",
+    "src/app/stats/page.tsx",
     "docs/MASTER.md",
+    "docs/SCHEMA.md",
     "docs/SESSION.md",
     ".opencode/context.json"
   ],
   "keyDecisions": [
-    "Live Monitoring is a view on /map page, not a separate page. Panel uses fixed positioning with z-[9999] to stay above Leaflet elements.",
-    "PKT timezone utility (src/lib/pkt.ts) created as single source of truth for all Pakistan timezone date/datetime operations. All future timestamp captures and filters should use pktToday() / pktDayRange() / pktCurrentMonth().",
-    "Delivery trail API queries by delivered_at in PKT date range (not issued_at assignment date). issued_at tracks when assignment was created; delivered_at tracks actual delivery time — live monitoring cares about the latter.",
-    "LiveDeliveryTrail uses dynamic(() => import(...), { ssr: false }) — same pattern as StaffMap — because react-leaflet references window during import.",
-    "timestamptz column storage remains UTC — only filter computations and date-only columns changed to PKT. Zero risk to existing data.",
-    "MapFollower must remain mounted during Live view — fixed by adding activeView check to mount condition.",
-    "LiveStaffList rewritten to use useDeliveryTrail; no longer calls /api/staff/stats (one less API call per 5s poll).",
-    "mapZoom state in billing store decouples zoom from DB settings — city=12, UC=15, house=18 defaults."
+    "Batch = assignment. No new table. daily_assignments gets name, target_per_day, uc_names.",
+    "Batch naming: {City}-B{seq} (e.g. Sargodha-B1). Global per-city counter, never resets.",
+    "Start date = first delivered_at in batch. No start_date column needed.",
+    "Monthly refresh: admin clicks Refresh — deletes pending items, inserts fresh from lifecycle.",
+    "Batch is permanent but staff can change. Admin reassigns by updating staff_id.",
+    "Supervisor role: creates batches, full read-only access (no settings, no revoke). City-scoped.",
+    "No revoke for supervisor — admin only.",
+    "Manage tab grouped by UC (unchanged). Batch name shown as a column."
   ],
   "nextActions": [
-    "Continue assignment model discussion (daily target schema, Sunday handling, target-vs-actual dashboard)",
-    "Phase 2 — Staff Positions (live GPS) deferred pending assignment model discussion",
-    "Phase H.4 — Section-level shimmer skeletons in HDS (~30m)",
-    "Phase H.7 — Prefetch adjacent unit data (~45m)",
-    "Phase F — Auto-Route Generation (3hrs)",
-    "Phase E — Flag Management UI (~3hrs remaining)",
-    "Phase M2 — Marker clustering + UC count badges (~1.5hrs remaining)"
+    "Phase 2 — Create batches UI: multi-UC selector, auto-naming, target input",
+    "Phase 3 — Manage tab: batch name column, Refresh button",
+    "Phase 4 — Staff /deliver: batch header with target progress",
+    "Phase 5 — Supervisor role gates in API + sidebar"
   ],
   "blockers": []
 }

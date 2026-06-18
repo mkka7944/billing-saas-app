@@ -69,19 +69,25 @@ Reference table for month filter dropdown. Populated from lifecycle import scrip
 ---
 
 ### 1.4 `daily_assignments`
-One per staff per day per UC. Created by admin via `/assignments` page.
+One per staff per batch. Created by admin (or supervisor) via `/assignments` page.
+A batch can span multiple UCs and represents a staff's work for a billing cycle.
 
 | Column | Type | Constraints |
 |--------|------|-------------|
 | `id` | `uuid` | PK (default `gen_random_uuid()`) |
 | `staff_id` | `uuid` | FK → `profiles(id)` (or `staff(id)`) |
 | `assigned_date` | `date` | |
-| `uc_name` | `text` | |
+| `uc_name` | `text` | Primary UC (backward compat) |
+| `uc_names` | `text[]` | All UCs this batch covers |
+| `name` | `text` | Batch name (e.g. "Sargodha-B1") |
+| `target_per_day` | `int4` | Daily minimum delivery target (default 500) |
 | `total_items` | `int4` | |
-| `created_by` | `uuid` | admin who created |
+| `bill_month` | `text` | Current billing cycle |
+| `created_by` | `uuid` | admin or supervisor who created |
 | `created_at` | `timestamptz` | default `now()` |
 
-**Indexes:** `daily_assignments_pkey` UNIQUE BTREE (id)
+**Indexes:** `daily_assignments_pkey` UNIQUE BTREE (id), `idx_daily_assignments_name`
+**Migration:** 048 added `name`, `target_per_day`, `uc_names`
 
 ---
 
@@ -226,10 +232,12 @@ Legacy staff table. May overlap with `profiles`. The assignments/delivery system
 | `full_name` | `text` | |
 | `assigned_city` | `text` | |
 | `assigned_ucs` | `_text` | text array |
+| `assigned_cities` | `_text` | text array — city scoping for supervisor role |
 | `is_active` | `bool` | |
 | `created_at` | `timestamptz` | |
 | `username` | `text` | |
 | `role_id` | `int8` | |
+| `daily_target` | `int4` | default 500 — per-staff delivery target |
 
 **⚠ Likely empty** — RBAC creates users in `profiles`, not `staff`. Sync SQL needed.
 

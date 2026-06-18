@@ -1573,44 +1573,82 @@ App (Next.js SSR)                     Local Server (office PC)
 
 ---
 
-## 17. Assignment Model Evolution & Daily Target System
+## 17. Batch Assignment Model
 
-### 17.1 Current Model
+### 17.1 Core Concept
 
-- `daily_assignments` — one row per staff per day per UC
-- `assignment_items` — individual PSIDs within a chunk
-- Staff sees all items summed across all assignments in `/deliver`
-- No daily target concept — the number of assigned units *=* the expected work
-- Multi-assignment UI (picker when staff has multiple daily assignments across different MCs/UCs) listed as B3d.2 in phase plan
+A batch *is* an assignment — one `daily_assignments` row extended with:
+- `name` — permanent name (e.g. "Sargodha-B1"), never changes
+- `target_per_day` — daily minimum delivery target (default 500)
+- `uc_names` — multiple UCs per batch (was single `uc_name`)
 
-### 17.2 Future Direction (Post-Production)
+**No new tables.** The existing `daily_assignments` table gets extended. `assignment_items` stays identical.
 
-**Multi-Assignment Flexibility**
-- Assignments can be created at any time, not just at start of day
-- A staff member may receive multiple assignments across different MCs/UCs on the same day
-- Each assignment is a separate `daily_assignments` row, all active simultaneously
-- Staff's `/deliver` page shows the combined list from all active assignments
+### 17.2 Key Rules
 
-**Daily Target System**
-- **Purpose:** Decouple *what's assigned* from *what's expected per day*. A staff with 3000 units across multiple MCs/UCs may have a target of 500 deliveries per day.
-- **Where defined:** Admin sets per-staff (or global) daily target in a delivery settings page
-- **Weekend handling:** Sundays require special treatment — either 0 target or reduced target. A `weekday_multiplier` or schedule table may be needed.
-- **Performance metric:** Primary: `delivered_today / daily_target` (pace). Secondary: `delivered_total / total_assigned` (progress). Both displayed.
+| Rule | Detail |
+|------|--------|
+| **Batch is permanent** | Created once. Same name forever. Staff can change — batch is reassigned. |
+| **Start date** | Automatic — first `delivered_at` in the batch = day 1 |
+| **Monthly refresh** | Admin clicks "Refresh" after pipeline run. System adds new PSIDs, removes deleted ones, updates `bill_month`. Pending items from removed PSIDs get `skipped`. Delivered history is preserved. |
+| **Staff changes** | Admin reassigns batch to new staff by updating `staff_id`. |
+| **UC changes** | If MCs add new UCs, admin can update `uc_names` on the batch. |
+| **Revoke** | Admin only. Supervisor cannot revoke. |
+| **Naming** | `{City}-B{seq}` — e.g. `Sargodha-B1`. Global per-city counter, never resets. |
 
-**Schema Changes (TBD — pending discussion)**
-- `staff.daily_target` — per-staff default target (e.g., 500)
-- `app_settings.default_daily_target` — global fallback
-- `app_settings.sunday_target_multiplier` or `staff.weekday_overrides` (jsonb) — weekend handling
-- Assignment-level target override: `daily_assignments.target` — per-assignment target if different from default
-- `staff_daily_stats` or live-computed view: actual daily target vs delivered for live dashboard
+### 17.3 Monthly Refresh Flow
 
-**Implementation Priority**
-1. Fix live monitoring bugs (map zoom, staff list) — done 2026-06-18
-2. Add multi-assignment picker UI (B3d.2) — prerequisite
-3. Build admin delivery settings page — target definition per staff / global
-4. Update live monitoring staff list to show `delivered / target` metric alongside `delivered / total_assigned`
-5. Performance dashboard: target-vs-actual over time, trend lines
-6. Auto-scaling targets based on historical performance (future)
+1. Pipeline runs (lifecycle + payments) — new `survey_units` data available
+2. Admin opens Manage tab → finds batch → clicks **Refresh for {Month}**
+3. System:
+   - Deletes `assignment_items` where `status = 'pending'` (undelivered from last cycle)
+   - Inserts fresh `assignment_items` from current lifecycle for the same `uc_names`
+   - Keeps delivered/missed items as history
+   - Updates `bill_month` on the batch row
+4. Batch auto-adjusts: flagged/removed PSIDs disappear, new PSIDs appear
+
+### 17.4 Supervisor Role
+
+New role between admin and field_staff:
+
+| Feature | Access |
+|---------|--------|
+| **Create batches** | Full — this is their primary job |
+| **Live monitoring** | Full — same as admin |
+| **Map view** | Full — all markers, filters, HDS |
+| **Manage tab** | Read-only — view progress, no revoke |
+| **Routes tab** | Read-only |
+| **Staff performance** | Read-only |
+| **Data Insight** | Read-only |
+| **Settings** | No access |
+| **Revoke batches** | No — admin only |
+
+City scoping: Admin assigns one or more cities to a supervisor via `staff.assigned_cities`. Supervisor only sees data for their assigned cities.
+
+### 17.5 Schema Changes (Migration 048)
+
+```sql
+ALTER TABLE public.daily_assignments
+  ADD COLUMN name            text,                -- "Sargodha-B1"
+  ADD COLUMN target_per_day  integer DEFAULT 500,
+  ADD COLUMN uc_names        text[] DEFAULT '{}';
+
+ALTER TABLE public.staff
+  ADD COLUMN assigned_cities text[] DEFAULT '{}',  -- supervisor city scope
+  ADD COLUMN daily_target    integer DEFAULT 500;   -- per-staff default target
+
+INSERT INTO public.roles (name, description) VALUES
+  ('supervisor', 'Creates batches, monitors delivery, read-only management');
+```
+
+### 17.6 Future Phases
+
+| Phase | What | Status |
+|-------|------|--------|
+| 2 | Create batches UI: multi-UC selector, auto-naming, target input | Pending |
+| 3 | Manage tab: batch name column, Refresh button | Pending |
+| 4 | Staff `/deliver`: batch header with target progress | Pending |
+| 5 | Supervisor role gates in API + sidebar | Pending |
 
 
 After 2-3 months of `started_at` data collection:
