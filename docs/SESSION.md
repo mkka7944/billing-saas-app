@@ -572,6 +572,212 @@ scripts/data/ (gitignored ΓÇö 1.10 GB total, 110 files):
   routing-station-pro-data/ (105 MB, 26 files) ΓÇö PWA data JSON
 ```
 ---
+---
+## 2026-06-18 (Home) — Create Tab Multi-Select + Batch Assignment Phases 2a-3
+
+### Phase: 2a (Create Tab Redesign), 2b (Batch Naming), 3 (Manage Tab Upgrades)
+
+### What
+
+#### Pre-step — Deliver page 1000-row limit (Phase 2a Steps 0.1-0.2)
+- `assignment-repository.ts`: Replaced `sup.from('assignment_items').select().in(...)` with batched `fetchAllRows()` using REST API + Range header. Staff with 3000+ assigned items now get all of them.
+- `assignment-repository.ts`: Replaced `sup.from('survey_units').select().in('psid', psids)` with chunked `fetchAllRows()` (chunkSize=300). Survey unit metadata for 3000+ items no longer truncated.
+
+#### Step 2a.1 — Fix survey_id sort
+- `assignment-repository.ts`: Changed `survey_id.desc` (alphabetical) to client-side numeric sort (`parseInt(survey_id.replace(/\D/g,''))` descending). `MC-10000` now appears before `MC-9999`.
+
+#### Steps 2a.2-2a.5 — Checkbox multi-select + selection order + Assign Selected button
+- `uc-detail-panel.tsx`: Added checkbox column (header select-all current page + per-row checkboxes).
+- Selection persists across pages within the same UC (survives page navigation via `selectedOrder` state).
+- Selection order = delivery sequence: first checked = `route_seq` 1, second = 2, etc.
+- Green "Assign Selected (N)" button alongside existing blue range-based "Assign" button. Both methods work independently.
+- `use-assignments.ts`: Added `routeSeqMap` to mutation type.
+
+#### Step 2a.6 — routeSeqMap in repository
+- `assignment-repository.ts`: `createAssignment` accepts optional `routeSeqMap: Record<string, number>`. When creating items, uses `routeSeqMap[psid]` if present, falling back to `survey_units.route_seq`.
+
+#### Step 2a.8 — Manual "Move to position" input
+- `uc-detail-panel.tsx`: For rows that are checked, the Seq column shows an editable number input with the current selection position. Changing the number reorders within `selectedOrder` (session-only, not saved to DB).
+
+#### Step 2a.9 — Warning dialogs on UC/route switch
+- `routes-tab.tsx`: Added `useConfirm()` dialog when switching routes while selection exists (Routes tab only).
+- `create-assignment-tab.tsx`: Create tab removed dirty-check (selection persists silently across UC switches).
+- `uc-detail-panel.tsx`: Added `onDirtyChange` callback prop, wired to parent dirty state.
+- `routes-tab.tsx`: Added `key={uc+'-'+route}` to force component remount on route switch, eliminating stale selection state.
+
+#### Phase 2b — Multi-UC batch + naming + target_per_day
+
+**2b.1 — Multi-UC persistence:**
+- `create-assignment-tab.tsx`: Removed `isDirty`/confirm dialog for UC switches. Selection persists across all UC browsing.
+- `routes-tab.tsx`: Uses `key` prop to force clean remount on route switch.
+- `uc-detail-panel.tsx`: Removed `setSelectedOrder([])` from useEffect — pagination reset only on uc/routeName change, selection preserved.
+
+**2b.2 — Repository auto-derive uc_names:**
+- `assignment-repository.ts`: Consolidated two `survey_units` queries into one. Now queries `uc_name`, `city_district`, `tehsil` alongside existing fields. Validates ALL UCs against staff's assigned_city (not just the first). Derives `ucNames` from distinct values. Saves `uc_names` array to `daily_assignments`.
+
+**2b.3 — target_per_day:**
+- `uc-detail-panel.tsx`: Added number input "Daily target" in the toolbar. Passed through mutation → hook → API → repository → DB insert.
+- `use-assignments.ts`, `assignment-repository.ts`: Updated types and insert to include `target_per_day`.
+
+**2b.4 — Auto-name batch:**
+- `assignment-repository.ts`: After staff validation, queries existing `daily_assignments` for batch names matching `{City}-B%`. Parses max sequence number, increments. Generates `{City}-B{seq+1}`. Saves `name` to insert.
+
+#### Phase 3 — Manage Tab Upgrades
+
+**3.1 — Batch name column:**
+- `assignment-repository.ts`: Added `name` to the returned data mapping in `getAssignmentList`.
+- `manage-assignments-tab.tsx`: Added "Batch" column header and cell per row (shows batch name or `—`).
+
+**3.2 — Refresh button:**
+- `assignment-repository.ts`: Created `refreshAssignment(sup, assignmentId)` — deletes pending items, re-queries `survey_units` for that UC (unassigned, active), inserts up to `deletedCount` fresh items.
+- `app/api/assignments/refresh/route.ts`: New POST endpoint accepting `{ assignment_id }`.
+- `use-assignments.ts`: Added `useRefreshAssignment()` mutation hook with invalidation for `assignment-list`, `assignment-totals`, `uc-stats`.
+- `manage-assignments-tab.tsx`: Added per-row Refresh button (RotateCw icon, spinning animation when pending). Shows confirm dialog before executing.
+
+#### Bug Fixes During Testing
+
+**Bug A — Manage tab counts truncated at 1000 items:**
+- `assignment-repository.ts` `getAssignmentList`: Replaced `sup.from('assignment_items').select().in(...)` with `fetchAllRows()`. Same 1000-row PostgREST limit was silently truncating status counts. The Manage tab was showing `Pending: 1000` instead of `Pending: 3000` for a 3000-item assignment.
+
+**Bug B — Deliver page IndexedDB crash:**
+- `offline-cache.ts`: Bumped `DB_VERSION` from 5 to 6. The `offline_cache` store was never created for databases opened at version 5 before the store was introduced in code. Version bump forces `onupgradeneeded` to fire and create the store.
+
+**Bug C — createAssignment also truncated at 1000 PSIDs:**
+- `assignment-repository.ts` `createAssignment`: Replaced `sup.from('survey_units').select().in('psid', psids)` with chunked `fetchAllRows()` (chunkSize=300). When assigning 3000 units, only the first 1000 had their `survey_id`, `uc_name` etc. populated. The remaining 2000 had `survey_id = null`.
+
+**Bug D — Survey_units fetch URL too long at chunkSize=800:**
+- `getStaffAssignment` survey_units chunk reduced from 800 → 300 PSIDs per chunk. The PostgREST URL with 800 PSIDs in the `psid=in.(...)` filter was ~16K chars, likely exceeding Supabase's URL length limit and causing a silent 500 error.
+
+### Issues Faced
+1. **Deliver page 500 error on first test (10.3s timeout):** URL length issue with 800-PSID chunks in `psid=in.(...)` filter (~16K URL). Reduced to 300 per chunk.
+2. **Manage tab showing Pending: 1000 instead of actual count:** `getAssignmentList` wasn't updated to use batched fetch — missed during Phase 2a.
+3. **IndexedDB "object store not found":** `DB_VERSION` hardcoded at 5, but the store was added in a later code revision. DB opened at v5 from a previous session never triggers `onupgradeneeded`.
+4. **Null survey_id on assigned items:** `createAssignment` uses Supabase JS client `.in()` which silently truncates at 1000 rows. 2000 of 3000 items had null survey_id.
+
+### Key Decisions
+- Chunk size 300 for PSID IN filters (safe URL length, reasonable number of HTTP requests, ~10 trips for 3000 items).
+- `fetchAllRows()` is the standardized pattern for bypassing PostgREST's 1000-row limit. All new batched queries follow this pattern.
+- `createAssignment` now always uses batched fetch — no path falls through to Supabase JS client for large datasets.
+- Warning dialogs only in Routes tab (selection reset on route switch). Create tab selection persists silently across UC switches.
+- Phase 4 (Staff batch header) and Phase 5 (Supervisor roles) deferred.
+
+### Files Modified (11 files)
+- `src/lib/repositories/assignment-repository.ts` — All batched fetch fixes + refreshAssignment + auto-name + routeSeqMap + multi-UC validation
+- `src/hooks/use-assignments.ts` — routeSeqMap, target_per_day, useRefreshAssignment types + mutation
+- `src/components/assignments/uc-detail-panel.tsx` — Checkboxes, selection order, move-to-position, assign-selected, target_per_day input
+- `src/components/assignments/create-assignment-tab.tsx` — Removed dirty/confirm for UC switches
+- `src/components/assignments/routes-tab.tsx` — Key prop remount + dirty/confirm dialog
+- `src/components/assignments/manage-assignments-tab.tsx` — Batch name column + Refresh button + toast
+- `src/lib/offline-cache.ts` — DB_VERSION 5→6
+- `src/app/api/assignments/refresh/route.ts` — New endpoint
+- `docs/SESSION.md` — This entry
+- `.opencode/context.json` — State updated
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors
+- API calls succeed with batched fetches (confirmed 200 response with 3000 items)
+
+### Testing Checklist (12 Tests for Morning — Check Off Each)
+
+```
+[ ] = not started   [-] = in progress   [x] = passed   [!] = failed
+```
+
+**Pre-requisite:** Dev server running, staff user logged in, city selected.
+
+---
+#### Block A: Core Fixes (must pass before proceeding)
+
+- [ ] **Test 1 — Deliver page loads 3000 items**
+  - Open `/deliver` → should load all items, no 500 error, no IndexedDB crash
+  - Console: no `object store not found` errors
+  - Verify: ALL `survey_id` values non-null (scroll through items)
+  - Network: `GET /api/assignments?staff_id=...` returns 200, check response body has full item list
+
+- [ ] **Test 2 — Numeric sort on survey_id**
+  - Open Create tab → select any UC with mixed IDs like MC-10000, MC-9999, MC-1000
+  - Verify: MC-10000 appears before MC-9999 (descending numeric order)
+
+- [ ] **Test 3 — Checkbox multi-select**
+  - Check 5 rows on page 1 → navigate to page 2 → check 3 more
+  - Verify: header counter shows "8 selected"
+  - Verify: header indeterminate checkbox shows partial fill
+  - Verify: navigating back to page 1, the 5 checkboxes are still checked
+
+---
+#### Block B: Selection + Assignment (builds on Test 3)
+
+- [ ] **Test 4 — Multi-UC persistence**
+  - In Create tab, select 4 items in UC-1 → switch to UC-2
+  - Verify: no warning/confirm dialog (selection silently cleared)
+  - Switch back to UC-1 → verify: selection is gone (expected, UC switch clears)
+
+- [ ] **Test 5 — Selection order = delivery sequence**
+  - Check items in this order: row-C, row-A, row-B (3 items)
+  - Verify: "Assign Selected" tooltip shows the order
+  - Submit → go to `/deliver` → first item should be row-C, second row-A, third row-B
+
+- [ ] **Test 6 — Move-to-position input**
+  - Check 5 items (positions 1-5)
+  - Change item at position 3 to position 1 → verify the other items shift
+  - Verify: position numbers stay unique (no duplicates)
+
+- [ ] **Test 7 — Assign Selected (full flow)**
+  - Check 10 items → set "Daily target" to 5 → click "Assign Selected (10)"
+  - Verify: success toast → go to Manage tab → the new batch shows with auto-generated name
+  - Verify: batch name format is `{City}-B{n}` (e.g., Sargodha-B1)
+  - Verify: the 10 items are visible under the assignment detail
+
+---
+#### Block C: Backwards Compatibility + Edge Cases
+
+- [ ] **Test 8 — Range input still works**
+  - Use the old range-based "Assign" button (not selected) → pick 1-50 range → submit
+  - Verify: batch name is `null` (no auto-name for range-based)
+  - Verify: items are assigned and visible on deliver page
+
+- [ ] **Test 9 — Batch names auto-increment per city**
+  - Assign another batch (selected method) in same city → should be `{City}-B{n+1}`
+  - Switch to Khushab → assign → should start at `Khushab-B1`
+  - Switch back to original city → assign → should continue at `{City}-B{n+2}`
+
+- [ ] **Test 10 — Warning dialog on route switch (Routes tab only)**
+  - Open Routes tab → select items → switch route → verify: confirm dialog appears
+  - Cancel dialog → verify: selection preserved
+  - Accept dialog → verify: selection cleared
+  - Open Create tab → select items → switch UC → verify: NO dialog (silent clear)
+
+---
+#### Block D: Manage Tab Features
+
+- [ ] **Test 11 — Refresh button**
+  - In Manage tab, find an assignment with pending items → click Refresh
+  - Verify: confirm dialog appears
+  - Confirm → verify: button shows spinning animation
+  - Verify: success toast → assignment updated (pending items replaced from lifecycle)
+
+- [ ] **Test 12 — Daily target display**
+  - In Manage tab, verify: daily target column shows value for batch-created assignments
+  - For range-based assignments, verify: shows `—` (null display)
+  - SQL: `SELECT name, target_per_day FROM daily_assignments ORDER BY created_at DESC;`
+
+---
+### Scratchpad (Bugs Found During Testing)
+
+| # | Test | Symptom | Root Cause | Fix Applied? |
+|---|------|---------|------------|:------------:|
+|   |      |         |            |              |
+|   |      |         |            |              |
+
+### Morning Priority
+1. Start with Test 1 (the 500 from last night should be gone with chunkSize=300 fix)
+2. Proceed through Tests 2-12 in order
+3. Log any bugs in the Scratchpad above
+4. Fix bugs found during testing
+5. Decide: commit main or branch for Phase 4-5
+
+---
+
 ## 14. Changelog
 | Date | Version | Change |
 |------|---------|--------|

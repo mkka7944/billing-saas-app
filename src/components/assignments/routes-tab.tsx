@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useRouteTree } from '@/hooks/use-assignments'
 import { useBillingStore } from '@/stores/billing-store'
 import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Search, MapPin } from 'lucide-react'
 import { UCDetailPanel } from './uc-detail-panel'
 
@@ -31,6 +32,23 @@ export function RoutesTab() {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<SelectedRoute | null>(null)
   const [hiddenUcs, setHiddenUcs] = useState<Set<string>>(new Set())
+  const [isDirty, setIsDirty] = useState(false)
+  const confirm = useConfirm()
+
+  const onDirtyChange = useCallback((d: boolean) => setIsDirty(d), [])
+
+  const handleSelectRoute = useCallback(async (uc: string, route: string) => {
+    if (isDirty) {
+      const ok = await confirm({
+        title: 'Discard selection?',
+        message: 'You have selected bills that will be cleared. Continue?',
+        confirmLabel: 'Discard',
+        variant: 'destructive',
+      })
+      if (!ok) return
+    }
+    setSelected({ uc, route })
+  }, [isDirty, confirm])
 
   const ucRoutes = useMemo(() => {
     if (!routeTree?.length) return []
@@ -145,7 +163,7 @@ export function RoutesTab() {
                                 return (
                                   <button
                                     key={r.route_name}
-                                    onClick={() => setSelected({ uc: uc.uc, route: r.route_name })}
+                                    onClick={() => handleSelectRoute(uc.uc, r.route_name)}
                                     className={`w-full text-left px-2.5 py-1 rounded-md transition-all text-xs flex items-center gap-2 ${
                                       isActive
                                         ? 'bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-300 dark:ring-blue-700'
@@ -186,10 +204,13 @@ export function RoutesTab() {
       <div className="flex-1 flex flex-col p-4 overflow-y-auto">
         {selected ? (
           <UCDetailPanel
+            key={selected.uc + '-' + selected.route}
             uc={selected.uc}
             city={selectedCity !== 'All Cities' ? selectedCity : null}
             routeName={selected.route}
+            onDirtyChange={onDirtyChange}
             onCreated={() => {
+              setIsDirty(false)
               setSelected(null)
             }}
           />

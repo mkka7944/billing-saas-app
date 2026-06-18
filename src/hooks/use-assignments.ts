@@ -86,7 +86,7 @@ export function useStaffList() {
 export function useCreateAssignment() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[]; bill_month?: string }) => {
+    mutationFn: async (body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[]; bill_month?: string; routeSeqMap?: Record<string, number>; target_per_day?: number }) => {
       const res = await fetch('/api/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -257,6 +257,29 @@ export function useMarkItem() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['staff-assignment'] })
       qc.invalidateQueries({ queryKey: ['staff-stats'] })
+    },
+  })
+}
+
+export function useRefreshAssignment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (assignmentId: string) => {
+      const res = await fetch('/api/assignments/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignment_id: assignmentId }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to refresh assignment')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['assignment-list'] })
+      qc.invalidateQueries({ queryKey: ['assignment-totals'] })
+      qc.invalidateQueries({ queryKey: ['uc-stats'] })
     },
   })
 }

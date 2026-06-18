@@ -122,10 +122,15 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
   const staffNameMap = new Map((staffRows as SR[] || []).map((s) => [s.id, s.full_name || 'Unknown']))
 
   const assignmentIds = daRows.map((a) => a.id)
-  const { data: allItems } = await sup
-    .from('assignment_items')
-    .select('assignment_id, status')
-    .in('assignment_id', assignmentIds)
+  const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const filter = `assignment_id=in.(${assignmentIds.join(',')})`
+  const url = `${supUrl}/rest/v1/assignment_items?select=${encodeURIComponent('assignment_id,status')}&${filter}`
+  let allItems: any[]
+  try {
+    allItems = await fetchAllRows(url)
+  } catch (e) {
+    return { error: `Failed to fetch assignment items: ${(e as Error).message}` }
+  }
 
   const itemCounts = new Map<string, { pending: number; processing: number; delivered: number; missed: number }>()
   for (const item of allItems || []) {
@@ -144,6 +149,7 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
       staff_name: staffNameMap.get(a.staff_id) || 'Unknown',
       issued_at: a.issued_at,
       uc_name: a.uc_name,
+      name: (a as any).name,
       total_items: a.total_items,
       bill_month: a.bill_month,
       ...counts,
@@ -179,7 +185,7 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
     'or=(status.is.null,status.eq.ACTIVE)',
   ]
   if (q.routeName) filterParts.push(`route_name=eq.${encodeURIComponent(q.routeName)}`)
-  const sortOrder = q.routeName ? 'route_seq.asc.nullslast' : 'survey_id.desc'
+  const sortOrder = q.routeName ? 'route_seq.asc.nullslast' : 'survey_id.asc'
   const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent(PSID_COLS)}&${filterParts.join('&')}&order=${sortOrder}`
 
   let data: any[]
@@ -189,8 +195,13 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
     return { error: `Failed to fetch units: ${(e as Error).message}` }
   }
 
-  type SU = { psid: string | null }
-  const unassigned = ((data || []) as SU[]).filter((s) => s.psid && !excludePsids.has(s.psid))
+  const unassigned = ((data || []) as any[])
+    .filter((s) => s.psid && !excludePsids.has(s.psid))
+    .sort((a: any, b: any) => {
+      const aNum = parseInt(a.survey_id?.replace(/\D/g, '') || '0', 10)
+      const bNum = parseInt(b.survey_id?.replace(/\D/g, '') || '0', 10)
+      return bNum - aNum
+    })
   return { data: unassigned, total: unassigned.length }
 }
 
@@ -206,21 +217,37 @@ export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery
   if (!assignments?.length) return { data: null, items: [] }
 
   const assignmentIds = (assignments as any[]).map((a) => a.id)
-  const { data: items, error: ie } = await sup
-    .from('assignment_items')
-    .select(ITEM_COLS)
-    .in('assignment_id', assignmentIds)
-    .order('route_seq', { ascending: true, nullsFirst: false })
-
-  if (ie) return { error: ie.message }
+  const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const filter = `assignment_id=in.(${assignmentIds.join(',')})`
+  const url = `${supUrl}/rest/v1/assignment_items?select=${encodeURIComponent(ITEM_COLS)}&${filter}&order=route_seq.asc.nullslast`
+  let items: any[]
+  try {
+    items = await fetchAllRows(url)
+  } catch (e) {
+    return { error: `Failed to fetch items: ${(e as Error).message}` }
+  }
 
   const psids = (items || []).map((i: any) => i.psid)
-  const { data: units } = psids.length
-    ? await sup
-        .from('survey_units')
-        .select('psid, survey_id, consumer_name, address, lat, lng, monthly_fee, arrears, route_name, route_seq, uc_name, image_urls')
-        .in('psid', psids)
-    : { data: [] }
+  const UNIT_COLS = 'psid, survey_id, consumer_name, address, lat, lng, monthly_fee, arrears, route_name, route_seq, uc_name, image_urls'
+  let units: any[]
+  if (psids.length) {
+    const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    units = []
+    const chunkSize = 300
+    for (let i = 0; i < psids.length; i += chunkSize) {
+      const chunk = psids.slice(i, i + chunkSize)
+      const filter = `psid=in.(${chunk.join(',')})`
+      const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent(UNIT_COLS)}&${filter}`
+      try {
+        const rows = await fetchAllRows(url)
+        units.push(...rows)
+      } catch (e) {
+        return { error: `Failed to fetch units: ${(e as Error).message}` }
+      }
+    }
+  } else {
+    units = []
+  }
 
   const unitMap = new Map((units || []).map((u: any) => [u.psid, u]))
   const itemsWithUnits = (items || []).map((item: any) => ({
@@ -233,17 +260,37 @@ export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery
 
 export async function createAssignment(
   sup: SupabaseClient,
-  body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[]; bill_month?: string }
+  body: { staff_id: string; issued_at?: string; uc_name: string; psids: string[]; bill_month?: string; routeSeqMap?: Record<string, number>; target_per_day?: number }
 ) {
-  const { staff_id, uc_name, psids } = body
+  const { staff_id, uc_name, psids, routeSeqMap, target_per_day } = body
   const issued_at = body.issued_at || new Date().toISOString().slice(0, 10)
   const bill_month = body.bill_month || currentMonth()
 
-  if (!staff_id || !uc_name || !psids?.length) {
-    return { error: 'staff_id, uc_name, and psids[] required' }
+  if (!staff_id || !psids?.length) {
+    return { error: 'staff_id and psids[] required' }
   }
 
-  // Validate staff's assigned_city matches the UC's city
+  // Fetch unit metadata for all selected PSIDs (batched to bypass 1000-row limit)
+  const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const FECTH_COLS = 'psid, route_seq, survey_id, uc_name, city_district, tehsil'
+  const allUnits: any[] = []
+  const chunkSize = 300
+  for (let i = 0; i < psids.length; i += chunkSize) {
+    const chunk = psids.slice(i, i + chunkSize)
+    const filter = `psid=in.(${chunk.join(',')})`
+    const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent(FECTH_COLS)}&${filter}`
+    try {
+      const rows = await fetchAllRows(url)
+      allUnits.push(...rows)
+    } catch (e) {
+      return { error: `Failed to fetch units: ${(e as Error).message}` }
+    }
+  }
+
+  type SU2 = { psid: string; route_seq: number | null; survey_id: string | null; uc_name: string | null; city_district: string | null; tehsil: string | null }
+  const unitRows = allUnits as SU2[]
+
+  // Validate staff's assigned_city matches ALL UCs in the selection
   const { data: staffRow } = await sup
     .from('staff')
     .select('full_name, assigned_city')
@@ -253,34 +300,49 @@ export async function createAssignment(
   if (staffRow?.assigned_city) {
     const staffCityCfg = CITY_TEHSIL_MAP[staffRow.assigned_city as string]
     if (staffCityCfg) {
-      const { data: ucRow } = await sup
-        .from('survey_units')
-        .select('city_district, tehsil')
-        .eq('uc_name', uc_name)
-        .limit(1)
-        .maybeSingle()
-
-      if (ucRow && (ucRow.city_district !== staffCityCfg.district || ucRow.tehsil !== staffCityCfg.tehsil)) {
-        return {
-          error: `Staff "${(staffRow as any).full_name || staff_id}" is assigned to ${staffRow.assigned_city} but UC "${uc_name}" belongs to a different city`,
-          status: 400,
+      const seen = new Set<string>()
+      for (const u of unitRows) {
+        if (!u.uc_name || seen.has(u.uc_name)) continue
+        seen.add(u.uc_name)
+        if (u.city_district !== staffCityCfg.district || u.tehsil !== staffCityCfg.tehsil) {
+          return {
+            error: `Staff "${(staffRow as any).full_name || staff_id}" is assigned to ${staffRow.assigned_city} but UC "${u.uc_name}" belongs to a different city`,
+            status: 400,
+          }
         }
       }
     }
   }
 
-  const { data: units } = await sup
-    .from('survey_units')
-    .select('psid, route_seq, survey_id')
-    .in('psid', psids)
+  const ucNames = [...new Set(unitRows.map((u) => u.uc_name).filter(Boolean) as string[])]
+  const seqMap = new Map(unitRows.map((u) => [u.psid, u.route_seq || 0]))
+  const surveyIdMap = new Map(unitRows.map((u) => [u.psid, u.survey_id]))
 
-  type SU2 = { psid: string; route_seq: number | null; survey_id: string | null }
-  const seqMap = new Map(((units || []) as SU2[]).map((u) => [u.psid, u.route_seq || 0]))
-  const surveyIdMap = new Map(((units || []) as SU2[]).map((u) => [u.psid, u.survey_id]))
+  // Auto-generate batch name: {City}-B{seq}
+  const firstUnit = unitRows[0]
+  let batchName = ''
+  if (firstUnit?.city_district && firstUnit?.tehsil) {
+    let cityName = ''
+    for (const [cn, cfg] of Object.entries(CITY_TEHSIL_MAP)) {
+      if (cfg.district === firstUnit.city_district && cfg.tehsil === firstUnit.tehsil) { cityName = cn; break }
+    }
+    if (cityName) {
+      const { data: existingBatches } = await sup
+        .from('daily_assignments')
+        .select('name')
+        .like('name', `${cityName}-B%`)
+      let maxSeq = 0
+      for (const b of (existingBatches || []) as { name: string }[]) {
+        const m = b.name.match(/-B(\d+)$/)
+        if (m) { const n = parseInt(m[1], 10); if (n > maxSeq) maxSeq = n }
+      }
+      batchName = `${cityName}-B${maxSeq + 1}`
+    }
+  }
 
   const { data: assignment, error: ae } = await sup
     .from('daily_assignments')
-    .insert({ staff_id, issued_at, uc_name, total_items: psids.length, bill_month })
+    .insert({ staff_id, issued_at, uc_name: ucNames[0] || uc_name, uc_names: ucNames, name: batchName, total_items: psids.length, bill_month, target_per_day })
     .select(ASSIGNMENT_COLS)
     .single()
 
@@ -290,7 +352,7 @@ export async function createAssignment(
     assignment_id: assignment.id,
     psid,
     survey_id: surveyIdMap.get(psid) || null,
-    route_seq: seqMap.get(psid) || 0,
+    route_seq: routeSeqMap?.[psid] ?? seqMap.get(psid) ?? 0,
   }))
 
   const { data: createdItems, error: ie } = await sup
@@ -304,6 +366,81 @@ export async function createAssignment(
   }
 
   return { data: assignment, items: createdItems || [] }
+}
+
+export async function refreshAssignment(sup: SupabaseClient, assignmentId: string) {
+  // Get current assignment details
+  const { data: assignment, error: fe } = await sup
+    .from('daily_assignments')
+    .select('id, uc_name, bill_month')
+    .eq('id', assignmentId)
+    .single()
+
+  if (fe) return { error: fe.message }
+  if (!assignment) return { error: 'Assignment not found', status: 404 }
+
+  // Delete pending items
+  const { data: deletedItems } = await sup
+    .from('assignment_items')
+    .delete()
+    .eq('assignment_id', assignmentId)
+    .eq('status', 'pending')
+    .select('psid')
+
+  const deletedCount = (deletedItems || []).length
+  if (!deletedCount) return { data: assignment, items: [], inserted: 0 }
+
+  // Find already-assigned PSIDs for this UC (exclude current assignment's non-pending items)
+  const { data: allAssignments } = await sup
+    .from('daily_assignments')
+    .select('id')
+    .eq('uc_name', assignment.uc_name)
+    .neq('id', assignmentId)
+
+  const otherIds = ((allAssignments || []) as { id: string }[]).map((a) => a.id)
+  const excludePsids = new Set<string>()
+  if (otherIds.length) {
+    const { data: otherItems } = await sup
+      .from('assignment_items')
+      .select('psid')
+      .in('assignment_id', otherIds)
+    for (const e of otherItems || []) excludePsids.add(e.psid)
+  }
+
+  // Fetch fresh active units for this UC (excluding already-assigned)
+  const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const filterParts = [
+    `uc_name=eq.${encodeURIComponent(assignment.uc_name)}`,
+    'psid=not.is.null',
+    'or=(status.is.null,status.eq.ACTIVE)',
+  ]
+  const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent('psid,route_seq,survey_id')}&${filterParts.join('&')}&order=route_seq.asc.nullslast`
+
+  let freshUnits: any[]
+  try {
+    freshUnits = await fetchAllRows(url)
+  } catch (e) {
+    return { error: `Failed to fetch units: ${(e as Error).message}` }
+  }
+
+  const available = (freshUnits || []).filter((u) => u.psid && !excludePsids.has(u.psid)) as { psid: string; route_seq: number | null; survey_id: string | null }[]
+  const toInsert = available.slice(0, deletedCount).map((u, i) => ({
+    assignment_id: assignmentId,
+    psid: u.psid,
+    survey_id: u.survey_id,
+    route_seq: u.route_seq || 0,
+  }))
+
+  if (!toInsert.length) return { data: assignment, items: [], inserted: 0 }
+
+  const { data: newItems, error: ie } = await sup
+    .from('assignment_items')
+    .insert(toInsert)
+    .select(ITEM_COLS)
+
+  if (ie) return { error: ie.message }
+
+  return { data: assignment, items: newItems || [], inserted: newItems?.length || 0 }
 }
 
 export async function deleteAssignment(sup: SupabaseClient, id: string) {
