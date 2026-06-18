@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { CitySwitcher } from '@/components/layout/CitySwitcher'
+import { useMediaQuery } from '@/hooks/use-media-query'
 
 interface NavItem {
   id: string
@@ -44,6 +45,8 @@ export function BillingSidebar() {
   const setView = useBillingStore((s) => s.setView)
   const { sidebarOpen, sidebarCollapsed, toggleSidebarCollapse, setSidebarOpen } = useBillingUIStore()
   const { theme, setTheme } = useTheme()
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
+  const effectiveCollapsed = isDesktop && sidebarCollapsed
 
   const navGroups: { category: string; items: NavItem[] }[] = [
     {
@@ -124,7 +127,7 @@ export function BillingSidebar() {
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-[1000] flex flex-col border-r border-border bg-sidebar text-sidebar-foreground transition-all duration-200 ease-in-out lg:static lg:translate-x-0',
-          sidebarCollapsed ? 'w-[68px]' : 'w-64',
+          effectiveCollapsed ? 'w-[68px]' : 'w-64',
           sidebarOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'
         )}
       >
@@ -132,10 +135,10 @@ export function BillingSidebar() {
         <div
           className={cn(
             'flex h-16 items-center border-b border-border/40 shrink-0 transition-all',
-            sidebarCollapsed ? 'justify-center px-2' : 'justify-between px-4'
+            effectiveCollapsed ? 'justify-center px-2' : 'justify-between px-4'
           )}
         >
-          {sidebarCollapsed ? (
+          {effectiveCollapsed ? (
             <button
               onClick={toggleSidebarCollapse}
               className="hidden lg:flex p-2 rounded-lg hover:bg-sidebar-accent/40 transition-all cursor-pointer items-center justify-center w-full"
@@ -158,7 +161,7 @@ export function BillingSidebar() {
               </button>
             </>
           )}
-          {sidebarCollapsed && (
+          {effectiveCollapsed && (
             <div className="flex items-center lg:hidden">
               <Building2 className="h-6 w-6 mr-2 text-sidebar-primary shrink-0" />
               <span className="text-lg font-bold tracking-tight uppercase">TMT Billing</span>
@@ -167,20 +170,20 @@ export function BillingSidebar() {
         </div>
 
         {/* City Switcher */}
-        <div className={cn('border-b border-border/40', sidebarCollapsed ? 'py-2' : '')}>
-          <CitySwitcher isCollapsed={sidebarCollapsed} />
+        <div className={cn('border-b border-border/40', effectiveCollapsed ? 'py-2' : '')}>
+          <CitySwitcher isCollapsed={effectiveCollapsed} />
         </div>
 
         {/* Navigation */}
         <nav
           className={cn(
             'flex-1 overflow-y-auto space-y-4 transition-all',
-            sidebarCollapsed ? 'p-2' : 'p-3'
+            effectiveCollapsed ? 'p-2' : 'p-3'
           )}
         >
           {navGroups.map((group) => (
             <div key={group.category} className="space-y-1">
-              {!sidebarCollapsed && (
+              {!effectiveCollapsed && (
                 <h3 className="px-2 text-xs font-bold uppercase tracking-wider text-sidebar-foreground/70 mb-3">
                   {group.category}
                 </h3>
@@ -193,21 +196,21 @@ export function BillingSidebar() {
                       onClick={() => handleNavClick(item)}
                       className={cn(
                         'flex items-center rounded-lg text-sm font-bold transition-all cursor-pointer w-full',
-                        sidebarCollapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5',
+                        effectiveCollapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5',
                         active
                           ? 'bg-sidebar-accent/60 text-sidebar-primary border border-sidebar-border shadow-sm'
                           : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground border border-transparent'
                       )}
-                      title={sidebarCollapsed ? item.title : undefined}
+                      title={effectiveCollapsed ? item.title : undefined}
                     >
                       <item.icon
                         className={cn(
                           'shrink-0 transition-colors',
-                          sidebarCollapsed ? 'h-5 w-5' : 'h-[18px] w-[18px]',
+                          effectiveCollapsed ? 'h-5 w-5' : 'h-[18px] w-[18px]',
                           active ? 'text-sidebar-primary' : ''
                         )}
                       />
-                      {!sidebarCollapsed && (
+                      {!effectiveCollapsed && (
                         <span className="truncate">{item.title}</span>
                       )}
                     </button>
@@ -219,7 +222,7 @@ export function BillingSidebar() {
         </nav>
 
         {/* Version info */}
-        {!sidebarCollapsed && (
+        {!effectiveCollapsed && (
           <div className="px-4 py-1.5 border-t border-border/30">
             <p className="text-[10px] font-mono text-sidebar-foreground/50 text-center">
               {APP_VERSION}
@@ -228,9 +231,9 @@ export function BillingSidebar() {
         )}
 
         {/* Theme + User */}
-        <div className={cn('shrink-0', sidebarCollapsed ? 'p-2 space-y-2' : 'p-3')}>
+        <div className={cn('shrink-0', effectiveCollapsed ? 'p-2 space-y-2' : 'p-3')}>
           {/* Theme toggle */}
-          {sidebarCollapsed ? (
+          {effectiveCollapsed ? (
             <button
               onClick={toggleTheme}
               className="w-full flex justify-center p-2.5 rounded-lg text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/30 transition-all cursor-pointer"
@@ -249,7 +252,7 @@ export function BillingSidebar() {
           )}
 
           {/* User profile */}
-          {sidebarCollapsed ? (
+          {effectiveCollapsed ? (
             <div className="flex flex-col items-center gap-2">
               <div className="w-9 h-9 rounded-lg bg-sidebar-accent border border-sidebar-border flex items-center justify-center">
                 <span className="text-[10px] font-black text-sidebar-foreground uppercase tracking-tighter">

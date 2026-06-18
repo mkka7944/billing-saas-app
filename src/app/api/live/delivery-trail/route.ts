@@ -82,18 +82,11 @@ export async function GET(request: Request) {
     }
 
     if (item.delivered_at) {
-      const t = new Date(item.delivered_at)
-      const hours = t.getHours()
-      const mins = t.getMinutes().toString().padStart(2, '0')
-      const ampm = hours >= 12 ? 'PM' : 'AM'
-      const h12 = hours % 12 || 12
-
       activities.push({
         staff_name: staffName,
         psid: item.psid,
         status: item.status,
         delivered_at: item.delivered_at,
-        time_label: `${h12}:${mins} ${ampm}`,
       })
     }
   }

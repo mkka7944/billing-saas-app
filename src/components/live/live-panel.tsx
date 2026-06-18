@@ -3,12 +3,20 @@
 import { useCallback, useRef } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useLiveStore } from '@/stores/live-store'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { CITY_CONFIG } from '@/stores/billing-store'
 import { LiveSummaryBar } from '@/components/live/live-summary-bar'
 import { LiveUcCards } from '@/components/live/live-uc-cards'
 import { LiveStaffList } from '@/components/live/live-staff-list'
 import { LiveActivityFeed } from '@/components/live/live-activity-feed'
-import { X, PanelRightClose, MapPin } from 'lucide-react'
+import { X, PanelRightClose, MapPin, Grip } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const CITIES = ['Sargodha', 'Bhalwal', 'Khushab', 'TestCity']
 
@@ -18,11 +26,18 @@ export function LivePanel() {
   const selectedCity = useLiveStore((s) => s.selectedCity)
   const panelCollapsed = useLiveStore((s) => s.panelCollapsed)
   const panelPos = useLiveStore((s) => s.panelPos)
+  const panelWidth = useLiveStore((s) => s.panelWidth)
+  const panelHeight = useLiveStore((s) => s.panelHeight)
   const setSelectedCity = useLiveStore((s) => s.setSelectedCity)
   const setPanelCollapsed = useLiveStore((s) => s.setPanelCollapsed)
   const setPanelPos = useLiveStore((s) => s.setPanelPos)
+  const setPanelWidth = useLiveStore((s) => s.setPanelWidth)
+  const setPanelHeight = useLiveStore((s) => s.setPanelHeight)
+
+  const isMobile = useMediaQuery('(max-width: 767px)')
 
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+  const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number | null } | null>(null)
 
   const handleCityChange = useCallback((city: string) => {
     setSelectedCity(city)
@@ -57,11 +72,53 @@ export function LivePanel() {
     document.addEventListener('mouseup', onUp)
   }, [panelPos, setPanelPos])
 
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    resizeRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origW: panelWidth,
+      origH: panelHeight,
+    }
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return
+      const r = resizeRef.current
+      const newW = Math.max(280, Math.min(600, r.origW + (r.startX - ev.clientX)))
+      setPanelWidth(newW)
+      const newH = r.origH !== null
+        ? Math.max(200, Math.min(window.innerHeight - 40, r.origH + (ev.clientY - r.startY)))
+        : Math.max(200, Math.min(window.innerHeight - 40, ev.clientY - (8 + panelPos.y)))
+      setPanelHeight(newH)
+    }
+    const onUp = () => {
+      resizeRef.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [panelWidth, panelHeight, setPanelWidth, setPanelHeight, panelPos])
+
   if (panelCollapsed) {
+    if (isMobile) {
+      return (
+        <button
+          onClick={() => setPanelCollapsed(false)}
+          className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-1.5 px-3 py-2 rounded-full bg-card border border-border shadow-lg hover:bg-muted cursor-pointer text-xs font-bold text-muted-foreground"
+          title="Expand live panel"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+          LIVE
+          <PanelRightClose className="h-3 w-3" />
+        </button>
+      )
+    }
     return (
       <button
         onClick={() => setPanelCollapsed(false)}
-        className="fixed right-3 top-4 z-[9999] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-card border border-border shadow-lg hover:bg-muted cursor-pointer text-xs font-bold text-muted-foreground"
+        onMouseDown={handleMouseDown}
+        className="fixed z-[9999] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-card border border-border shadow-lg hover:bg-muted cursor-grab active:cursor-grabbing text-xs font-bold text-muted-foreground select-none"
+        style={{ right: 8 - (panelPos.x || 0), top: 8 + (panelPos.y || 0) }}
         title="Expand live panel"
       >
         LIVE
@@ -72,8 +129,18 @@ export function LivePanel() {
 
   return (
     <div
-      className="fixed z-[9999] w-80 flex flex-col bg-card/95 backdrop-blur-sm border border-border rounded-xl shadow-xl overflow-hidden"
-      style={{ right: 8 - (panelPos.x || 0), top: 8 + (panelPos.y || 0), bottom: 8 }}
+      className={`fixed z-[9999] flex flex-col bg-white/95 dark:bg-neutral-950/95 backdrop-blur-sm border border-border shadow-xl overflow-hidden ${
+        isMobile ? 'left-0 right-0 bottom-0 rounded-t-xl rounded-b-none' : 'rounded-xl'
+      }`}
+      style={isMobile ? {
+        height: panelHeight ?? '40vh',
+        maxHeight: '85vh',
+      } : {
+        width: panelWidth,
+        right: 8 - (panelPos.x || 0),
+        top: 8 + (panelPos.y || 0),
+        ...(panelHeight !== null ? { height: panelHeight } : { bottom: 8 }),
+      }}
     >
       {/* Header — drag handle */}
       <div
@@ -109,16 +176,17 @@ export function LivePanel() {
 
         {/* City dropdown */}
         <div className="relative">
-          <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          <select
-            value={selectedCity}
-            onChange={(e) => handleCityChange(e.target.value)}
-            className="w-full h-8 pl-7 pr-3 rounded-lg border border-border bg-background text-xs font-medium outline-none focus:ring-1 focus:ring-ring appearance-none cursor-pointer"
-          >
-            {CITIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+          <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none z-10" />
+          <Select value={selectedCity} onValueChange={(value) => value && handleCityChange(value)}>
+            <SelectTrigger className="w-full h-8 pl-7 pr-3 text-xs font-medium rounded-lg [&>svg]:text-muted-foreground">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="z-[9999]">
+              {CITIES.map((c) => (
+                <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* UC Cards */}
@@ -136,6 +204,16 @@ export function LivePanel() {
           <LiveActivityFeed />
         </div>
       </div>
+
+      {/* Resize handle — hidden on mobile */}
+      {!isMobile && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute bottom-0 right-0 w-5 h-5 flex items-center justify-center cursor-se-resize select-none"
+        >
+          <Grip className="h-3 w-3 text-muted-foreground/50" />
+        </div>
+      )}
     </div>
   )
 }

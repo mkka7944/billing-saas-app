@@ -40,7 +40,11 @@ export function LiveActivityFeed() {
           ) : (
             <Clock className="h-3 w-3 text-amber-500 shrink-0" />
           )}
-          <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{a.time_label}</span>
+          <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+              {a.delivered_at ? new Date(a.delivered_at).toLocaleTimeString('en-US', {
+                hour: 'numeric', minute: '2-digit', hour12: true,
+              }) : '—'}
+            </span>
           <span className="font-medium truncate">{a.staff_name}</span>
           <span className="text-muted-foreground truncate">{a.psid}</span>
         </div>
