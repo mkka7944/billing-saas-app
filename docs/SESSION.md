@@ -3508,3 +3508,42 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 5. Phase E — Flag Management UI (~3hrs remaining)
 6. Phase M2 — Marker clustering + UC count badges (~1.5hrs remaining)
 
+---
+
+## 2026-06-18 — Live Monitoring Bug Fixes + Assignment Model Documentation
+
+### Phase: Live Monitoring — Bug Fixes
+
+### What
+- **Map zoom in Live view:** `MapFollower` was unmounted during Live view because `MapView` only rendered internals when `visible=true`, but `visible={activeView === 'map'}` was false for Live view. Fixed by mounting `MapFollower`, `FitBoundsOnFilter`, and `MapFlyToTarget` when `visible || activeView === 'live'`. SurveyMarkers stays gated behind `visible` only (delivery trail draws its own markers). Added `activeView` store selector to MapView.
+- **Map zoom control:** Added `mapZoom` state + `setMapZoom` action to billing store (default 18). Updated `MapFollower` to read zoom from store instead of `useMapZoom` hook. `setCity` also resets zoom to 12. `LivePanel` calls `setMapZoom(12)` for city changes and `setMapZoom(15)` for UC clicks.
+- **Staff list empty in Live view:** `LiveStaffList` was using `useStaffStats` which queries by `issued_at` date (when assignment was *created*). Amir's assignment was issued June 16, not today, so it returned all staff with 0 assigned. Rewrote to use `useDeliveryTrail` — group markers by `staff_name`, compute stats per staff — matching how all other live panel components work (LiveUcCards, LiveActivityFeed, LiveSummaryBar).
+- **Added `staff_id` to delivery trail API:** Added `staff_id` column to `daily_assignments` select, passes through as `staff_id` on `DeliveryMarker` type, enabling GPS toggle in LiveStaffList.
+- **Assignment model documented:** Added Section 17 to MASTER.md covering daily target system, multi-assignment flexibility, weekend handling, schema changes TBD.
+- **Removed redundant API call:** LiveStaffList no longer calls `/api/staff/stats` — one less query per 5s poll.
+
+### Key Decisions
+- LiveStaffList now uses the same data source as all other live components (useDeliveryTrail), ensuring consistency and fixing the staff-empty bug.
+- `mapZoom` in billing store lets any caller control zoom independently — default 18, city view 12, UC view 15, house click stays 18.
+- Assignment model documented as "post-production" — schema changes deferred to discussion.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/stores/billing-store.ts` | Added `mapZoom` state (18) + `setMapZoom` action; `setCity` resets zoom to 12 |
+| `src/components/map-view.tsx` | MapFollower reads zoom from store; mount nav components when `visible || activeView === 'live'` |
+| `src/components/live/live-panel.tsx` | Added `setMapZoom(12)` on city change, `setMapZoom(15)` on UC click |
+| `src/components/live/live-staff-list.tsx` | Rewrote to use `useDeliveryTrail` instead of `useStaffStats` |
+| `src/hooks/use-delivery-trail.ts` | Added `staff_id` to `DeliveryMarker` interface |
+| `src/app/api/live/delivery-trail/route.ts` | Select `staff_id` from daily_assignments; pass through to markers |
+| `docs/MASTER.md` | Added Section 17 — Assignment Model Evolution & Daily Target System |
+| `.opencode/context.json` | Updated |
+| `docs/SESSION.md` | This entry |
+
+### Build Verification
+- `npx tsc --noEmit` — clean, zero errors
+
+### Next
+1. Continue assignment model discussion (daily target schema fields, Sunday handling, target-vs-actual dashboard)
+2. Section 17 in MASTER.md marks the direction — implement after production readiness
+

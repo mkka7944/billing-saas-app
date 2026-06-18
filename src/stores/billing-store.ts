@@ -15,6 +15,7 @@ interface BillingState {
   deliverableList: AssignmentItemUnit[]
   deliverableIndex: number
   mapCenter: [number, number]
+  mapZoom: number
   mapType: 'streets' | 'satellite'
   houseList: SurveyUnit[]
   houseListIndex: number
@@ -44,6 +45,7 @@ interface BillingState {
   nextDeliverable: () => void
   prevDeliverable: () => void
   setMapCenter: (center: [number, number]) => void
+  setMapZoom: (zoom: number) => void
   setMapType: (type: 'streets' | 'satellite') => void
   setQueryDuration: (duration: number | null) => void
   setIsFetching: (fetching: boolean) => void
@@ -92,6 +94,7 @@ export const useBillingStore = create<BillingState>()(
       houseSource: null,
       staffMode: 'delivery',
       mapCenter: [32.0836, 72.6712],
+      mapZoom: 18,
       mapType: 'streets',
 
       setCity: (city, district, tehsil) => {
@@ -101,6 +104,7 @@ export const useBillingStore = create<BillingState>()(
         set((s) => ({
           selectedCity: city,
           mapCenter: cfg ? [cfg.lat, cfg.lng] : s.mapCenter,
+          mapZoom: cfg ? 12 : s.mapZoom,
           filters: { ...s.filters, districts, tehsils, ucs: [] },
           pendingFilters: { ...s.pendingFilters, districts, tehsils, ucs: [] },
         }))
@@ -214,6 +218,7 @@ export const useBillingStore = create<BillingState>()(
         }
       },
       setMapCenter: (center) => set({ mapCenter: center }),
+      setMapZoom: (zoom) => set({ mapZoom: zoom }),
       setMapType: (type) => set({ mapType: type }),
       setListPage: (page) => set({ listPage: Math.max(1, page) }),
       setQueryDuration: (duration) => set({ queryDuration: duration }),

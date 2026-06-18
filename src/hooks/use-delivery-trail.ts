@@ -11,6 +11,7 @@ export interface DeliveryMarker {
   uc_name: string | null
   consumer_name: string
   staff_name: string
+  staff_id: string | null
 }
 
 export interface ActivityEvent {

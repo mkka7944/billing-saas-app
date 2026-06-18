@@ -36,11 +36,11 @@ export async function GET(request: Request) {
 
   const { data: assignments } = await sup
     .from('daily_assignments')
-    .select('id, staff:staff_id(full_name), uc_name')
+    .select('id, staff_id, staff:staff_id(full_name), uc_name')
     .in('id', assignmentIds)
 
   const staffMap = new Map(
-    (assignments || []).map((a: any) => [a.id, a.staff?.full_name || 'Unknown'])
+    (assignments || []).map((a: any) => [a.id, { name: a.staff?.full_name || 'Unknown', id: a.staff_id }])
   )
   const ucMap = new Map(
     (assignments || []).map((a: any) => [a.id, a.uc_name || ''])
@@ -65,7 +65,9 @@ export async function GET(request: Request) {
     if (unit.city_district !== cfg.district) continue
     if (unit.tehsil !== cfg.tehsil) continue
 
-    const staffName = staffMap.get(item.assignment_id) || 'Unknown'
+    const staffInfo = staffMap.get(item.assignment_id) || { name: 'Unknown', id: null }
+    const staffName = staffInfo.name
+    const staffId = staffInfo.id
     const ucName = ucMap.get(item.assignment_id) || ''
 
     if (unit.lat && unit.lng) {
@@ -78,6 +80,7 @@ export async function GET(request: Request) {
         uc_name: ucName,
         consumer_name: unit.consumer_name,
         staff_name: staffName,
+        staff_id: staffId,
       })
     }
 

@@ -1,29 +1,42 @@
 'use client'
 
 import { useMemo } from 'react'
-import { useStaffStats } from '@/hooks/use-staff-stats'
-import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
+import { useDeliveryTrail } from '@/hooks/use-delivery-trail'
 import { useLiveStore } from '@/stores/live-store'
 import { Circle } from 'lucide-react'
-
-const TODAY = new Date().toISOString().slice(0, 10)
 
 export function LiveStaffList() {
   const selectedCity = useLiveStore((s) => s.selectedCity)
   const staffGpsVisible = useLiveStore((s) => s.staffGpsVisible)
   const toggleStaffGps = useLiveStore((s) => s.toggleStaffGps)
-  const cfg = CITY_TEHSIL_MAP[selectedCity]
 
-  const { data: stats } = useStaffStats(undefined, TODAY, TODAY)
+  const { data: trail } = useDeliveryTrail(selectedCity)
 
-  const filtered = useMemo(() => {
-    if (!stats || !cfg) return []
-    return stats
-      .filter((s) => s.total_assigned > 0)
-      .sort((a, b) => b.rate - a.rate)
-  }, [stats, cfg])
+  const staffStats = useMemo(() => {
+    const markers = trail?.markers || []
+    const map = new Map<string, { staffId: string | null; delivered: number; missed: number; processing: number }>()
 
-  if (!filtered.length) {
+    for (const m of markers) {
+      const stat = map.get(m.staff_name) || { staffId: m.staff_id, delivered: 0, missed: 0, processing: 0 }
+      if (m.status === 'delivered') stat.delivered++
+      else if (m.status === 'missed') stat.missed++
+      else stat.processing++
+      map.set(m.staff_name, stat)
+    }
+
+    return Array.from(map.entries()).map(([staffName, s]) => {
+      const total = s.delivered + s.missed + s.processing
+      return {
+        staff_id: s.staffId || staffName,
+        staff_name: staffName,
+        delivered: s.delivered,
+        total_assigned: total,
+        rate: total > 0 ? Math.round((s.delivered / total) * 100) : 0,
+      }
+    }).sort((a, b) => b.rate - a.rate)
+  }, [trail])
+
+  if (!staffStats.length) {
     return (
       <div className="text-xs text-muted-foreground text-center py-4">
         No staff with deliveries today
@@ -33,7 +46,7 @@ export function LiveStaffList() {
 
   return (
     <div className="space-y-0.5">
-      {filtered.map((s) => {
+      {staffStats.map((s) => {
         const gpsOn = staffGpsVisible.has(s.staff_id)
         return (
           <div

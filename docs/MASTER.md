@@ -1571,7 +1571,47 @@ App (Next.js SSR)                     Local Server (office PC)
 
 **Total: ~6 hrs for full pipeline streamlining.** This is additive to the DQ items in 16.9.6. The first 3 items (P0-P3, ~1 hr) are the critical path â€” everything else can be done incrementally.
 
-## 26. Delivery KPI Queries (Future)
+---
+
+## 17. Assignment Model Evolution & Daily Target System
+
+### 17.1 Current Model
+
+- `daily_assignments` — one row per staff per day per UC
+- `assignment_items` — individual PSIDs within a chunk
+- Staff sees all items summed across all assignments in `/deliver`
+- No daily target concept — the number of assigned units *=* the expected work
+- Multi-assignment UI (picker when staff has multiple daily assignments across different MCs/UCs) listed as B3d.2 in phase plan
+
+### 17.2 Future Direction (Post-Production)
+
+**Multi-Assignment Flexibility**
+- Assignments can be created at any time, not just at start of day
+- A staff member may receive multiple assignments across different MCs/UCs on the same day
+- Each assignment is a separate `daily_assignments` row, all active simultaneously
+- Staff's `/deliver` page shows the combined list from all active assignments
+
+**Daily Target System**
+- **Purpose:** Decouple *what's assigned* from *what's expected per day*. A staff with 3000 units across multiple MCs/UCs may have a target of 500 deliveries per day.
+- **Where defined:** Admin sets per-staff (or global) daily target in a delivery settings page
+- **Weekend handling:** Sundays require special treatment — either 0 target or reduced target. A `weekday_multiplier` or schedule table may be needed.
+- **Performance metric:** Primary: `delivered_today / daily_target` (pace). Secondary: `delivered_total / total_assigned` (progress). Both displayed.
+
+**Schema Changes (TBD — pending discussion)**
+- `staff.daily_target` — per-staff default target (e.g., 500)
+- `app_settings.default_daily_target` — global fallback
+- `app_settings.sunday_target_multiplier` or `staff.weekday_overrides` (jsonb) — weekend handling
+- Assignment-level target override: `daily_assignments.target` — per-assignment target if different from default
+- `staff_daily_stats` or live-computed view: actual daily target vs delivered for live dashboard
+
+**Implementation Priority**
+1. Fix live monitoring bugs (map zoom, staff list) — done 2026-06-18
+2. Add multi-assignment picker UI (B3d.2) — prerequisite
+3. Build admin delivery settings page — target definition per staff / global
+4. Update live monitoring staff list to show `delivered / target` metric alongside `delivered / total_assigned`
+5. Performance dashboard: target-vs-actual over time, trend lines
+6. Auto-scaling targets based on historical performance (future)
+
 
 After 2-3 months of `started_at` data collection:
 

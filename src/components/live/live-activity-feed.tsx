@@ -1,17 +1,35 @@
 'use client'
 
-import { useMemo, useRef, useEffect } from 'react'
+import { useMemo, useRef, useEffect, useCallback } from 'react'
 import { useDeliveryTrail } from '@/hooks/use-delivery-trail'
+import { useBillingStore } from '@/stores/billing-store'
 import { useLiveStore } from '@/stores/live-store'
 import { CheckCircle2, XCircle, Clock } from 'lucide-react'
 
 export function LiveActivityFeed() {
   const selectedCity = useLiveStore((s) => s.selectedCity)
+  const setMapCenter = useBillingStore((s) => s.setMapCenter)
+  const setMapZoom = useBillingStore((s) => s.setMapZoom)
   const { data } = useDeliveryTrail(selectedCity)
   const topRef = useRef<HTMLDivElement>(null)
   const prevCount = useRef(0)
 
   const activities = useMemo(() => data?.activities || [], [data])
+
+  const markerByPsid = useMemo(() => {
+    const map = new Map<string, { lat: number; lng: number }>()
+    for (const m of data?.markers || []) {
+      if (m.lat && m.lng) map.set(m.psid, { lat: m.lat, lng: m.lng })
+    }
+    return map
+  }, [data])
+
+  const handleActivityClick = useCallback((psid: string) => {
+    const marker = markerByPsid.get(psid)
+    if (!marker) return
+    setMapCenter([marker.lat, marker.lng])
+    setMapZoom(18)
+  }, [markerByPsid, setMapCenter, setMapZoom])
 
   useEffect(() => {
     if (activities.length > prevCount.current) {
@@ -32,7 +50,7 @@ export function LiveActivityFeed() {
     <div className="space-y-0.5 max-h-48 overflow-y-auto">
       <div ref={topRef} />
       {activities.map((a, i) => (
-        <div key={`${a.psid}-${i}`} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs hover:bg-muted/30">
+        <div key={`${a.psid}-${i}`} onClick={() => handleActivityClick(a.psid)} className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs hover:bg-muted/30 cursor-pointer">
           {a.status === 'delivered' ? (
             <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
           ) : a.status === 'missed' ? (

@@ -1,7 +1,7 @@
 {
-  "lastSession": "2026-06-18 (office)",
-  "currentPhase": "Live Monitoring Phase 1 done + PKT timezone fix",
-  "currentStep": "Delivery Trail (Phase 1) complete. PKT timezone utility created. Drag fix, column rename, delivery-trail query restructured to use delivered_at in PKT range. LiveDeliveryTrail now uses dynamic import (ssr: false) to fix SSR crash.",
+  "lastSession": "2026-06-18 (office) — live fixes + assignment docs",
+  "currentPhase": "Live Monitoring — Bug Fixes",
+  "currentStep": "MapFollower unmount in Live view fixed. LiveStaffList rewritten to use useDeliveryTrail (was using issued_at query, returned empty). mapZoom state added to billing store. Assignment model direction documented in MASTER.md Section 17.",
   "phaseProgress": {
     "0d": "done",
     "0e": "done",
@@ -18,13 +18,14 @@
     "Z": "deferred"
   },
   "filesModified": [
+    "src/stores/billing-store.ts",
+    "src/components/map-view.tsx",
     "src/components/live/live-panel.tsx",
+    "src/components/live/live-staff-list.tsx",
+    "src/hooks/use-delivery-trail.ts",
     "src/app/api/live/delivery-trail/route.ts",
-    "src/lib/pkt.ts",
-    "src/lib/constants.ts",
-    "src/app/map/page.tsx",
+    "docs/MASTER.md",
     "docs/SESSION.md",
-    "docs/LIVE-MONITORING-PLAN.md",
     ".opencode/context.json"
   ],
   "keyDecisions": [
@@ -32,16 +33,14 @@
     "PKT timezone utility (src/lib/pkt.ts) created as single source of truth for all Pakistan timezone date/datetime operations. All future timestamp captures and filters should use pktToday() / pktDayRange() / pktCurrentMonth().",
     "Delivery trail API queries by delivered_at in PKT date range (not issued_at assignment date). issued_at tracks when assignment was created; delivered_at tracks actual delivery time — live monitoring cares about the latter.",
     "LiveDeliveryTrail uses dynamic(() => import(...), { ssr: false }) — same pattern as StaffMap — because react-leaflet references window during import.",
-    "timestamptz column storage remains UTC — only filter computations and date-only columns changed to PKT. Zero risk to existing data."
+    "timestamptz column storage remains UTC — only filter computations and date-only columns changed to PKT. Zero risk to existing data.",
+    "MapFollower must remain mounted during Live view — fixed by adding activeView check to mount condition.",
+    "LiveStaffList rewritten to use useDeliveryTrail; no longer calls /api/staff/stats (one less API call per 5s poll).",
+    "mapZoom state in billing store decouples zoom from DB settings — city=12, UC=15, house=18 defaults."
   ],
   "nextActions": [
-    "HIGH PRIORITY — Tomorrow morning (office): Phase 2 — Staff Positions (live GPS)",
-    "  - Create staff_locations table + migration (048-staff-locations.sql)",
-    "  - POST /api/live/report-location endpoint",
-    "  - GET /api/live/staff-positions endpoint",
-    "  - useStaffPositions hook (polls 10s)",
-    "  - StaffPositionLayers component (blue dots + name tooltip)",
-    "  - Update use-user-location.ts with 60s GPS reporter",
+    "Continue assignment model discussion (daily target schema, Sunday handling, target-vs-actual dashboard)",
+    "Phase 2 — Staff Positions (live GPS) deferred pending assignment model discussion",
     "Phase H.4 — Section-level shimmer skeletons in HDS (~30m)",
     "Phase H.7 — Prefetch adjacent unit data (~45m)",
     "Phase F — Auto-Route Generation (3hrs)",

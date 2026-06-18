@@ -33,7 +33,7 @@ const TILE_URLS = {
 function MapFollower() {
   const map = useMap()
   const mapCenter = useBillingStore((s) => s.mapCenter)
-  const { data: mapZoom = 18 } = useMapZoom()
+  const mapZoom = useBillingStore((s) => s.mapZoom)
 
   const lastCenterRef = useRef<string | null>(null)
 
@@ -111,6 +111,7 @@ function MapFlyToTarget() {
 export const MapView = memo(function MapView({ visible = true, children }: { visible?: boolean; children?: React.ReactNode }) {
   const filters = useBillingStore((s) => s.filters)
   const mapType = useBillingStore((s) => s.mapType)
+  const activeView = useBillingStore((s) => s.activeView)
   const showAll = filters.ucs.length > 0
   const { data, isLoading } = useSurveyData(filters, 1, 50, showAll)
   const { data: mapZoom = 18 } = useMapZoom()
@@ -153,14 +154,14 @@ export const MapView = memo(function MapView({ visible = true, children }: { vis
           updateWhenIdle={true}
           attribution='&copy; Google'
         />
-        {visible && (
+        {(visible || activeView === 'live') && (
           <>
             <MapFollower />
             <FitBoundsOnFilter markers={markers} />
             <MapFlyToTarget />
-            <SurveyMarkers data={markers} />
           </>
         )}
+        {visible && <SurveyMarkers data={markers} />}
         {children}
       </MapContainer>
     </div>

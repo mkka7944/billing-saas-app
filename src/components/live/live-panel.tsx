@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useLiveStore } from '@/stores/live-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
+import { useDeliveryTrail } from '@/hooks/use-delivery-trail'
 import { CITY_CONFIG } from '@/stores/billing-store'
 import { LiveSummaryBar } from '@/components/live/live-summary-bar'
 import { LiveUcCards } from '@/components/live/live-uc-cards'
@@ -23,6 +24,7 @@ const CITIES = ['Sargodha', 'Bhalwal', 'Khushab', 'TestCity']
 export function LivePanel() {
   const setView = useBillingStore((s) => s.setView)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
+  const setMapZoom = useBillingStore((s) => s.setMapZoom)
   const selectedCity = useLiveStore((s) => s.selectedCity)
   const panelCollapsed = useLiveStore((s) => s.panelCollapsed)
   const panelPos = useLiveStore((s) => s.panelPos)
@@ -35,6 +37,30 @@ export function LivePanel() {
   const setPanelHeight = useLiveStore((s) => s.setPanelHeight)
 
   const isMobile = useMediaQuery('(max-width: 767px)')
+  const { data: trailData } = useDeliveryTrail(selectedCity)
+  const hasFlown = useRef(false)
+
+  // Fly to default city on first mount
+  useEffect(() => {
+    if (!hasFlown.current) {
+      const cfg = CITY_CONFIG[selectedCity]
+      if (cfg) {
+        setMapCenter([cfg.lat, cfg.lng])
+        setMapZoom(12)
+      }
+      hasFlown.current = true
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleUcClick = useCallback((ucName: string) => {
+    const markers = trailData?.markers || []
+    const ucMarkers = markers.filter((m) => m.uc_name === ucName && m.lat && m.lng)
+    if (!ucMarkers.length) return
+    const avgLat = ucMarkers.reduce((sum, m) => sum + m.lat, 0) / ucMarkers.length
+    const avgLng = ucMarkers.reduce((sum, m) => sum + m.lng, 0) / ucMarkers.length
+    setMapCenter([avgLat, avgLng])
+    setMapZoom(15)
+  }, [trailData, setMapCenter, setMapZoom])
 
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
   const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number | null } | null>(null)
@@ -42,8 +68,11 @@ export function LivePanel() {
   const handleCityChange = useCallback((city: string) => {
     setSelectedCity(city)
     const cfg = CITY_CONFIG[city]
-    if (cfg) setMapCenter([cfg.lat, cfg.lng])
-  }, [setSelectedCity, setMapCenter])
+    if (cfg) {
+      setMapCenter([cfg.lat, cfg.lng])
+      setMapZoom(12)
+    }
+  }, [setSelectedCity, setMapCenter, setMapZoom])
 
   const handleExitLive = useCallback(() => {
     setView('map')
@@ -139,7 +168,7 @@ export function LivePanel() {
         width: panelWidth,
         right: 8 - (panelPos.x || 0),
         top: 8 + (panelPos.y || 0),
-        ...(panelHeight !== null ? { height: panelHeight } : { bottom: 8 }),
+        height: panelHeight ?? 500,
       }}
     >
       {/* Header — drag handle */}
@@ -190,7 +219,7 @@ export function LivePanel() {
         </div>
 
         {/* UC Cards */}
-        <LiveUcCards />
+        <LiveUcCards onUcClick={handleUcClick} />
 
         {/* Staff List */}
         <div>
