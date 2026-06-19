@@ -55,7 +55,7 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
             return
           }
           const surveyId = match[1]
-          const matched = items.find((i) => i.survey_id === surveyId)
+          const matched = items.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
           if (!matched) {
             setError(`No assignment matches survey ID: ${surveyId}`)
             return
@@ -87,7 +87,7 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
   const handleManualSubmit = useCallback(() => {
     const sid = manualInput.trim()
     if (!sid) return
-    const matched = items.find((i) => i.survey_id === sid)
+    const matched = items.find((i) => i.survey_id === sid || i.unit?.survey_id === sid)
     if (!matched) {
       setError(`No assignment matches survey ID: ${sid}`)
       return

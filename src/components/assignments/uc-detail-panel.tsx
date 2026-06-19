@@ -5,7 +5,6 @@ import { useUnassignedBills, useStaffList, useCreateAssignment } from '@/hooks/u
 import { currentMonth } from '@/lib/constants'
 import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
-import { Select, SelectTrigger, SelectContent, SelectItem } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
@@ -33,7 +32,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
   const { data, isLoading } = useUnassignedBills(uc, month, routeName)
   const { data: staffList } = useStaffList()
   const createAssignment = useCreateAssignment()
-  const [selectedStaff, setSelectedStaff] = useState('')
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([])
   const [rangeInput, setRangeInput] = useState('')
   const [targetPerDay, setTargetPerDay] = useState(0)
   const [page, setPage] = useState(0)
@@ -85,28 +84,34 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
   }, [bills])
 
   const handleCreate = async () => {
-    if (!selectedStaff || !range) return
+    if (!selectedStaffIds.length || !range) return
     const psids = bills.slice(range[0], range[1] + 1).map((b) => b.psid).filter(Boolean) as string[]
     if (!psids.length) return
-    try {
-      await createAssignment.mutateAsync({
-        staff_id: selectedStaff,
-        uc_name: uc,
-        psids,
-        bill_month: month,
-        target_per_day: targetPerDay || undefined,
-      })
-      setSelectedStaff('')
+    let successCount = 0
+    for (const sid of selectedStaffIds) {
+      try {
+        await createAssignment.mutateAsync({
+          staff_id: sid,
+          uc_name: uc,
+          psids,
+          bill_month: month,
+          target_per_day: targetPerDay || undefined,
+        })
+        successCount++
+      } catch {
+        // continue with next staff
+      }
+    }
+    if (successCount > 0) {
+      setSelectedStaffIds([])
       setRangeInput('')
       onCreated()
-      toast(`Assigned ${psids.length} bills`, 'success')
-    } catch {
-      // error handled by mutation
+      toast(`Assigned ${psids.length} bills to ${successCount} staff`, 'success')
     }
   }
 
   const handleCreateFromSelection = async () => {
-    if (!selectedStaff || !selectedOrder.length) return
+    if (!selectedStaffIds.length || !selectedOrder.length) return
     const psids = selectedOrder.map((sid) => surveyToPsid.get(sid)).filter(Boolean) as string[]
     if (!psids.length) return
     const routeSeqMap: Record<string, number> = {}
@@ -114,21 +119,27 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
       const pid = surveyToPsid.get(sid)
       if (pid) routeSeqMap[pid] = idx + 1
     })
-    try {
-      await createAssignment.mutateAsync({
-        staff_id: selectedStaff,
-        uc_name: uc,
-        psids,
-        bill_month: month,
-        routeSeqMap,
-        target_per_day: targetPerDay || undefined,
-      })
-      setSelectedStaff('')
+    let successCount = 0
+    for (const sid of selectedStaffIds) {
+      try {
+        await createAssignment.mutateAsync({
+          staff_id: sid,
+          uc_name: uc,
+          psids,
+          bill_month: month,
+          routeSeqMap,
+          target_per_day: targetPerDay || undefined,
+        })
+        successCount++
+      } catch {
+        // continue with next staff
+      }
+    }
+    if (successCount > 0) {
+      setSelectedStaffIds([])
       setSelectedOrder([])
       onCreated()
-      toast(`Assigned ${psids.length} selected bills`, 'success')
-    } catch {
-      // error handled by mutation
+      toast(`Assigned ${psids.length} bills to ${successCount} staff`, 'success')
     }
   }
 
@@ -268,20 +279,31 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
       </Card>
 
       <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 pt-3 border-t border-border bg-background">
-        <div className="flex-1">
-          <label className="block text-xs text-muted-foreground mb-1">Assign to</label>
-          <Select value={selectedStaff} onValueChange={(v) => v && setSelectedStaff(v)}>
-            <SelectTrigger className="w-full h-8">
-              <span className="flex flex-1 text-left truncate">
-                {selectedStaff ? (filteredStaff.find(s => s.id === selectedStaff)?.full_name || 'Select staff...') : 'Select staff...'}
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {filteredStaff.map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.full_name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex-1 min-w-0">
+          <label className="block text-xs text-muted-foreground mb-1">
+            Assign to {selectedStaffIds.length > 0 && <span className="text-blue-500 font-medium">({selectedStaffIds.length} staff)</span>}
+          </label>
+          <div className="max-h-32 overflow-y-auto border border-border rounded-md p-1.5 space-y-0.5 scrollbar-none">
+            {filteredStaff.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-2">No staff available for this city</p>
+            )}
+            {filteredStaff.map((s) => (
+              <label
+                key={s.id}
+                className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-xs"
+              >
+                <Checkbox
+                  checked={selectedStaffIds.includes(s.id)}
+                  onCheckedChange={() => {
+                    setSelectedStaffIds((prev) =>
+                      prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id]
+                    )
+                  }}
+                />
+                <span className="truncate">{s.full_name}</span>
+              </label>
+            ))}
+          </div>
         </div>
         <div className="w-20">
           <label className="block text-xs text-muted-foreground mb-1">Daily target</label>
@@ -309,7 +331,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
           {selectedCount > 0 && (
             <button
               onClick={handleCreateFromSelection}
-              disabled={!selectedStaff || createAssignment.isPending}
+              disabled={!selectedStaffIds.length || createAssignment.isPending}
               className="h-8 px-4 rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {createAssignment.isPending ? 'Creating...' : `Assign Selected (${selectedCount})`}
@@ -317,7 +339,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
           )}
           <button
             onClick={handleCreate}
-            disabled={!selectedStaff || !range || createAssignment.isPending}
+            disabled={!selectedStaffIds.length || !range || createAssignment.isPending}
             className="h-8 px-4 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {createAssignment.isPending ? 'Creating...' : 'Assign'}

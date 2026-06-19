@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
@@ -44,10 +44,12 @@ export default function DeliverPage() {
   const { toast } = useToast()
   const [useCache, setUseCache] = useState(false)
   const [page, setPage] = useState(0)
-  const [filterTab, setFilterTab] = useState<'pending' | 'issues' | 'delivered' | 'all'>('pending')
+  const [filterTab, setFilterTab] = useState<'my-position' | 'pending' | 'issues' | 'delivered' | 'all'>('pending')
   const [selectedUc, setSelectedUc] = useState<string>('all')
   const [ucDropdownOpen, setUcDropdownOpen] = useState(false)
   const [dbUnsyncedCount, setDbUnsyncedCount] = useState(0)
+
+  const tabInitialized = useRef(false)
 
   const { queueCount, isProcessing, processQueue, processingIndex, totalToProcess, currentFileSize, uploadSpeed } = usePhotoQueue()
 
@@ -117,6 +119,39 @@ export default function DeliverPage() {
   const issuesCount = useMemo(() => items.filter((i) => i.status === 'processing' || i.status === 'missed').length, [items])
   const deliveredCountPill = useMemo(() => items.filter((i) => i.status === 'delivered').length, [items])
 
+  // Initialize default tab after data loads
+  useEffect(() => {
+    if (!tabInitialized.current && !isLoading) {
+      if (deliveredCount > 0) setFilterTab('my-position')
+      tabInitialized.current = true
+    }
+  }, [isLoading, deliveredCount])
+
+  // Find continuation serial#: first gap in consecutive delivered sequence (by delivery time)
+  const continuation = useMemo(() => {
+    if (deliveredCount === 0) return 0
+    const deliveredOrdered = items
+      .filter((i) => i.status === 'delivered' && i.delivered_at)
+      .sort((a, b) => new Date(a.delivered_at!).getTime() - new Date(b.delivered_at!).getTime())
+    const undeliveredSerials = new Set(
+      items.filter((i) => i.status !== 'delivered').map((i) => i.route_seq)
+    )
+    for (const item of deliveredOrdered) {
+      const ns = (item.route_seq || 0) + 1
+      if (undeliveredSerials.has(ns)) return ns
+    }
+    const maxD = Math.max(...deliveredOrdered.map((i) => i.route_seq || 0), 0)
+    return maxD + 1
+  }, [items, deliveredCount])
+
+  // Auto-scroll to continuation page when My Position tab is active
+  useEffect(() => {
+    if (filterTab === 'my-position' && continuation > 0) {
+      const targetPage = Math.max(0, Math.floor((continuation - 1) / PAGE_SIZE))
+      setPage(targetPage)
+    }
+  }, [filterTab, continuation])
+
   const ucGroups = useMemo(() => {
     const groups: Record<string, { items: AssignmentItemWithUnit[]; pending: number; delivered: number; total: number }> = {}
     for (const item of items) {
@@ -141,6 +176,7 @@ export default function DeliverPage() {
   const filtered = useMemo(() => {
     let list = items
     if (selectedUc !== 'all') list = list.filter((i) => (i.unit?.uc_name || 'Unknown') === selectedUc)
+    if (filterTab === 'my-position') return list
     if (filterTab === 'pending') return list.filter((i) => i.status === 'pending')
     if (filterTab === 'issues') return list.filter((i) => i.status === 'processing' || i.status === 'missed')
     if (filterTab === 'delivered') return list.filter((i) => i.status === 'delivered')
@@ -328,6 +364,28 @@ export default function DeliverPage() {
             {/* Filter pills */}
             <div className="flex gap-1.5 px-4 py-2 border-b shrink-0 overflow-x-auto scrollbar-none">
               <button
+                onClick={() => { setFilterTab('my-position'); setPage(0) }}
+                className={cn(
+                  'shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  filterTab === 'my-position'
+                    ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-200'
+                    : 'text-muted-foreground hover:text-foreground border border-transparent'
+                )}
+              >
+                My Position ({deliveredCountPill})
+              </button>
+              <button
+                onClick={() => { setFilterTab('all'); setPage(0) }}
+                className={cn(
+                  'shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
+                  filterTab === 'all'
+                    ? 'bg-muted text-foreground border border-border'
+                    : 'text-muted-foreground hover:text-foreground border border-transparent'
+                )}
+              >
+                All ({items.length})
+              </button>
+              <button
                 onClick={() => { setFilterTab('pending'); setPage(0) }}
                 className={cn(
                   'shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
@@ -360,17 +418,6 @@ export default function DeliverPage() {
               >
                 Delivered ({deliveredCountPill})
               </button>
-              <button
-                onClick={() => { setFilterTab('all'); setPage(0) }}
-                className={cn(
-                  'shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer',
-                  filterTab === 'all'
-                    ? 'bg-muted text-foreground border border-border'
-                    : 'text-muted-foreground hover:text-foreground border border-transparent'
-                )}
-              >
-                All ({items.length})
-              </button>
             </div>
 
             {/* List — flat paginated */}
@@ -378,14 +425,21 @@ export default function DeliverPage() {
               {pageItems.map((item) => {
                 const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending
                 const sid = item.survey_id
+                const isNext = filterTab === 'my-position' && item.status === 'pending' && item.route_seq === continuation
                 return (
                   <button
                     key={item.id}
                     onClick={() => handleSelect(item.id)}
-                    className="w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
+                    className={cn(
+                      'w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer',
+                      isNext && 'bg-emerald-500/5 border-l-2 border-l-emerald-500'
+                    )}
                   >
                     {/* Route seq */}
-                    <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                    <span className={cn(
+                      'shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold',
+                      isNext ? 'bg-emerald-500/20 text-emerald-700' : 'bg-muted text-muted-foreground'
+                    )}>
                       {item.route_seq || '-'}
                     </span>
 
@@ -395,6 +449,11 @@ export default function DeliverPage() {
                         <span className="text-sm font-semibold truncate">
                           {item.unit?.consumer_name || 'Unknown'}
                         </span>
+                        {isNext && (
+                          <span className="shrink-0 text-[10px] font-bold text-emerald-600">
+                            → Continue here
+                          </span>
+                        )}
                         <span className={cn('shrink-0 w-1.5 h-1.5 rounded-full', cfg.dot)} />
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">

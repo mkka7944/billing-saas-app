@@ -1,36 +1,39 @@
 {
-  "lastSession": "2026-06-19 — Phase 2a-3 testing (Tests 1-7 passed, Test 8 failed) + New delivery model discussion",
-  "currentPhase": "Phase 2a-3 testing completion → NEW: Delivery Model Revamp (multi-staff same-MC, QR-first)",
-  "currentStep": "Testing done for now. Test 8 (range-based assign batch name) needs fix. New delivery model discussed and set as P0 priority for next session.",
+  "lastSession": "2026-06-19 (evening) — 5 implementation steps completed",
+  "currentPhase": "Multi-staff delivery model (Steps 3-5 of 5 done)",
+  "currentStep": "All 5 steps complete: Test 8 fix, My Position tab, QR scanner fix, multi-staff picker, AGENTS.md update.",
   "phaseProgress": {
     "2a": "done",
     "2b": "done",
     "3": "done",
+    "multiStaffDelivery": "done — UI changes only, no schema/API changes",
     "4": "deferred",
-    "5": "deferred",
-    "newDeliveryModel": "discussed"
+    "5": "deferred"
   },
   "filesModified": [
+    "src/lib/repositories/assignment-repository.ts",
+    "src/app/deliver/page.tsx",
+    "src/components/layout/AppShell.tsx",
+    "src/components/delivery/qr-scanner-button.tsx",
+    "src/components/assignments/uc-detail-panel.tsx",
+    "AGENTS.md",
     "docs/SESSION.md",
     ".opencode/context.json"
   ],
   "keyDecisions": [
-    "Phase 4 (Staff batch header) and Phase 5 (Supervisor roles) deferred — implement after core workflow stable.",
-    "New Delivery Model (P0): Multiple staff assigned to same full MC. QR-scan-first delivery. 'My Position' tab shows descending from delivered point. Each staff builds own sequence naturally.",
-    "Test 8 failure root cause: auto-name block runs unconditionally. Fix: wrap with `if (routeSeqMap)` so range-based assign gets name=null.",
-    "route_seq collision per-staff is acceptable since each staff has unique assignment_id.",
-    "survey_id is the primary identifier for browsing/billing; psid is for delivery/payment/assignment."
+    "survey_id is the app-wide primary key. No two staff can ever have the same survey_id (different physical bills).",
+    "My Position tab: single flat list (same as All), auto-scrolls to continuation serial#, highlights next bill with '→ Continue here'.",
+    "Continuation algorithm: walk delivered items by delivered_at ASC, find first gap where serial#+1 is undelivered — that's the continuation point.",
+    "My Position replaces All as default tab when deliveries exist. Filter pill order: My Position | All | Pending | Issues | Delivered.",
+    "Multi-staff picker: checkbox list replaces single dropdown. Loop over selected staff in UI — no backend/API changes needed.",
+    "QR scanner fallback: check both item.survey_id AND unit?.survey_id to handle old assignments with null item-level survey_id.",
+    "auto-name batch: only for checkbox-based (routeSeqMap present). Range-based gets name=null.",
+    "daily_assignments table name left unchanged — not worth schema migration hassle."
   ],
   "nextActions": [
-    "P0 — Fix Test 8: wrap auto-name block with `if (routeSeqMap)` in assignment-repository.ts",
-    "P0 — Design and implement New Delivery Model (multi-staff same-MC, QR-first, 'My Position' tab)",
-    "P1 — Complete remaining tests 9-12, photo upload T1-T10",
-    "P2 — Live Monitoring Phase 2 (staff_locations table, GPS reporter, blue dots)",
-    "Deferred: Phase 4 (Staff deliver batch header), Phase 5 (Supervisor role gates)"
+    "HIGH — Test all 5 steps in browser (Test 8 fix, My Position, QR scan, multi-staff assign, AGENTS.md update)",
+    "Pending — Remaining Phase 2a-3 tests 9-12 (batch auto-increment, route-switch warning, refresh button, daily target display)",
+    "Deferred — Staff batch header (Phase 4), Supervisor roles (Phase 5), Photo upload tests T1-T10"
   ],
-  "testingChecklist": "See docs/SESSION.md — 12 tests. Tests 1-7 passed, Test 8 failed (pending fix), Tests 9-12 not run. Then photo upload T1-T10, Live Monitoring Phase 2.",
-  "blockers": [
-    "Test 8: range-based assign gets auto-generated batch name. Fix: wrap auto-name in `if (routeSeqMap)` in assignment-repository.ts",
-    "New Delivery Model: needs detailed design approval before implementation (open questions about 'My Position' UX, admin map display, assignment UI)"
-  ]
+  "testingChecklist": "See docs/SESSION.md — Steps 1-5 verification instructions documented per step."
 }

@@ -880,6 +880,59 @@ scripts/data/ (gitignored ΓÇö 1.10 GB total, 110 files):
 
 ---
 
+## 2026-06-19 (Evening) — Implementation: My Position, QR Fix, Multi-Staff Picker
+
+### Scope: 5 implementation steps completing the multi-staff delivery model UI changes
+
+### Step 1: Fix Test 8 — Range-based assign batch name
+- `assignment-repository.ts`: Wrapped auto-name block with `if (routeSeqMap)`. Range-based "Assign" doesn't pass routeSeqMap, so it gets `name = null`. Checkbox-based "Assign Selected" passes one and gets `{City}-B{seq}`.
+
+### Step 2: My Position tab on deliver page
+- `deliver/page.tsx`: Added `'my-position'` filter tab that replaces "All" as default after first delivery.
+- Continuation algorithm: walk delivered items by `delivered_at` ASC, find first gap where `serial#+1` is undelivered.
+- Auto-scroll: My Position tab calculates the page containing the continuation serial# and sets that page.
+- Highlight: the continuation row gets an emerald left border + `→ Continue here` badge.
+- Filter pills reordered: My Position | All | Pending | Issues | Delivered.
+- Before first delivery, default stays on Pending (unchanged).
+
+### Step 3: Fix QR scanner match
+- `AppShell.tsx` (line 85): Added `i.unit?.survey_id === surveyId` fallback. Old assignments have null item-level `survey_id` but populated unit-level `survey_id`.
+- `AppShell.tsx` (line 127): Same fix for manual input handler.
+- `qr-scanner-button.tsx` (lines 58, 90): Same fixes for standalone scanner component.
+- Staff scans QR → finds match by survey_id (item or unit level) → converts to PSID for map navigation (existing flow, unchanged).
+
+### Step 4: Multi-staff picker in assignment UI
+- `uc-detail-panel.tsx`: Replaced single staff dropdown with checkbox-based multi-select staff list in a scrollable container (max-h-32).
+- Both `handleCreate` (range-based) and `handleCreateFromSelection` (checkbox-based) loop over all selected staff, calling `createAssignment.mutateAsync` for each.
+- Error handling: try/catch per staff — one failure doesn't block others.
+- Toast message shows staff count: "Assigned 50 bills to 3 staff".
+- Same component used by both Create tab and Routes tab — both get multi-staff support.
+
+### Step 5: Update AGENTS.md with survey_id PK rule
+- Replaced old "Delivery Key: psid (not survey_id)" section with accurate "Primary Key: survey_id (app-wide), not psid" rule.
+- Documents: survey_id is unique per physical bill, no two staff can share one, delivered status is global, QR scanner checks both levels.
+
+### Key Decisions Made During Session
+- survey_id is the app-wide primary key. No cross-staff conflict possible because each staff has different physical bills with unique survey_ids.
+- "My Position" = single flat list (no two-section layout), just auto-scrolls and highlights. Mobile-first.
+- Multi-staff assignment loops in UI — no backend/API/schema changes needed. Keeps everything simple.
+- QR scanner fix is additive (checks unit fallback) — doesn't break existing working scans.
+
+### Files Modified (8 files)
+- `src/lib/repositories/assignment-repository.ts` — auto-name guard
+- `src/app/deliver/page.tsx` — My Position tab, continuation, auto-scroll, highlight
+- `src/components/layout/AppShell.tsx` — QR match fallback (scan + manual)
+- `src/components/delivery/qr-scanner-button.tsx` — QR match fallback (scan + manual)
+- `src/components/assignments/uc-detail-panel.tsx` — multi-staff checkboxes + loop
+- `AGENTS.md` — survey_id PK rule
+- `docs/SESSION.md` — this entry
+- `.opencode/context.json` — state updated
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors across all changes
+
+---
+
 ## 14. Changelog
 | Date | Version | Change |
 |------|---------|--------|

@@ -317,25 +317,27 @@ export async function createAssignment(
   const ucNames = [...new Set(unitRows.map((u) => u.uc_name).filter(Boolean) as string[])]
   const surveyIdMap = new Map(unitRows.map((u) => [u.psid, u.survey_id]))
 
-  // Auto-generate batch name: {City}-B{seq}
-  const firstUnit = unitRows[0]
+  // Auto-generate batch name: {City}-B{seq} (checkbox-based only)
   let batchName = ''
-  if (firstUnit?.city_district && firstUnit?.tehsil) {
-    let cityName = ''
-    for (const [cn, cfg] of Object.entries(CITY_TEHSIL_MAP)) {
-      if (cfg.district === firstUnit.city_district && cfg.tehsil === firstUnit.tehsil) { cityName = cn; break }
-    }
-    if (cityName) {
-      const { data: existingBatches } = await sup
-        .from('daily_assignments')
-        .select('name')
-        .like('name', `${cityName}-B%`)
-      let maxSeq = 0
-      for (const b of (existingBatches || []) as { name: string }[]) {
-        const m = b.name.match(/-B(\d+)$/)
-        if (m) { const n = parseInt(m[1], 10); if (n > maxSeq) maxSeq = n }
+  if (routeSeqMap && unitRows.length > 0) {
+    const firstUnit = unitRows[0]
+    if (firstUnit?.city_district && firstUnit?.tehsil) {
+      let cityName = ''
+      for (const [cn, cfg] of Object.entries(CITY_TEHSIL_MAP)) {
+        if (cfg.district === firstUnit.city_district && cfg.tehsil === firstUnit.tehsil) { cityName = cn; break }
       }
-      batchName = `${cityName}-B${maxSeq + 1}`
+      if (cityName) {
+        const { data: existingBatches } = await sup
+          .from('daily_assignments')
+          .select('name')
+          .like('name', `${cityName}-B%`)
+        let maxSeq = 0
+        for (const b of (existingBatches || []) as { name: string }[]) {
+          const m = b.name.match(/-B(\d+)$/)
+          if (m) { const n = parseInt(m[1], 10); if (n > maxSeq) maxSeq = n }
+        }
+        batchName = `${cityName}-B${maxSeq + 1}`
+      }
     }
   }
 

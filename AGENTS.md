@@ -303,10 +303,11 @@ Sargodha is both a district AND tehsil. Bhalwal is a tehsil WITHIN Sargodha dist
 - ~160K enriched units have `status = NULL`, not `status = 'ACTIVE'`.
 - NEVER use `.eq('status', 'ACTIVE')` — use `applyActiveFilter()` which does `or('status.is.null,status.eq.ACTIVE')`.
 
-### Delivery Key: psid (not survey_id)
-- `psid` is always populated (98% coverage). It's the delivery target, assignment key, and payment join.
-- `survey_id` (100%, PK) is for frontend list keys and QR scanning.
-- The old code used `survey_id` for delivery targets — caused null-equality bugs.
+### Primary Key: survey_id (app-wide), not psid
+- **`survey_id` is the single source of truth as the app's primary key.** Every physical bill has a unique survey_id printed on it. No two staff can ever have the same survey_id — each receives their own set of physical bills with unique IDs.
+- `psid` is the delivery/assignment/payment join key (98% coverage), but survey_id is what the QR code on the bill contains and what staff use to identify units.
+- **Delivered status is global across all staff assigned to the same MC.** If any staff delivers a survey_id, it's considered delivered. No cross-staff conflict resolution needed because each staff has different survey_ids.
+- The QR scanner matches by survey_id first, then converts to PSID for the map's delivery flow. For old assignments where the item-level survey_id is null, the scanner also checks `unit.survey_id` as fallback.
 
 ### Staff-City Enforcement
 - Staff with `assignedCity` set in `staff` table: CitySwitcher restricts them, chevron hidden.

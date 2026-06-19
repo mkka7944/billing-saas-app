@@ -82,7 +82,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             return
           }
           const surveyId = match[1]
-          const matched = scanItems.find((i) => i.survey_id === surveyId)
+          const matched = scanItems.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
           if (!matched) {
             setScanError(`No assignment matches survey ID: ${surveyId}`)
             return
@@ -124,7 +124,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const handleManualSubmit = useCallback(() => {
     const sid = manualInput.trim()
     if (!sid) return
-    const matched = scanItems.find((i) => i.survey_id === sid)
+    const matched = scanItems.find((i) => i.survey_id === sid || i.unit?.survey_id === sid)
     if (!matched) {
       setScanError(`No assignment matches survey ID: ${sid}`)
       return
