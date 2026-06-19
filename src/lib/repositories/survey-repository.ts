@@ -30,12 +30,18 @@ function applyFilters(qb: any, q: SurveyQuery) {
 
 async function fetchAll(sup: SupabaseClient, q: SurveyQuery, baseQb: any): Promise<any[]> {
   const all: any[] = []
+  const seen = new Set<string>()
   let offset = 0
   while (true) {
     const { data } = await baseQb
       .range(offset, offset + BATCH_SIZE - 1)
     if (!data?.length) break
-    all.push(...data)
+    for (const row of data) {
+      if (!seen.has(row.survey_id)) {
+        seen.add(row.survey_id)
+        all.push(row)
+      }
+    }
     if (data.length < BATCH_SIZE) break
     offset += BATCH_SIZE
   }
@@ -59,6 +65,7 @@ export async function getSurveys(sup: SupabaseClient, q: SurveyQuery) {
   else if (q.paymentStatus === 'unpaid') qb = qb.eq('is_paid', false)
 
   if (q.pageSize > BATCH_SIZE) {
+    qb = qb.order('survey_id', { ascending: true })
     const data = await fetchAll(sup, q, qb)
     return { data, total: data.length }
   }

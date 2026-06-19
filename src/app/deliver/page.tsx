@@ -100,6 +100,18 @@ export default function DeliverPage() {
   const totalCount = items.length
   const deliveredCount = useMemo(() => items.filter((i) => i.status === 'delivered').length, [items])
   const progressPct = totalCount > 0 ? Math.round((deliveredCount / totalCount) * 100) : 0
+  const setDeliveryStartTime = useBillingStore((s) => s.setDeliveryStartTime)
+
+  useEffect(() => {
+    let earliest: number | null = null
+    for (const item of items) {
+      const ts = item.started_at || item.delivered_at
+      if (!ts) continue
+      const t = new Date(ts).getTime()
+      if (earliest === null || t < earliest) earliest = t
+    }
+    setDeliveryStartTime(earliest)
+  }, [items, setDeliveryStartTime])
 
   const pendingCount = useMemo(() => items.filter((i) => i.status === 'pending').length, [items])
   const issuesCount = useMemo(() => items.filter((i) => i.status === 'processing' || i.status === 'missed').length, [items])
@@ -361,144 +373,61 @@ export default function DeliverPage() {
               </button>
             </div>
 
-            {/* List */}
+            {/* List — flat paginated */}
             <div className="flex-1 overflow-y-auto">
-              {selectedUc === 'all' ? (
-                /* Grouped by UC */
-                ucGroups.map(([uc, group]) => {
-                  const groupItems = group.items.filter((i) => {
-                    if (filterTab === 'pending') return i.status === 'pending'
-                    if (filterTab === 'issues') return i.status === 'processing' || i.status === 'missed'
-                    if (filterTab === 'delivered') return i.status === 'delivered'
-                    return true
-                  })
-                  if (groupItems.length === 0) return null
-                  const shortName = shortenMCName(uc)
-                  return (
-                    <div key={uc}>
-                      {/* UC header */}
-                      <div className="sticky top-0 z-10 px-4 py-1.5 bg-muted/80 backdrop-blur-sm border-b border-t flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider">{shortName}</span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums">
-                          <span className="text-blue-600">{group.pending}</span>
-                          <span className="mx-1">·</span>
-                          <span className="text-green-600">{group.delivered}</span>
-                          <span className="mx-1">/</span>
-                          {group.total}
+              {pageItems.map((item) => {
+                const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending
+                const sid = item.survey_id
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleSelect(item.id)}
+                    className="w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
+                  >
+                    {/* Route seq */}
+                    <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                      {item.route_seq || '-'}
+                    </span>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold truncate">
+                          {item.unit?.consumer_name || 'Unknown'}
                         </span>
+                        <span className={cn('shrink-0 w-1.5 h-1.5 rounded-full', cfg.dot)} />
                       </div>
-                      {groupItems.map((item) => {
-                        const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending
-                        const sid = item.survey_id || item.psid
-                        return (
-                          <button
-                            key={item.id}
-                            onClick={() => handleSelect(item.id)}
-                            className="w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
-                          >
-                            {/* Route seq */}
-                            <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-                              {item.route_seq || '-'}
-                            </span>
-
-                            {/* Info */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold truncate">
-                                  {item.unit?.consumer_name || 'Unknown'}
-                                </span>
-                                <span className={cn('shrink-0 w-1.5 h-1.5 rounded-full', cfg.dot)} />
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                                {item.unit?.address && (
-                                  <span className="truncate">{item.unit.address}</span>
-                                )}
-                                {item.status === 'delivered' && item.delivered_at && (
-                                  <span className="shrink-0 text-[10px] text-green-600 font-medium">
-                                    {formatTime(item.delivered_at)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Survey ID + status */}
-                            <div className="shrink-0 text-right">
-                              <p className="text-[10px] font-mono font-bold text-muted-foreground/70">
-                                {sid.length > 10 ? sid.slice(-10) : sid}
-                              </p>
-                              <p className={cn(
-                                'text-[10px] font-semibold mt-0.5',
-                                item.status === 'delivered' && 'text-green-600',
-                                item.status === 'missed' && 'text-red-600',
-                                item.status === 'pending' && 'text-blue-600',
-                                item.status === 'processing' && 'text-amber-600',
-                                item.status === 'skipped' && 'text-gray-500',
-                              )}>
-                                {cfg.label}
-                              </p>
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )
-                })
-              ) : (
-                /* Single UC — flat list */
-                pageItems.map((item) => {
-                  const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending
-                  const sid = item.survey_id || item.psid
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleSelect(item.id)}
-                      className="w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer"
-                    >
-                      {/* Route seq */}
-                      <span className="shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-                        {item.route_seq || '-'}
-                      </span>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold truncate">
-                            {item.unit?.consumer_name || 'Unknown'}
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                        {item.unit?.address && (
+                          <span className="truncate">{item.unit.address}</span>
+                        )}
+                        {item.status === 'delivered' && item.delivered_at && (
+                          <span className="shrink-0 text-[10px] text-green-600 font-medium">
+                            {formatTime(item.delivered_at)}
                           </span>
-                          <span className={cn('shrink-0 w-1.5 h-1.5 rounded-full', cfg.dot)} />
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                          {item.unit?.address && (
-                            <span className="truncate">{item.unit.address}</span>
-                          )}
-                          {item.status === 'delivered' && item.delivered_at && (
-                            <span className="shrink-0 text-[10px] text-green-600 font-medium">
-                              {formatTime(item.delivered_at)}
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
+                    </div>
 
-                      {/* Survey ID + status */}
-                      <div className="shrink-0 text-right">
-                        <p className="text-[10px] font-mono font-bold text-muted-foreground/70">
-                          {sid.length > 10 ? sid.slice(-10) : sid}
-                        </p>
-                        <p className={cn(
-                          'text-[10px] font-semibold mt-0.5',
-                          item.status === 'delivered' && 'text-green-600',
-                          item.status === 'missed' && 'text-red-600',
-                          item.status === 'pending' && 'text-blue-600',
-                          item.status === 'processing' && 'text-amber-600',
-                          item.status === 'skipped' && 'text-gray-500',
-                        )}>
-                          {cfg.label}
-                        </p>
-                      </div>
-                    </button>
-                  )
-                })
-              )}
+                    {/* Survey ID + status */}
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-mono font-extrabold text-foreground">
+                        {(sid?.length ?? 0) > 10 ? sid!.slice(-10) : (sid ?? '')}
+                      </p>
+                      <p className={cn(
+                        'text-[10px] font-semibold mt-0.5',
+                        item.status === 'delivered' && 'text-green-600',
+                        item.status === 'missed' && 'text-red-600',
+                        item.status === 'pending' && 'text-blue-600',
+                        item.status === 'processing' && 'text-amber-600',
+                        item.status === 'skipped' && 'text-gray-500',
+                      )}>
+                        {cfg.label}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
 
               {filtered.length === 0 && (
                 <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
@@ -507,8 +436,8 @@ export default function DeliverPage() {
               )}
             </div>
 
-            {/* Pagination — only for single-UC mode */}
-            {selectedUc !== 'all' && totalPages > 1 && (
+            {/* Pagination */}
+            {totalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-2 border-t bg-card shrink-0">
                 <button
                   onClick={() => setPage(Math.max(0, page - 1))}

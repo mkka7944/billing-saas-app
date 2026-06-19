@@ -534,6 +534,108 @@ The following session logs were extracted from the original MASTER.md during the
 - Phase M2 — Marker clustering + UC count badges (~1.5hrs remaining)
 ```
 scripts/ root (6 files, 86 KB):
+
+---
+
+## 2026-06-19 — Phase 2a-3 Testing Results + New Delivery Model Discussion
+
+### Phase: 2a-3 Testing (completed) → New Delivery Model Design (discussed)
+
+### Summary
+- **Tests 1-7: all passed** — deliver page 3000 items, numeric survey_id sort, checkbox multi-select, multi-UC persistence, selection order = delivery sequence, move-to-position, assign selected flow
+- **Test 8: FAILED** — range-based "Assign" also gets auto-generated batch name (`Sargodha-B1`). Should get `name = null`.
+- **Tests 9-12**: not yet run (batch auto-increment, route-switch warning dialog, refresh button, daily target display)
+- **New delivery model discussed** — multi-staff same-MC assignment with QR-scan-first delivery flow (see MASTER.md Section 28)
+
+### Test Results Detail
+
+| Test | Description | Status | Notes |
+|------|-------------|--------|-------|
+| 1 | Deliver page loads 3000 items | ✅ Passed | chunkSize=300 fix works. No 500 error, no IndexedDB crash |
+| 2 | Numeric sort on survey_id | ✅ Passed | MC-10000 before MC-9999 |
+| 3 | Checkbox multi-select | ✅ Passed | 8 selected across pages, persisted navigation |
+| 4 | Multi-UC persistence | ✅ Passed | Silent clear on UC switch, no warning dialog |
+| 5 | Selection order = delivery seq | ✅ Passed | Check order C→A→B → deliver shows C first |
+| 6 | Move-to-position input | ✅ Passed | Positions renumber correctly, no duplicates |
+| 7 | Assign Selected flow | ✅ Passed | Batch `Sargodha-B1` created, 10 items assigned, success toast |
+| 8 | Range-based Assign | ❌ Failed | Range-based also gets batch name. Fix: wrap auto-name with `if (routeSeqMap)` |
+| 9 | Batch names auto-increment | ⏳ Not tested | — |
+| 10 | Warning dialog on route switch | ⏳ Not tested | — |
+| 11 | Refresh button | ⏳ Not tested | — |
+| 12 | Daily target display | ⏳ Not tested | — |
+
+### Test 8 Root Cause & Fix
+`assignment-repository.ts` auto-generates batch name unconditionally after staff validation. The auto-name block runs for both checkbox and range-based paths. Fix: wrap the auto-name block with `if (routeSeqMap)` — range-based assign doesn't pass a `routeSeqMap`, so it skips naming.
+
+### New Delivery Model (Priority — Next Session)
+
+**Core idea:** Multiple staff assigned to the same full MC. Staff scan QR codes on physical bills to start delivery, building their own sequence naturally.
+
+**Key changes from current:**
+1. **Assignment:** Admin picks an MC → selects multiple staff → clicks "Assign MC to All" → each staff gets the same full MC
+2. **Delivery start:** Staff scans QR code on physical bill → UDS opens → marks delivered → this sets their "My Position" point
+3. **"My Position" tab:** After first delivery, a new view/tab appears showing survey_ids in descending order from the delivered point forward
+4. **No conflict:** Each staff has their own `assignment_id` with the same PSIDs. No duplicate delivery issue (separate physical bills)
+5. **Next month's printed bills** sorted per-staff based on actual delivery order
+
+**Open questions (to resolve next session):**
+1. "My Position" tab — two tabs ("All" + "My Position") or single view switch?
+2. Does "My Position" update if staff delivers a *higher* survey_id later?
+3. route_seq collision OK since each staff has unique `assignment_id`?
+4. Admin /map view — show "Pending (3 staff)" or "Pending" until someone delivers?
+5. Assignment creation UI — staff multi-select step or sequential single-staff assign?
+
+### Remaining Test Sequence (Blocked by Test 8 Fix)
+
+1. **Fix:** Test 8 — wrap auto-name block with `if (routeSeqMap)` in assignment-repository.ts
+2. **Retest:** Test 8 (range-based name = null)
+3. **Tests 9-12:**
+   - Test 9: Batch names auto-increment per city
+   - Test 10: Warning dialog on route switch (Routes tab only)
+   - Test 11: Refresh button in Manage tab
+   - Test 12: Daily target display in Manage tab
+4. **Photo upload tests (T1-T10):** Full photo capture, upload, offline queue, retry, supersede
+5. **Live Monitoring Phase 2:** Staff positions (GPS reporting from phone, blue dots on admin map)
+
+### Remaining Phases Workflow (Reference — for study)
+
+**Priority-ordered remaining work (see PHASES.md for details):**
+
+| Priority | Phase | Est. | Description |
+|----------|-------|------|-------------|
+| **P0** | **New Delivery Model** | ~8 hrs | Multi-staff same-MC, QR-first flow, "My Position" tab, assignment UI changes |
+| P1 | **G — Live Monitoring Phase 2** | ~2 hrs | staff_locations table, POST/GET location, 60s reporter, blue dots |
+| P2 | **C — Admin Dashboard remaining** | ~1 hr | Staff performance notes/ratings, Data Insight delivery KPIs |
+| P3 | **D — Visual Rehaul remaining** | ~1 hr | Staff route guard, desktop sidebar persistence, theme expansion |
+| P4 | **E — Flag Management remaining** | ~3 hrs | `/flagged-units` page with resolve/confirm/note |
+| P5 | **M2 — Show All + Counts remaining** | ~1.5 hrs | Marker clustering, UC count badges, cluster toggle |
+| P6 | **M1 — Map Unification** | ~30 min | Staff sees survey data overlay alongside assignment items |
+| P7 | **M3 — JSON Marker Chunks** | ~1.5 hrs | Per-UC JSON files for map markers (egress optimization) |
+| P8 | **F — Auto-Route Generation** | ~3 hrs | Consensus route from delivery history, drag-reorder UI |
+| P9 | **RBAC — Approval Chain** | ~3 hrs | Assignment draft→pending→approved→active workflow |
+| P10 | **0f — Schema Restructuring** | ~6 hrs | house_corrections table, delivery tables, legacy archive |
+| P11 | **0d/0e — Stabilize & Clean** | ~3.5 hrs | Reference tables, payment filter pagination, fix billing-stats |
+| P12 | **Audit P1-P3 — Production Hardening** | ~12 hrs | Egress fixes, auth guards, Zod validation on all routes |
+| P13 | **Phase Z — Deep Cleanup** | ~4 hrs | Query keys, staleTimes, render perf, dead code |
+
+**Pipeline/Infra remaining:**
+- A1: Deploy Office PC pipeline (1 hr)
+- A2: Pipeline wrappers P.1-P.3 (~4 hrs)
+- A3: App-Controlled Pipeline API (future)
+- A4: Update bill-extractor-v4.py with city/tehsil (30 min)
+- A5: Import print mapping JSON to DB (1 hr)
+- A6: HDS bill print metadata (1 hr)
+- B1: Add `updated_at` to payment_history (5 min)
+- C1: Fix `/api/log` error swallowing (10 min)
+
+**Unapplied migrations (3):**
+- 036: Test MC data (not applied)
+- 037: Notifications schema (not applied)
+- 038: Unsent mode setting (not applied)
+
+---
+
+
   routingstation.py (46 KB) ΓÇö Daily survey/payment injection into old Supabase
   migrate_to_supabase.py (23 KB) ΓÇö Historical bulk migration engine (old project ref)
   migrate_life_cycle.py (10 KB) ΓÇö Alternative single-month migration (old project ref)

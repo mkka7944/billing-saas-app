@@ -1,43 +1,36 @@
 {
-  "lastSession": "2026-06-18 (home) — Phase 2a-3 completed",
-  "currentPhase": "Phase 2a (Create Tab Redesign) + Phase 2b (Batch Naming) + Phase 3 (Manage Upgrades)",
-  "currentStep": "All phases complete. Testing in progress — Test 1 (deliver 1000-row fix) encountered 500 error, chunk-size reduced from 800→300, now need user to verify.",
+  "lastSession": "2026-06-19 — Phase 2a-3 testing (Tests 1-7 passed, Test 8 failed) + New delivery model discussion",
+  "currentPhase": "Phase 2a-3 testing completion → NEW: Delivery Model Revamp (multi-staff same-MC, QR-first)",
+  "currentStep": "Testing done for now. Test 8 (range-based assign batch name) needs fix. New delivery model discussed and set as P0 priority for next session.",
   "phaseProgress": {
     "2a": "done",
     "2b": "done",
     "3": "done",
     "4": "deferred",
-    "5": "deferred"
+    "5": "deferred",
+    "newDeliveryModel": "discussed"
   },
   "filesModified": [
-    "src/lib/repositories/assignment-repository.ts",
-    "src/hooks/use-assignments.ts",
-    "src/components/assignments/uc-detail-panel.tsx",
-    "src/components/assignments/create-assignment-tab.tsx",
-    "src/components/assignments/routes-tab.tsx",
-    "src/components/assignments/manage-assignments-tab.tsx",
-    "src/lib/offline-cache.ts",
-    "src/app/api/assignments/refresh/route.ts",
     "docs/SESSION.md",
     ".opencode/context.json"
   ],
   "keyDecisions": [
     "Phase 4 (Staff batch header) and Phase 5 (Supervisor roles) deferred — implement after core workflow stable.",
-    "Deliver page 1000-row fix: use fetchAllRows() for assignment_items, chunked fetchAllRows() for survey_units (chunkSize=300 to avoid URL length limits).",
-    "getAssignmentList (Manage tab counts) also had 1000-row limit on assignment_items — fixed with fetchAllRows().",
-    "createAssignment had 1000-row limit when assigning >1000 items — fixed with chunked fetchAllRows().",
-    "IndexedDB offline_cache store missing error fixed by bumping DB_VERSION 5→6.",
-    "getStaffAssignment survey_units chunk size reduced from 800→300 to avoid PostgREST URL length limits (~16K URL at 800 PSIDs).",
-    "createAssignment also same chunk fix (was using Supabase JS client .in() which truncates at 1000 rows).",
-    "Pagination checkboxes persistent across UC switches in Create tab. Warning dialogs only in Routes tab (via key prop force-remount)."
+    "New Delivery Model (P0): Multiple staff assigned to same full MC. QR-scan-first delivery. 'My Position' tab shows descending from delivered point. Each staff builds own sequence naturally.",
+    "Test 8 failure root cause: auto-name block runs unconditionally. Fix: wrap with `if (routeSeqMap)` so range-based assign gets name=null.",
+    "route_seq collision per-staff is acceptable since each staff has unique assignment_id.",
+    "survey_id is the primary identifier for browsing/billing; psid is for delivery/payment/assignment."
   ],
   "nextActions": [
-    "HIGH — Morning: Start with Test 1 (deliver page 500 fix with chunkSize=300), proceed through Tests 2-12 per checklist in SESSION.md",
-    "HIGH — Log bugs found in Scratchpad, fix them",
+    "P0 — Fix Test 8: wrap auto-name block with `if (routeSeqMap)` in assignment-repository.ts",
+    "P0 — Design and implement New Delivery Model (multi-staff same-MC, QR-first, 'My Position' tab)",
+    "P1 — Complete remaining tests 9-12, photo upload T1-T10",
+    "P2 — Live Monitoring Phase 2 (staff_locations table, GPS reporter, blue dots)",
     "Deferred: Phase 4 (Staff deliver batch header), Phase 5 (Supervisor role gates)"
   ],
-  "testingChecklist": "See docs/SESSION.md — Testing Checklist section (12 tests in Blocks A-D with checkboxes, scratchpad table for bugs)",
+  "testingChecklist": "See docs/SESSION.md — 12 tests. Tests 1-7 passed, Test 8 failed (pending fix), Tests 9-12 not run. Then photo upload T1-T10, Live Monitoring Phase 2.",
   "blockers": [
-    "Test 1: deliver page API returned 500 on first attempt. Chunk-size 800→300 fix applied, awaiting user verification."
+    "Test 8: range-based assign gets auto-generated batch name. Fix: wrap auto-name in `if (routeSeqMap)` in assignment-repository.ts",
+    "New Delivery Model: needs detailed design approval before implementation (open questions about 'My Position' UX, admin map display, assignment UI)"
   ]
 }

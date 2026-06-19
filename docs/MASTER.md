@@ -2797,6 +2797,49 @@ The current app is **not architecturally wrong** for low-end devices. It was mis
 The old app wins on **raw rendering speed** and **offline capability**. The current app wins on **delivery enforcement, data integrity, admin oversight, and security**. The rendering gap is closed with two lines of config.
 
 
+## 28. New Delivery Model — Multi-Staff Same-MC (Proposed 2026-06-19)
+
+### 28.1 The Problem
+Current assignment model: admin splits an MC into ranges per staff. Staff must follow a pre-set sequence. This doesn't match field reality — staff arrange physical bills in their own walking order.
+
+### 28.2 The Proposal
+1. **Multiple staff assigned to one full MC** — Each staff gets ALL units of the MC. Each has their own `assignment_id` with the same PSIDs. No conflict because each physical bill belongs to one staff only.
+2. **QR-scan-first delivery** — Staff scans QR code on their physical bill → UDS opens → marks delivered. No more scrolling through a list to find the right unit.
+3. **"My Position" tab** — After first delivery, a new view appears showing survey_ids in descending order from the delivered point. Staff scrolls naturally from where they left off.
+4. **No pre-set sequence** — Each staff builds their own delivery order naturally. Next month's printed bills sorted per-staff based on this month's actual delivery order.
+
+### 28.3 Assignment Creation
+Admin picks an MC → selects multiple staff → sets daily target → clicks "Assign MC to All". Each staff gets the same full MC. Current checkbox/range assign UI preserved as alternative.
+
+### 28.4 Open Questions (Resolve Before Implementation)
+1. "My Position" tab: two tabs ("All" + "My Position") or does main view switch entirely?
+2. If staff delivers a *higher* survey_id later, does "My Position" update to start from new highest?
+3. Admin /map marker view: show "Pending (3 staff assigned)" or just "Pending" until someone delivers?
+4. Does a delivery by one staff auto-resolve other staff's assignment_items for that PSID?
+
+
+## 19. Assignment Order Rule
+
+### 19.1 Rule
+`sUrvey_units.route_seq` is a **printing and routing field only** (from lifecycle files). It defines the order bills are printed and which route a unit belongs to. It must NEVER be used as the assignment sequence for staff delivery.
+
+### 19.2 Source of truth for staff assignment order
+The **Create tab display order** (`survey_id` descending) is the only valid sequence. When an assignment is created:
+- **Checkbox "Assign Selected"**: Items are numbered 1, 2, 3...n in the order they were checked (selection order = delivery sequence).
+- **Range-based "Assign"**: Items are numbered 1, 2, 3...n in the order they appeared in the Create tab table.
+
+### 19.3 Implementation
+In `assignment-repository.ts:355`:
+```ts
+route_seq: routeSeqMap?.[psid] ?? (psids.indexOf(psid) + 1),
+```
+The fallback `psids.indexOf(psid) + 1` uses the PSID position in the `psids` array (which arrives in Create tab display order). The old fallback `seqMap.get(psid) ?? 0` was removed because it copied `survey_units.route_seq` (the printing/routing value).
+
+### 19.4 Deliver page display
+- Flat paginated list (50 per page), sorted by `route_seq` ascending
+- No UC grouping — UC name is shown per item in the address line
+- Pagination controls at the bottom (Previous/Next with range display)
+
 ---
 ## Session History
 All development session logs have been moved to `docs/SESSION.md`.

@@ -7,7 +7,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Select, SelectTrigger, SelectContent, SelectItem } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
 
 interface Props {
   uc: string
@@ -27,6 +28,7 @@ function parseRange(input: string, max: number): [number, number] | null {
 }
 
 export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }: Props) {
+  const { toast } = useToast()
   const month = currentMonth()
   const { data, isLoading } = useUnassignedBills(uc, month, routeName)
   const { data: staffList } = useStaffList()
@@ -97,6 +99,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
       setSelectedStaff('')
       setRangeInput('')
       onCreated()
+      toast(`Assigned ${psids.length} bills`, 'success')
     } catch {
       // error handled by mutation
     }
@@ -123,6 +126,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
       setSelectedStaff('')
       setSelectedOrder([])
       onCreated()
+      toast(`Assigned ${psids.length} selected bills`, 'success')
     } catch {
       // error handled by mutation
     }
@@ -150,7 +154,13 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
         <h3 className="text-sm font-semibold text-foreground">{routeName ? `${uc} / ${routeName}` : uc}</h3>
         <div className="flex items-center gap-3">
           {selectedCount > 0 && (
-            <span className="text-xs font-medium text-blue-600">{selectedCount} selected</span>
+            <>
+              <button
+                onClick={() => setSelectedOrder([])}
+                className="p-1 rounded border border-red-200 hover:bg-red-50 transition-colors"
+              ><X className="size-3 text-red-500" /></button>
+              <span className="text-xs font-medium text-blue-600">{selectedCount} selected</span>
+            </>
           )}
           <span className="text-xs text-muted-foreground">{total.toLocaleString()} unassigned bills</span>
         </div>
@@ -172,7 +182,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
                   <TableHead className="text-xs font-semibold max-md:hidden">Surveyor</TableHead>
                   <TableHead className="text-xs font-semibold max-md:hidden">Date</TableHead>
                   <TableHead className="text-xs font-semibold max-md:hidden">Time</TableHead>
-                  <TableHead className="text-xs font-semibold text-right w-14">Seq</TableHead>
+                  <TableHead className="text-xs font-semibold text-right w-16">Delivery #</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -194,7 +204,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
                     <TableCell className="text-sm max-md:hidden text-muted-foreground truncate max-w-[100px]">{b.surveyor_name || '—'}</TableCell>
                     <TableCell className="text-sm max-md:hidden text-muted-foreground">{b.survey_date || '—'}</TableCell>
                     <TableCell className="text-sm max-md:hidden text-muted-foreground">{b.survey_time || '—'}</TableCell>
-                    <TableCell className="text-sm text-right font-mono text-muted-foreground">
+                    <TableCell className="text-sm text-right font-mono">
                       {selectedSet.has(b.survey_id) ? (
                         <input
                           type="number"
@@ -218,7 +228,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                        b.route_seq ?? '—'
+                        <span className="text-muted-foreground/50">{page * PAGE_SIZE + i + 1}</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -229,6 +239,11 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
 
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 py-2 border-t border-border">
+              <button
+                onClick={() => setPage(0)}
+                disabled={page === 0}
+                className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
+              ><ChevronsLeft className="size-4" /></button>
               <button
                 onClick={() => setPage(Math.max(0, page - 1))}
                 disabled={page === 0}
@@ -242,6 +257,11 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
                 disabled={page >= totalPages - 1}
                 className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
               ><ChevronRight className="size-4" /></button>
+              <button
+                onClick={() => setPage(totalPages - 1)}
+                disabled={page >= totalPages - 1}
+                className="p-1 rounded hover:bg-muted disabled:opacity-30 transition-colors"
+              ><ChevronsRight className="size-4" /></button>
             </div>
           )}
         </CardContent>

@@ -121,6 +121,7 @@ export interface AssignmentItem {
   survey_id: string | null
   route_seq: number
   status: 'pending' | 'processing' | 'delivered' | 'missed' | 'skipped'
+  started_at: string | null
   delivered_at: string | null
   gps_lat: number | null
   gps_lng: number | null

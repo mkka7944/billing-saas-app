@@ -26,7 +26,7 @@ async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
 }
 
 const ASSIGNMENT_COLS = 'id, staff_id, issued_at, uc_name, uc_names, name, target_per_day, total_items, bill_month, created_by, created_at'
-const ITEM_COLS = 'id, assignment_id, psid, survey_id, route_seq, status, delivered_at, gps_lat, gps_lng, notes'
+const ITEM_COLS = 'id, assignment_id, psid, survey_id, route_seq, status, started_at, delivered_at, gps_lat, gps_lng, notes'
 const PSID_COLS = 'survey_id, consumer_name, address, lat, lng, psid, monthly_fee, arrears, route_seq, route_name, surveyor_name, survey_date, survey_time'
 
 export interface AssignmentQuery {
@@ -315,7 +315,6 @@ export async function createAssignment(
   }
 
   const ucNames = [...new Set(unitRows.map((u) => u.uc_name).filter(Boolean) as string[])]
-  const seqMap = new Map(unitRows.map((u) => [u.psid, u.route_seq || 0]))
   const surveyIdMap = new Map(unitRows.map((u) => [u.psid, u.survey_id]))
 
   // Auto-generate batch name: {City}-B{seq}
@@ -352,7 +351,7 @@ export async function createAssignment(
     assignment_id: assignment.id,
     psid,
     survey_id: surveyIdMap.get(psid) || null,
-    route_seq: routeSeqMap?.[psid] ?? seqMap.get(psid) ?? 0,
+    route_seq: routeSeqMap?.[psid] ?? (psids.indexOf(psid) + 1),
   }))
 
   const { data: createdItems, error: ie } = await sup

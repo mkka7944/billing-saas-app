@@ -184,7 +184,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <DesktopFilterBar />
         </div>
 
-        <main className="flex-1 overflow-hidden relative z-0">
+        <main className="flex-1 overflow-hidden relative">
           {children}
         </main>
 
