@@ -46,6 +46,7 @@ export function CreateAssignmentTab() {
       <div className="flex-1 flex flex-col p-4 overflow-y-auto">
         {selectedUc ? (
           <UCDetailPanel
+            key={selectedUc}
             uc={selectedUc}
             city={selectedCity}
             onCreated={() => {

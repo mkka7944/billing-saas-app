@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, X } from 'lucide-react'
 
 interface Props {
   uc: string
@@ -38,6 +38,9 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
   const [page, setPage] = useState(0)
 
   const [selectedOrder, setSelectedOrder] = useState<string[]>([])
+  const [staffDropdownOpen, setStaffDropdownOpen] = useState(false)
+  const [assignProgress, setAssignProgress] = useState<{ current: number; total: number } | null>(null)
+
   useEffect(() => { setPage(0) }, [uc, routeName])
   useEffect(() => { onDirtyChange?.(selectedOrder.length > 0) }, [selectedOrder, onDirtyChange])
 
@@ -83,18 +86,18 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
     return map
   }, [bills])
 
-  const handleCreate = async () => {
-    if (!selectedStaffIds.length || !range) return
-    const psids = bills.slice(range[0], range[1] + 1).map((b) => b.psid).filter(Boolean) as string[]
-    if (!psids.length) return
+  const runMultiStaff = async (psids: string[], routeSeqMap?: Record<string, number>) => {
+    setAssignProgress({ current: 0, total: selectedStaffIds.length })
     let successCount = 0
-    for (const sid of selectedStaffIds) {
+    for (let i = 0; i < selectedStaffIds.length; i++) {
+      setAssignProgress({ current: i + 1, total: selectedStaffIds.length })
       try {
         await createAssignment.mutateAsync({
-          staff_id: sid,
+          staff_id: selectedStaffIds[i],
           uc_name: uc,
           psids,
           bill_month: month,
+          routeSeqMap,
           target_per_day: targetPerDay || undefined,
         })
         successCount++
@@ -102,6 +105,28 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
         // continue with next staff
       }
     }
+    setAssignProgress(null)
+    return successCount
+  }
+
+  const handleCreate = async () => {
+    if (!selectedStaffIds.length || !range) return
+    const psids = bills.slice(range[0], range[1] + 1).map((b) => b.psid).filter(Boolean) as string[]
+    if (!psids.length) return
+    const successCount = await runMultiStaff(psids)
+    if (successCount > 0) {
+      setSelectedStaffIds([])
+      setRangeInput('')
+      onCreated()
+      toast(`Assigned ${psids.length} bills to ${successCount} staff`, 'success')
+    }
+  }
+
+  const handleCreateFullMC = async () => {
+    if (!selectedStaffIds.length) return
+    const psids = bills.map((b) => b.psid).filter(Boolean) as string[]
+    if (!psids.length) return
+    const successCount = await runMultiStaff(psids)
     if (successCount > 0) {
       setSelectedStaffIds([])
       setRangeInput('')
@@ -119,22 +144,7 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
       const pid = surveyToPsid.get(sid)
       if (pid) routeSeqMap[pid] = idx + 1
     })
-    let successCount = 0
-    for (const sid of selectedStaffIds) {
-      try {
-        await createAssignment.mutateAsync({
-          staff_id: sid,
-          uc_name: uc,
-          psids,
-          bill_month: month,
-          routeSeqMap,
-          target_per_day: targetPerDay || undefined,
-        })
-        successCount++
-      } catch {
-        // continue with next staff
-      }
-    }
+    const successCount = await runMultiStaff(psids, routeSeqMap)
     if (successCount > 0) {
       setSelectedStaffIds([])
       setSelectedOrder([])
@@ -142,6 +152,11 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
       toast(`Assigned ${psids.length} bills to ${successCount} staff`, 'success')
     }
   }
+
+  const isWorking = assignProgress !== null
+  const progressLabel = isWorking && assignProgress
+    ? `${assignProgress.current}/${assignProgress.total} staff`
+    : ''
 
   if (isLoading) {
     return (
@@ -278,73 +293,85 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
         </CardContent>
       </Card>
 
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 pt-3 border-t border-border bg-background">
-        <div className="flex-1 min-w-0">
-          <label className="block text-xs text-muted-foreground mb-1">
-            Assign to {selectedStaffIds.length > 0 && <span className="text-blue-500 font-medium">({selectedStaffIds.length} staff)</span>}
-          </label>
-          <div className="max-h-32 overflow-y-auto border border-border rounded-md p-1.5 space-y-0.5 scrollbar-none">
-            {filteredStaff.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-2">No staff available for this city</p>
-            )}
-            {filteredStaff.map((s) => (
-              <label
-                key={s.id}
-                className="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent cursor-pointer text-xs"
-              >
-                <Checkbox
-                  checked={selectedStaffIds.includes(s.id)}
-                  onCheckedChange={() => {
-                    setSelectedStaffIds((prev) =>
-                      prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id]
-                    )
-                  }}
-                />
-                <span className="truncate">{s.full_name}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-        <div className="w-20">
-          <label className="block text-xs text-muted-foreground mb-1">Daily target</label>
-          <input
-            type="number"
-            min={0}
-            value={targetPerDay}
-            onChange={(e) => setTargetPerDay(Math.max(0, parseInt(e.target.value) || 0))}
-            placeholder="0"
-            className="w-full h-8 px-2 text-sm rounded-md border border-input bg-background font-mono"
-          />
-        </div>
-        <div className="w-full sm:w-44">
-          <label className="block text-xs text-muted-foreground mb-1">
-            Range {rangeCount > 0 && <span className="text-blue-500 font-medium">({rangeCount} selected)</span>}
-          </label>
-          <input
-            value={rangeInput}
-            onChange={(e) => setRangeInput(e.target.value)}
-            placeholder="e.g. 1–200"
-            className="w-full h-8 px-2 text-sm rounded-md border border-input bg-background font-mono"
-          />
-        </div>
-        <div className="flex gap-2">
-          {selectedCount > 0 && (
-            <button
-              onClick={handleCreateFromSelection}
-              disabled={!selectedStaffIds.length || createAssignment.isPending}
-              className="h-8 px-4 rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {createAssignment.isPending ? 'Creating...' : `Assign Selected (${selectedCount})`}
-            </button>
-          )}
+      <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-border bg-background">
+        <div className="relative">
           <button
-            onClick={handleCreate}
-            disabled={!selectedStaffIds.length || !range || createAssignment.isPending}
-            className="h-8 px-4 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            onClick={() => setStaffDropdownOpen((v) => !v)}
+            onBlur={() => setTimeout(() => setStaffDropdownOpen(false), 200)}
+            className="h-8 px-2.5 text-xs font-medium rounded-md border border-input bg-background hover:bg-accent transition-colors flex items-center gap-1"
           >
-            {createAssignment.isPending ? 'Creating...' : 'Assign'}
+            Staff
+            {selectedStaffIds.length > 0 && <span className="text-blue-500">({selectedStaffIds.length})</span>}
+            <ChevronDown className="size-3 opacity-50" />
           </button>
+          {staffDropdownOpen && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 border rounded-lg bg-popover shadow-xl max-h-48 overflow-y-auto z-30 min-w-[180px] p-1.5">
+              {filteredStaff.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-2">No staff</p>
+              )}
+              {filteredStaff.map((s) => (
+                <label
+                  key={s.id}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer text-xs"
+                >
+                  <Checkbox
+                    checked={selectedStaffIds.includes(s.id)}
+                    onCheckedChange={() => {
+                      setSelectedStaffIds((prev) =>
+                        prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id]
+                      )
+                    }}
+                  />
+                  <span className="truncate">{s.full_name}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
+
+        <input
+          value={rangeInput}
+          onChange={(e) => setRangeInput(e.target.value)}
+          placeholder="1–200"
+          className="h-8 w-20 px-2 text-xs rounded-md border border-input bg-background font-mono"
+          title={rangeCount > 0 ? `${rangeCount} selected` : 'Range e.g. 1–200'}
+        />
+
+        <input
+          type="number"
+          min={0}
+          value={targetPerDay}
+          onChange={(e) => setTargetPerDay(Math.max(0, parseInt(e.target.value) || 0))}
+          placeholder="daily"
+          className="h-8 w-16 px-2 text-xs rounded-md border border-input bg-background font-mono"
+          title="Daily target"
+        />
+
+        {selectedCount > 0 && (
+          <button
+            onClick={handleCreateFromSelection}
+            disabled={!selectedStaffIds.length || isWorking}
+            className="h-8 px-3 rounded-md text-xs font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+          >
+            {progressLabel || `Selected (${selectedCount})`}
+          </button>
+        )}
+
+        <button
+          onClick={handleCreateFullMC}
+          disabled={!selectedStaffIds.length || isWorking}
+          className="h-8 px-3 rounded-md text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+        >
+          {progressLabel || 'Full MC'}
+        </button>
+
+        <button
+          onClick={handleCreate}
+          disabled={!selectedStaffIds.length || !range || isWorking}
+          className="h-8 px-3 rounded-md text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+        >
+          {progressLabel || 'Assign'}
+        </button>
       </div>
 
       {createAssignment.isError && (

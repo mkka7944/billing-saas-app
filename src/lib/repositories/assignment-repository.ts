@@ -65,13 +65,13 @@ export async function getUcTotals(sup: SupabaseClient, q: AssignmentQuery) {
     type TA = { id: string; uc_name: string }
     const taRows = allAssignments as TA[]
     const ucFromId = new Map(taRows.map((a) => [a.id, a.uc_name]))
-    type AI = { assignment_id: string }
-    const { data: items } = await sup
-      .from('assignment_items')
-      .select('assignment_id')
-      .in('assignment_id', taRows.map((a) => a.id))
+    const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const ids = taRows.map((a) => a.id)
+    const filter = `assignment_id=in.(${ids.join(',')})`
+    const url = `${supUrl}/rest/v1/assignment_items?select=assignment_id&${filter}`
+    const items = await fetchAllRows(url)
 
-    for (const item of (items as AI[]) || []) {
+    for (const item of (items || []) as { assignment_id: string }[]) {
       const uc = ucFromId.get(item.assignment_id)
       if (uc && counts.has(uc)) counts.get(uc)!.assigned++
     }
@@ -171,11 +171,11 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
   const existingIds = ((existingAssignments || []) as ExDA[]).map((a) => a.id)
   const excludePsids = new Set<string>()
   if (existingIds.length) {
-    const { data: existingItems } = await sup
-      .from('assignment_items')
-      .select('psid')
-      .in('assignment_id', existingIds)
-    for (const e of existingItems || []) excludePsids.add(e.psid)
+    const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const filter = `assignment_id=in.(${existingIds.join(',')})`
+    const url = `${supUrl}/rest/v1/assignment_items?select=psid&${filter}`
+    const existingItems = await fetchAllRows(url)
+    for (const e of (existingItems || []) as { psid: string }[]) excludePsids.add(e.psid)
   }
 
   const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!

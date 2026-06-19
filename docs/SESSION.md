@@ -3990,3 +3990,60 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - `npx tsc --noEmit` — clean, zero errors
 - `git push` — main updated
 
+---
+
+## 2026-06-19 (continued) — UI Fixes: 1000-row Bugs, Popover Staff, Progress, Single-Row Toolbar
+
+### Phase: Bug fixes + toolbar redesign
+
+### What
+- Fixed two more 1000-row bugs in `assignment-repository.ts` (`getUcTotals` line 69-72, `getUnassignedBills` line 174-178) using `fetchAllRows()` PostgREST batched pattern
+- Replaced scrollable staff checkbox list with a popover-style dropdown (button + absolute div, same pattern as UC dropdown in deliver page)
+- Added `assignProgress` state with progress text on active buttons ("1/3 staff", "2/3 staff")
+- Redesigned bottom toolbar to a single compact row: `[Staff▼(N)] [1-200] [daily] [Selected(N)] [Full MC] [Assign]`
+- Added "Assign Full MC" button — assigns ALL unassigned bills in one click (auto-ranges to total)
+- All three buttons (Selected / Full MC / Assign) show progress text during multi-staff loop
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/lib/repositories/assignment-repository.ts` | Fix 1000-row truncation in getUcTotals + getUnassignedBills |
+| `src/components/assignments/uc-detail-panel.tsx` | Popover staff picker, single-row toolbar, progress indicator, Assign Full MC button |
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors
+
+### Next
+- Test all in browser (counts, toolbar, staff popover, progress, Assign Full MC, My Position tab, QR scan)
+
+---
+
+## 2026-06-19 (late) — MC List Performance + Egress Fix: GROUP BY + total_items
+
+### Phase: Performance — MC list counts
+
+### What
+- Rewrote `GET /api/uc-stats` to fetch just `uc_name` column from survey_units via parallel batched PostgREST fetches, count per UC in JS
+- **Assigned per UC**: sum `daily_assignments.total_items` (stored at creation time) per UC, capped at `total` to prevent cross-city same-name-UC collisions
+- Replaced `fetchAllRows` (sequential) with `fetchAllParallel` (HEAD for total count, then all pages in parallel) — cut response time from 42s to 12.6s on slow connection
+- Fixed `status=in.(null,ACTIVE)` bug (silently excluded ~160K null-status enriched units) — restored `or=(status.is.null,status.eq.ACTIVE)`
+- Fixed UI flash when switching MCs: added `key={selectedUc}` to `<UCDetailPanel>` so old data never shows
+
+### Pending (Option B — future)
+- Dedicated admin-only RPC for GROUP BY count (`SELECT uc_name, COUNT(*) ... GROUP BY uc_name`) — bypasses PostgREST's 1000-row limit and aggregate syntax limitations. Response would be ~2 KB in ~200ms. Allowed under AGENTS.md admin-only aggregate exception.
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `src/app/api/uc-stats/route.ts` | Parallel batched uc_name fetch + total_items for assigned (no hierarchy_summary, no GROUP BY, no assignment_items) |
+| `src/components/assignments/create-assignment-tab.tsx` | Added `key={selectedUc}` to prevent flash |
+| `src/components/assignments/uc-detail-panel.tsx` | Popover staff picker, single-row toolbar, progress indicator, Assign Full MC button |
+| `src/lib/repositories/assignment-repository.ts` | Fix 1000-row truncation in getUcTotals + getUnassignedBills |
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors
+
+### Next
+- **HIGH — Test all** in browser: MC list loads with correct counts, create table works, toolbar layout, staff popover, progress indicator, Assign Full MC, My Position tab, QR scan
+- **PENDING —** Create admin-only RPC for uc_name GROUP BY count (performance optimization ~200ms)
+

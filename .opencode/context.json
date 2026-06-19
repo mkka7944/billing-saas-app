@@ -1,12 +1,15 @@
 {
-  "lastSession": "2026-06-19 (evening) — 5 implementation steps completed",
-  "currentPhase": "Multi-staff delivery model (Steps 3-5 of 5 done)",
-  "currentStep": "All 5 steps complete: Test 8 fix, My Position tab, QR scanner fix, multi-staff picker, AGENTS.md update.",
+{
+  "lastSession": "2026-06-19 (final) — MC list fixed, toolbar redesign, 1000-row bugs",
+  "currentPhase": "All bug fixes and UI improvements complete",
+  "currentStep": "MC list loads with correct counts (parallel batched fetch), cross-city collision fixed, toolbar redesigned, 1000-row truncation fixed in 2 more places.",
   "phaseProgress": {
     "2a": "done",
     "2b": "done",
     "3": "done",
-    "multiStaffDelivery": "done — UI changes only, no schema/API changes",
+    "multiStaffDelivery": "done",
+    "bugFixes_toolbarRedesign": "done",
+    "mcListPerformance": "done — parallel batched uc_name fetch + total_items, no hierarchy_summary, no assignment_items",
     "4": "deferred",
     "5": "deferred"
   },
@@ -16,24 +19,24 @@
     "src/components/layout/AppShell.tsx",
     "src/components/delivery/qr-scanner-button.tsx",
     "src/components/assignments/uc-detail-panel.tsx",
+    "src/app/api/uc-stats/route.ts",
+    "src/components/assignments/create-assignment-tab.tsx",
     "AGENTS.md",
     "docs/SESSION.md",
     ".opencode/context.json"
   ],
   "keyDecisions": [
-    "survey_id is the app-wide primary key. No two staff can ever have the same survey_id (different physical bills).",
-    "My Position tab: single flat list (same as All), auto-scrolls to continuation serial#, highlights next bill with '→ Continue here'.",
-    "Continuation algorithm: walk delivered items by delivered_at ASC, find first gap where serial#+1 is undelivered — that's the continuation point.",
-    "My Position replaces All as default tab when deliveries exist. Filter pill order: My Position | All | Pending | Issues | Delivered.",
-    "Multi-staff picker: checkbox list replaces single dropdown. Loop over selected staff in UI — no backend/API changes needed.",
-    "QR scanner fallback: check both item.survey_id AND unit?.survey_id to handle old assignments with null item-level survey_id.",
-    "auto-name batch: only for checkbox-based (routeSeqMap present). Range-based gets name=null.",
-    "daily_assignments table name left unchanged — not worth schema migration hassle."
+    "MC list: parallel batched fetch of just uc_name column, count in JS. ~12.6s on slow connection, cached 5 min.",
+    "Assigned per UC: sum daily_assignments.total_items, cap at total. No assignment_items fetch needed.",
+    "status=NULL matching: must use or=(status.is.null,status.eq.ACTIVE) — in.(null,ACTIVE) silently excludes NULL values in SQL.",
+    "Flash-on-switch fix: key={selectedUc} on UCDetailPanel forces remount.",
+    "Option B (future): admin-only RPC for GROUP BY count (~200ms)."
   ],
   "nextActions": [
-    "HIGH — Test all 5 steps in browser (Test 8 fix, My Position, QR scan, multi-staff assign, AGENTS.md update)",
-    "Pending — Remaining Phase 2a-3 tests 9-12 (batch auto-increment, route-switch warning, refresh button, daily target display)",
-    "Deferred — Staff batch header (Phase 4), Supervisor roles (Phase 5), Photo upload tests T1-T10"
+    "HIGH — Tomorrow office: test all in browser (MC list counts, create table, toolbar, staff popover, progress, Full MC, My Position, QR scan)",
+    "PENDING — Create admin-only RPC for uc_name GROUP BY count (SQL migration + API route update)",
+    "Deferred — Phase 4 (staff batch header), Phase 5 (supervisor roles)",
+    "Deferred — Remaining tests 9-12 (batch auto-increment, route-switch warning, refresh button, daily target display)"
   ],
-  "testingChecklist": "See docs/SESSION.md — Steps 1-5 verification instructions documented per step."
+  "testingChecklist": "Test all in browser at office with fast connection."
 }
