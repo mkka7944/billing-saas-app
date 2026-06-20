@@ -131,6 +131,21 @@ export default function DeliverPage() {
   // Find continuation serial#: first gap in consecutive delivered sequence (by delivery time)
   const continuation = useMemo(() => {
     if (deliveredCount === 0) return 0
+
+    // My Position: continuation = first undelivered after the startSerial, skipping lower serials
+    if (filterTab === 'my-position') {
+      const deliveredOrdered = items
+        .filter((i) => i.status === 'delivered' && i.delivered_at)
+        .sort((a, b) => new Date(a.delivered_at!).getTime() - new Date(b.delivered_at!).getTime())
+      if (!deliveredOrdered.length) return 0
+      const startSerial = deliveredOrdered[0].route_seq || 0
+      const firstRemaining = items
+        .filter((i) => i.status !== 'delivered' && (i.route_seq || 0) >= startSerial)
+        .sort((a, b) => (a.route_seq || 0) - (b.route_seq || 0))[0]
+      return firstRemaining?.route_seq || 0
+    }
+
+    // Other tabs: find the first gap in consecutive delivered sequence by delivery time
     const deliveredOrdered = items
       .filter((i) => i.status === 'delivered' && i.delivered_at)
       .sort((a, b) => new Date(a.delivered_at!).getTime() - new Date(b.delivered_at!).getTime())
@@ -143,15 +158,45 @@ export default function DeliverPage() {
     }
     const maxD = Math.max(...deliveredOrdered.map((i) => i.route_seq || 0), 0)
     return maxD + 1
-  }, [items, deliveredCount])
+  }, [items, deliveredCount, filterTab])
+
+  // Filter items by tab + UC
+  const filtered = useMemo(() => {
+    let list = items
+    if (selectedUc !== 'all') list = list.filter((i) => (i.unit?.uc_name || 'Unknown') === selectedUc)
+    if (filterTab === 'my-position') return list
+    if (filterTab === 'pending') return list.filter((i) => i.status === 'pending')
+    if (filterTab === 'issues') return list.filter((i) => i.status === 'processing' || i.status === 'missed')
+    if (filterTab === 'delivered') return list.filter((i) => i.status === 'delivered')
+    return list
+  }, [items, filterTab, selectedUc])
+
+  // Sort with My Position custom sequence: delivered by time, then remaining by route_seq
+  const sorted = useMemo(() => {
+    if (filterTab === 'my-position') {
+      const delivered = items
+        .filter((i) => i.status === 'delivered' && i.delivered_at)
+        .sort((a, b) => new Date(a.delivered_at!).getTime() - new Date(b.delivered_at!).getTime())
+      if (!delivered.length) return []
+      const startSerial = delivered[0].route_seq || 0
+      const remaining = items
+        .filter((i) => i.status !== 'delivered' && (i.route_seq || 0) >= startSerial)
+        .sort((a, b) => (a.route_seq || 0) - (b.route_seq || 0))
+      return [...delivered, ...remaining]
+    }
+    return [...filtered].sort((a, b) => (a.route_seq || 0) - (b.route_seq || 0))
+  }, [filtered, filterTab, items])
 
   // Auto-scroll to continuation page when My Position tab is active
   useEffect(() => {
     if (filterTab === 'my-position' && continuation > 0) {
-      const targetPage = Math.max(0, Math.floor((continuation - 1) / PAGE_SIZE))
-      setPage(targetPage)
+      const idx = sorted.findIndex((i) => i.route_seq === continuation)
+      if (idx >= 0) setPage(Math.floor(idx / PAGE_SIZE))
     }
-  }, [filterTab, continuation])
+  }, [filterTab, continuation, sorted])
+
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
+  const pageItems = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const ucGroups = useMemo(() => {
     const groups: Record<string, { items: AssignmentItemWithUnit[]; pending: number; delivered: number; total: number }> = {}
@@ -173,20 +218,6 @@ export default function DeliverPage() {
     }
     return options
   }, [ucGroups])
-
-  const filtered = useMemo(() => {
-    let list = items
-    if (selectedUc !== 'all') list = list.filter((i) => (i.unit?.uc_name || 'Unknown') === selectedUc)
-    if (filterTab === 'my-position') return list
-    if (filterTab === 'pending') return list.filter((i) => i.status === 'pending')
-    if (filterTab === 'issues') return list.filter((i) => i.status === 'processing' || i.status === 'missed')
-    if (filterTab === 'delivered') return list.filter((i) => i.status === 'delivered')
-    return list
-  }, [items, filterTab, selectedUc])
-
-  const sorted = [...filtered].sort((a, b) => (a.route_seq || 0) - (b.route_seq || 0))
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
-  const pageItems = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const handleSelect = (id: string) => {
     const item = items.find((i) => i.id === id)
@@ -509,7 +540,7 @@ export default function DeliverPage() {
               <div className="flex items-center justify-between px-4 py-2 border-t bg-card shrink-0">
                 <button
                   onClick={() => setPage(Math.max(0, page - 1))}
-                  disabled={page === 0}
+                  disabled={page === 0 || filterTab === 'my-position'}
                   className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none py-1 cursor-pointer"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" /> Previous
