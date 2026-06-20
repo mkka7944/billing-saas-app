@@ -1,30 +1,33 @@
 {
-  "lastSession": "2026-06-20 — UDS Redesign Plan + Checkpoint Commit",
-  "currentPhase": "UDS Redesign — Planning Complete, Ready for Implementation",
-  "currentStep": "Full UDS redesign plan documented in MASTER.md Section 30. Key changes: GPS to top row, no-photo primary button, flag icon-only, single action row, thumbnail strip, gallery lightbox, swipe/success on outer container. Checkpoint committed.",
+  "lastSession": "2026-06-20 — UDS Redesign: Planning + Implementation (commit 6f650e9)",
+  "currentPhase": "UDS Redesign — Implementation Complete, Tweaks Pending",
+  "currentStep": "Full UDS redesign implemented and pushed. GPS top row, survey_id pill, no-photo Mark Delivery, flag icon-only, thumbnails, gallery lightbox, swipe/success on outer container. See MASTER.md Section 30.",
   "phaseProgress": {
     "UDSRedesignPlan": "done",
-    "UDSRedesignImpl": "not started"
+    "UDSRedesignImpl": "done",
+    "UDSTweaks": "pending"
   },
   "filesModified": [
+    "src/components/delivery/unit-delivery-sheet.tsx",
     "docs/MASTER.md",
     "docs/SESSION.md",
     ".opencode/context.json"
   ],
   "keyDecisions": [
-    "Gallery is UDS's own Lightbox instance (not shared with HDS)",
-    "Admin flag condition: assignmentItemId || isAdmin",
+    "Gallery is UDS's own Lightbox (unit.image_urls only, no cross-component coupling)",
     "No-photo mode: single 'Mark Delivery' button, no confirm dialog, no camera",
-    "Success overlay on outer container (covers full sheet including new elements)",
-    "Swipe handlers on outer container (works when hero image absent)"
+    "Survey ID gets pill bg + text-sm font-bold for visual priority",
+    "GPS colors bumped to -300 shades + drop-shadow-sm for contrast",
+    "handleNoPhotoMark replaces handleSkipPhoto (same mark logic, no confirm)",
+    "Admin flag condition: assignmentItemId || isAdmin"
   ],
   "nextActions": [
-    "P0 — Implement UDS redesign: GPS top row, info block (no amount), thumbnail strip, gallery lightbox, single action row, success overlay on outer container",
-    "P0 — Move swipe handlers to outer container",
-    "P0 — Change flag condition to include isAdmin",
-    "P0 — Verify no-photo flow (direct mark, no confirm dialog, no camera)",
+    "HOME — Fix z-index conflict for Flag and Force Complete confirm dialogs (z-50 vs z-[1001])",
+    "HOME — Verify GPS color readability against various hero image backgrounds",
+    "HOME — End-to-end no-photo flow test on mobile",
+    "HOME — Verify gallery Lightbox opens/closes correctly on slow devices",
     "PENDING — Create admin-only RPC for uc_name GROUP BY count"
   ],
-  "gitCheckpoint": "before UDS redesign — committed as checkpoint",
-  "testingChecklist": "UDS redesign: open UDS from staff deliver flow and admin map. Verify all states (photo mode, no-photo mode, already delivered, admin no-assignment). Verify swipe navigation. Verify success overlay covers all elements. Verify gallery lightbox opens on top of UDS. Verify admin can flag."
+  "gitCheckpoint": "b34039f — before UDS redesign",
+  "gitCurrentHead": "6f650e9 — UDS redesign implementation"
 }

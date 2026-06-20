@@ -3199,6 +3199,19 @@ Full visual redesign of `UnitDeliverySheet` (`src/components/delivery/unit-deliv
 - `survey-markers.tsx` / `staff-map-markers.tsx` — marker click flow unchanged
 - `handleFlag` / `handleForceComplete` callbacks — same logic, just different UI
 
+### Implementation Status
+
+**Done** — Commit `6f650e9` — 2026-06-20
+
+All changes implemented: GPS top row, survey_id pill background, brighter GPS colors (`text-green-300`, `h-2.5` dots, `drop-shadow-sm`), no-photo "Mark Delivery" button, flag icon-only in single action row, thumbnail strip, gallery lightbox, swipe/success on outer container, admin flag condition.
+
+### Remaining Tweaks (Home Session)
+
+- z-index conflict remains for Flag and Force Complete confirm dialogs (rare, but should fix)
+- Visual polish: verify GPS colors visible against varying hero image backgrounds
+- Verify no-photo flow end-to-end on mobile (single tap mark, auto-advance)
+- Verify gallery lightbox opens/closes correctly on slow devices
+
 ### Git Rollback
 
 Before implementation, checkpoint is committed:
@@ -3206,13 +3219,13 @@ Before implementation, checkpoint is committed:
 ```bash
 # View checkpoint hash
 git log --oneline -1
-# → abc1234 checkpoint: before UDS redesign
+# → b34039f checkpoint: before UDS redesign
 
 # Full hard reset (throw away redesign)
-git reset --hard abc1234
+git reset --hard b34039f
 
 # Soft reset (keep files as unstaged)
-git reset --soft abc1234
+git reset --soft b34039f
 ```
 
 ---

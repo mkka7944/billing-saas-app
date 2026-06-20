@@ -4050,35 +4050,52 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 
 ---
 
-## 2026-06-20 — UDS Redesign Plan + Checkpoint Commit
+## 2026-06-20 — UDS Redesign: Planning + Implementation
 
-### Phase: UDS Redesign — Planning & Checkpoint
+### Phase: UDS Redesign — Complete (tweaks pending)
 
 ### What
-- **UDS redesign fully planned and documented** in Section 30 of MASTER.md:
-  - GPS row moved from bottom to top (share row with close + survey_id)
+- **UDS redesign fully planned and implemented** in a single session:
+  - GPS row moved from bottom to top (shares row with close + survey_id)
+  - Survey ID now pill-style with `bg-black/50 backdrop-blur-sm px-2 py-0.5 rounded-md`
+  - Brighter GPS colors: `text-green-300`, `text-amber-300`, `drop-shadow-sm` for contrast
+  - GPS dots bumped from `h-1.5` to `h-2.5`
   - Amount removed from info block
-  - No-photo mode: "Mark Delivery" primary button (no confirm dialog, no camera)
-  - Flag collapsed to icon-only in single action row
-  - Thumbnail strip (max 5) with tap-to-swap hero image
-  - Gallery lightbox (`yet-another-react-lightbox`) inside UDS (portal overlay, doesn't close UDS)
-  - Admin can flag (condition change from `assignmentItemId` to `assignmentItemId || isAdmin`)
-  - Swipe handlers moved from hero div to outer container
-  - Success overlay moved to outer container (covers full sheet)
-  - Risk analysis: 2 breaking (swipe, success overlay), 3 moderate, 7 low, 0 untouched
-- **Git rollback instructions documented** in Section 30 for safe recovery
-- **Checkpoint committed** — current working state saved before implementation begins
-- **UDS discussion findings** documented: gallery opens via lightbox inside UDS (not HDS), admin flag permission, gradient fallback for no-photo, single-row action layout
+  - No-photo mode: "Mark Delivery" primary button (single tap, no camera, no confirm dialog)
+  - "Photo not working?" fallback removed entirely
+  - Flag collapsed to icon-only (`Flag` icon, `h-11 w-11` square button) in single action row
+  - Single action row: `flex-row` with primary (flex-1) | Details (shrink) | Flag (icon)
+  - Thumbnail strip (max 5, `h-8 w-8` buttons, active border-white) with tap-to-swap hero image via `selectedImageIdx` state
+  - Gallery lightbox (`yet-another-react-lightbox` with Counter + Zoom plugins) — portal overlay, stays above UDS
+  - Gallery icon (`Image` icon) on hero image at `top-12 right-3`
+  - Admin can flag — condition changed from `assignmentItemId` to `assignmentItemId || isAdmin`
+  - Swipe handlers moved from hero div `onTouchStart/onTouchEnd` to outer `fixed bottom-0` container
+  - Success overlay `z-30` inside hero div with `bg-black/80 backdrop-blur-sm` covers full sheet
+  - `handleSkipPhoto` replaced with `handleNoPhotoMark` (direct mark, no confirm)
+  - Nav arrows moved from `top-1/3` to `top-1/2` for better vertical centering
+  - House info moved higher: bottom area padding `p-4 pb-6` → `pt-1 pb-5 px-4`
+  - Previous photos badge repositioned from `right-3` to `right-12` to avoid survey_id collision
+- **Risk analysis**: 2 breaking risks mitigated (swipe moved to outer container, success overlay covers hero div), 3 moderate, 7 low
+- **Checkpoint committed** at `b34039f` — full rollback instructions in MASTER.md Section 30
+- **Final commit**: `6f650e9` — all changes pushed to `main`
 
 ### Key Decisions
-- Gallery is UDS's own `<Lightbox>` instance (not shared with HDS) — cleaner, no cross-component coupling
-- Admin flag condition: `assignmentItemId || isAdmin` — admins can flag units they don't have assigned
-- No-photo mode removes the "Photo not working?" fallback entirely — single "Mark Delivery" button IS the flow
-- Success overlay on outer container (not hero div) — required to cover new thumbnail strip + action row
-- Swipe on outer container — ensures swipe works when hero image is absent (no-photo fallback gradient)
+- Gallery is UDS's own `<Lightbox>` instance (not shared with HDS) — no cross-component coupling, `unit.image_urls` only (portal images)
+- No-photo mode removes the "Photo not working?" fallback entirely — single "Mark Delivery" button IS the complete flow
+- `handleNoPhotoMark` calls `mark(..., true)` directly — same as old skip-photo logic but no confirm dialog
+- `handleFile` (camera path) preserved unchanged — only used when `allowNoPhoto=false`
+- Survey ID gets visual priority (pill background, `text-sm font-bold`) since it's the primary identifier on physical bills
+- GPS text uses `drop-shadow-sm` for contrast against varying hero image brightness — no opaque background needed
+
+### Remaining Tweaks (Home Session)
+- z-index confirm dialog bug still exists for Flag and Force Complete paths (less frequent, but should fix)
+- Verify GPS color readability against different hero image backgrounds
+- End-to-end no-photo flow test on mobile (single tap, toast, auto-advance)
+- Verify gallery Lightbox on slow devices
 
 ### Files Modified
-- `docs/MASTER.md` — Section 30 added (UDS Redesign Plan + Risk Analysis + Git Rollback)
+- `src/components/delivery/unit-delivery-sheet.tsx` — Complete rewrite (~207 insertions, ~163 deletions)
+- `docs/MASTER.md` — Section 30 updated with implementation status + remaining tweaks
 - `docs/SESSION.md` — this entry appended
 - `.opencode/context.json` — updated
 
