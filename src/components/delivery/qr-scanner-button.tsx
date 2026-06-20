@@ -69,11 +69,13 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
             if (plainNum) surveyId = plainNum[1]
           }
           if (!surveyId) {
+            stopScanner()
             setError(`No survey ID found in QR: "${raw}"`)
             return
           }
           const matched = itemsRef.current.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
           if (!matched) {
+            stopScanner()
             setError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
             return
           }
@@ -141,12 +143,19 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
                 <p className="text-sm text-white/60 max-w-xs">
                   Point your camera at the QR code on the physical bill
                 </p>
-                <button
-                  onClick={startScanner}
-                  className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-semibold cursor-pointer min-h-[44px]"
-                >
-                  Start Camera
-                </button>
+                {items.length === 0 ? (
+                  <div className="flex items-center justify-center gap-2 text-white/60">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span className="text-sm">Loading assignment data...</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={startScanner}
+                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-semibold cursor-pointer min-h-[44px]"
+                  >
+                    Start Camera
+                  </button>
+                )}
               </div>
             )}
 

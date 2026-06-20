@@ -40,6 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   scanItemsRef.current = scanItems
   const [scanError, setScanError] = useState<string | null>(null)
   const [isScanning, setIsScanning] = useState(false)
+  const [scanLoading, setScanLoading] = useState(false)
   const [manualInput, setManualInput] = useState('')
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const mountedRef = useRef(true)
@@ -64,6 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     stopScanner()
     setShowScanner(false)
     setScanError(null)
+    setScanLoading(false)
     setManualInput('')
     setScanItems([])
   }, [stopScanner])
@@ -97,11 +99,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             if (plainNum) surveyId = plainNum[1]
           }
           if (!surveyId) {
+            stopScanner()
             setScanError(`No survey ID found in QR: "${raw}"`)
             return
           }
           const matched = scanItemsRef.current.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
           if (!matched) {
+            stopScanner()
             setScanError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
             return
           }
@@ -126,7 +130,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setShowScanner(true)
     setScanError(null)
     setIsScanning(false)
+    setScanLoading(true)
     setManualInput('')
+    setScanItems([])
     const user = useAuthStore.getState().user
     if (!user?.id) return
     try {
@@ -136,6 +142,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setScanItems(data.items || [])
     } catch {
       setScanError('Could not load assignment data')
+    } finally {
+      setScanLoading(false)
     }
   }, [])
 
@@ -277,12 +285,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <p className="text-sm text-white/60 max-w-xs">
                     Point your camera at the QR code on the physical bill
                   </p>
-                  <button
-                    onClick={startScanner}
-                    className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-semibold cursor-pointer min-h-[44px]"
-                  >
-                    Start Camera
-                  </button>
+                  {scanLoading ? (
+                    <div className="flex items-center justify-center gap-2 text-white/60">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span className="text-sm">Loading assignment data...</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={startScanner}
+                      className="px-8 py-3 bg-primary text-primary-foreground rounded-xl font-semibold cursor-pointer min-h-[44px]"
+                    >
+                      Start Camera
+                    </button>
+                  )}
                 </div>
               )}
 
