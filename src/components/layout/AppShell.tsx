@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
@@ -24,6 +25,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
   const { setSidebarOpen } = useBillingUIStore()
+
+  const queryClient = useQueryClient()
 
   // Auto-select assigned city for field staff on mount (skip if already set)
   useEffect(() => {
@@ -85,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {
           fps: 20,
           qrbox: (vw: number, vh: number) => {
-            const size = Math.floor(Math.min(vw, vh) * 0.7)
+            const size = Math.floor(Math.min(vw, vh) * 0.4)
             return { width: size, height: size }
           },
           aspectRatio: 1.777778,
@@ -129,7 +132,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           if (scannerRef.current) {
             await scannerRef.current.applyVideoConstraints({
               focusMode: 'continuous',
-              advanced: [{ zoom: 1.5 } as any],
+              advanced: [{ zoom: 3.0 } as any],
             } as MediaTrackConstraints)
           }
         } catch {}
@@ -152,10 +155,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const user = useAuthStore.getState().user
     if (!user?.id) return
     try {
-      const res = await fetch(`/api/assignments?staff_id=${user.id}`)
-      if (!res.ok) throw new Error('Failed to fetch')
-      const data = await res.json()
-      setScanItems(data.items || [])
+      // Read from React Query cache first (loaded by deliver/map page)
+      const cached = queryClient.getQueryData(['staff-assignment', user.id]) as { items?: AssignmentItemWithUnit[] } | undefined
+      if (cached?.items?.length) {
+        setScanItems(cached.items)
+      } else {
+        const res = await fetch(`/api/assignments?staff_id=${user.id}`)
+        if (!res.ok) throw new Error('Failed to fetch')
+        const data = await res.json()
+        setScanItems(data.items || [])
+      }
     } catch {
       setScanError('Could not load assignment data')
     } finally {
