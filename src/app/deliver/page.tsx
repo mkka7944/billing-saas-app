@@ -115,9 +115,10 @@ export default function DeliverPage() {
     setDeliveryStartTime(earliest)
   }, [items, setDeliveryStartTime])
 
-  const pendingCount = useMemo(() => items.filter((i) => i.status === 'pending').length, [items])
+  const pendingCount = useMemo(() => items.filter((i) => i.status === 'pending' && !i.deliveredByOther).length, [items])
   const issuesCount = useMemo(() => items.filter((i) => i.status === 'processing' || i.status === 'missed').length, [items])
   const deliveredCountPill = useMemo(() => items.filter((i) => i.status === 'delivered').length, [items])
+  const actionableCount = useMemo(() => items.filter((i) => !i.deliveredByOther).length, [items])
 
   // Initialize default tab after data loads
   useEffect(() => {
@@ -177,7 +178,7 @@ export default function DeliverPage() {
     let list = items
     if (selectedUc !== 'all') list = list.filter((i) => (i.unit?.uc_name || 'Unknown') === selectedUc)
     if (filterTab === 'my-position') return list
-    if (filterTab === 'pending') return list.filter((i) => i.status === 'pending' && !i.deliveredByOther)
+    if (filterTab === 'pending') return list.filter((i) => i.status === 'pending')
     if (filterTab === 'issues') return list.filter((i) => i.status === 'processing' || i.status === 'missed')
     if (filterTab === 'delivered') return list.filter((i) => i.status === 'delivered')
     return list
@@ -387,7 +388,7 @@ export default function DeliverPage() {
                     : 'text-muted-foreground hover:text-foreground border border-transparent'
                 )}
               >
-                All ({items.length})
+                All ({actionableCount})
               </button>
               <button
                 onClick={() => { setFilterTab('pending'); setPage(0) }}

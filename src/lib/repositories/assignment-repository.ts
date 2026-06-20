@@ -250,33 +250,35 @@ export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery
     units = []
   }
 
-  // Check for same PSIDs delivered today by other staff
+  // Check for same PSIDs delivered today by other staff (use service_role to bypass RLS)
   const staffOtherMap = new Map<string, string | null>()
   if (psids.length) {
     const { start, end } = pktDayRange()
-    const { data: todayDeliveries } = await sup
-      .from('assignment_items')
-      .select('psid, assignment_id, delivered_at')
-      .in('psid', psids)
-      .eq('status', 'delivered')
-      .gte('delivered_at', start)
-      .lte('delivered_at', end)
-    if (todayDeliveries?.length) {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+    const HEADERS = { apikey: svcKey, Authorization: `Bearer ${svcKey}` }
+    const todayDeliveries: any[] = []
+    // Chunk PSIDs at 300 to avoid URL length limit
+    const chunkSize = 300
+    for (let i = 0; i < psids.length; i += chunkSize) {
+      const chunk = psids.slice(i, i + chunkSize)
+      const url = `${supUrl}/rest/v1/assignment_items?select=psid,assignment_id,delivered_at&psid=in.(${chunk.join(',')})&status=eq.delivered&delivered_at=gte.${encodeURIComponent(start)}&delivered_at=lte.${encodeURIComponent(end)}`
+      const res = await fetch(url, { headers: HEADERS })
+      if (res.ok) {
+        todayDeliveries.push(...await res.json())
+      }
+    }
+    if (todayDeliveries.length) {
       const ownIds = new Set(assignmentIds)
       const otherItems = todayDeliveries.filter((d: any) => !ownIds.has(d.assignment_id))
       if (otherItems.length) {
         const otherAssIds = [...new Set(otherItems.map((d: any) => d.assignment_id))]
-        const { data: otherAssigns } = await sup
-          .from('daily_assignments')
-          .select('id, staff_id')
-          .in('id', otherAssIds)
-        const otherStaffIds = [...new Set((otherAssigns || []).map((a: any) => a.staff_id))]
-        const { data: otherStaff } = await sup
-          .from('staff')
-          .select('id, name')
-          .in('id', otherStaffIds)
-        const staffNameMap = new Map((otherStaff || []).map((s: any) => [s.id, s.name]))
-        const assignStaffMap = new Map((otherAssigns || []).map((a: any) => [a.id, a.staff_id]))
+        const assignsRes = await fetch(`${supUrl}/rest/v1/daily_assignments?select=id,staff_id&id=in.(${otherAssIds.join(',')})`, { headers: HEADERS })
+        const otherAssigns: any[] = assignsRes.ok ? await assignsRes.json() : []
+        const otherStaffIds = [...new Set(otherAssigns.map((a: any) => a.staff_id))]
+        const staffRes = await fetch(`${supUrl}/rest/v1/staff?select=id,full_name&id=in.(${otherStaffIds.join(',')})`, { headers: HEADERS })
+        const otherStaff: any[] = staffRes.ok ? await staffRes.json() : []
+        const staffNameMap = new Map(otherStaff.map((s: any) => [s.id, s.full_name]))
+        const assignStaffMap = new Map(otherAssigns.map((a: any) => [a.id, a.staff_id]))
         // For each PSID, keep only the most recent delivery
         const latestByPsid = new Map<string, string | null>()
         for (const o of otherItems) {
