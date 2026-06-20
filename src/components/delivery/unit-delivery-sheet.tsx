@@ -16,12 +16,8 @@ import { useConfirm } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { useUserLocation } from '@/hooks/use-user-location'
 import { haversine } from '@/lib/geo'
+import { useUdsTheme } from '@/hooks/use-uds-theme'
 import type { AssignmentItemUnit, AssignmentItemWithUnit } from '@/types'
-import Lightbox from 'yet-another-react-lightbox'
-import 'yet-another-react-lightbox/styles.css'
-import Counter from 'yet-another-react-lightbox/plugins/counter'
-import 'yet-another-react-lightbox/plugins/counter.css'
-import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 
 const TOAST_DURATION = 12000
 
@@ -54,7 +50,7 @@ export default function UnitDeliverySheet({
   const [deliveryDistance, setDeliveryDistance] = useState<number | null>(null)
   const [deliveryGpsLat, setDeliveryGpsLat] = useState<number | null>(null)
   const [deliveryGpsLng, setDeliveryGpsLng] = useState<number | null>(null)
-  const [forceCompleting, setForceCompleting] = useState(false)
+
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
   const [manualSync, setManualSync] = useState(false)
   const [inputCooldown, setInputCooldown] = useState(false)
@@ -83,6 +79,7 @@ export default function UnitDeliverySheet({
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
   const { toast, updateToast } = useToast()
   const confirm = useConfirm()
+  const { classes: t } = useUdsTheme()
 
   const deliveryLat = gpsLocation?.lat ?? initialLat ?? null
   const deliveryLng = gpsLocation?.lng ?? initialLng ?? null
@@ -91,6 +88,10 @@ export default function UnitDeliverySheet({
     if (!gpsLocation || !unit?.lat || !unit?.lng) return null
     return Math.round(haversine(gpsLocation.lat, gpsLocation.lng, unit.lat, unit.lng))
   }, [gpsLocation, unit?.lat, unit?.lng])
+  const gpsThreshold = useMemo(() => {
+    if (!appSettings?.gps_enforcement?.threshold) return 50
+    return typeof appSettings.gps_enforcement.threshold === 'number' ? appSettings.gps_enforcement.threshold : 50
+  }, [appSettings])
   const liveGpsStatus: 'idle' | 'locating' | 'ready' | 'unavailable' =
     !gpsLocation && !gpsError && !gpsIsTracking ? 'idle'
     : gpsIsTracking && !gpsLocation ? 'locating'
@@ -99,7 +100,6 @@ export default function UnitDeliverySheet({
 
   const heroImages = useMemo(() => (unit?.image_urls)?.filter(Boolean) || [], [unit?.image_urls])
   const displayImage = heroImages[selectedImageIdx] || null
-  const thumbnails = heroImages.slice(0, 5)
   const slides = heroImages.map((src) => ({ src }))
 
   useEffect(() => {
@@ -132,6 +132,23 @@ export default function UnitDeliverySheet({
       return () => clearTimeout(timer)
     }
   }, [deliveryStatus, onNext])
+
+  // Keyboard + body scroll lock for gallery lightbox
+  useEffect(() => {
+    if (!galleryOpen) return
+    const orig = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setGalleryOpen(false)
+      if (e.key === 'ArrowLeft') setSelectedImageIdx((prev) => (prev - 1 + slides.length) % slides.length)
+      if (e.key === 'ArrowRight') setSelectedImageIdx((prev) => (prev + 1) % slides.length)
+    }
+    window.addEventListener('keydown', handler)
+    return () => {
+      document.body.style.overflow = orig
+      window.removeEventListener('keydown', handler)
+    }
+  }, [galleryOpen, slides.length])
 
   const openCamera = useCallback(() => {
     if (!inputRef.current) return
@@ -335,40 +352,6 @@ export default function UnitDeliverySheet({
     }
   }, [assignmentItemId, unit, deliveryLat, deliveryLng, mark, toast, queryClient, userId])
 
-  const handleForceComplete = useCallback(async () => {
-    if (!unit?.psid) return
-    const ok = await confirm({
-      title: 'Force Complete',
-      message: `Mark PSID ${unit.psid} as delivered? This bypasses GPS verification.`,
-      confirmLabel: 'Mark Delivered',
-      variant: 'destructive',
-    })
-    if (!ok) return
-    setForceCompleting(true)
-    try {
-      const res = await fetch('/api/deliveries/force', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ psid: unit.psid }),
-      })
-      if (res.ok) {
-        toast('Marked as delivered', 'success')
-        queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
-        queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
-        queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
-        setDeliveryStatus('delivered')
-        onClose?.()
-      } else {
-        const j = await res.json()
-        toast(j.error || 'Failed to mark delivered', 'error')
-      }
-    } catch {
-      toast('Network error', 'error')
-    } finally {
-      setForceCompleting(false)
-    }
-  }, [unit?.psid, confirm, toast, queryClient, onClose])
-
   const handleFlag = useCallback(async () => {
     const ok = await confirm({
       title: 'Flag for Review',
@@ -430,32 +413,32 @@ export default function UnitDeliverySheet({
         )}
 
         {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none" />
 
-        {/* Top row: Close | GPS + dots | Survey ID */}
-        <div className="absolute top-1.5 left-3 right-3 z-20 flex items-center gap-1.5">
+        {/* Combined top strip: Close | GPS + dots | Gallery | Survey ID — flush with UDS edges */}
+        <div className={`absolute top-0 left-0 right-0 z-20 ${t.stripBg} p-1.5 flex items-center gap-1.5`}>
           <button
             onClick={onClose}
             className="shrink-0 h-8 w-8 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 backdrop-blur-sm cursor-pointer"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4 text-red-400" />
           </button>
 
           {/* GPS row — centered in available space */}
           {deliveryStatus === 'idle' && liveGpsStatus !== 'idle' && unit?.lat && unit?.lng && (
             <div className={cn(
               'flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold drop-shadow-sm',
-              liveGpsStatus === 'locating' && 'text-white/60',
-              liveGpsStatus === 'unavailable' && 'text-white/50',
-              liveGpsStatus === 'ready' && liveDistance != null && liveDistance <= 50 && 'text-green-300',
-              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 50 && liveDistance <= 200 && 'text-amber-300',
-              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 200 && 'text-white/80',
+              liveGpsStatus === 'locating' && t.gpsLocating,
+              liveGpsStatus === 'unavailable' && t.gpsUnavailable,
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance <= gpsThreshold && 'text-green-400',
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > gpsThreshold && liveDistance <= 100 && 'text-amber-400',
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 100 && 'text-red-400',
             )}>
               <Crosshair className="h-3.5 w-3.5 shrink-0" />
               {liveGpsStatus === 'locating' && <span>Locating...</span>}
               {liveGpsStatus === 'unavailable' && <span>GPS unavailable</span>}
               {liveGpsStatus === 'ready' && liveDistance != null && (
-                <span>{liveDistance >= 1000 ? `${(liveDistance / 1000).toFixed(1)} km` : `${liveDistance} m`}</span>
+                <span>{liveDistance >= 1000 ? `${(liveDistance / 1000).toFixed(1)} km` : `${liveDistance} m`} away</span>
               )}
               {liveGpsStatus === 'ready' && gpsAccuracy != null && (
                 <span className="flex items-center gap-1 ml-1">
@@ -463,7 +446,7 @@ export default function UnitDeliverySheet({
                     <span
                       key={i}
                       className={`h-2.5 w-2.5 rounded-full ${
-                        gpsAccuracy <= threshold ? 'bg-current' : 'bg-white/20'
+                        gpsAccuracy <= threshold ? 'bg-green-400' : t.dotInactive
                       }`}
                     />
                   ))}
@@ -472,17 +455,28 @@ export default function UnitDeliverySheet({
             </div>
           )}
 
-          {/* Survey ID badge — pill style */}
+          {/* Gallery button — same size as close, green icon */}
+          {heroImages.length > 0 && (
+            <button
+              onClick={() => setGalleryOpen(true)}
+              className="shrink-0 h-8 w-8 flex items-center justify-center rounded-full bg-black/40 text-green-400 hover:bg-black/60 backdrop-blur-sm cursor-pointer transition-colors"
+              aria-label="Open gallery"
+            >
+              <Image className="h-4 w-4" />
+            </button>
+          )}
+
+          {/* Survey ID badge */}
           {unit.survey_id && (
-            <span className="shrink-0 text-sm font-bold text-white font-mono bg-black/50 backdrop-blur-sm px-2 py-0.5 rounded-md">
+            <span className="shrink-0 text-sm font-bold text-white font-mono mr-1">
               #{unit.survey_id}
             </span>
           )}
         </div>
 
-        {/* Previous photos badge — top right area */}
+        {/* Previous photos badge — separate */}
         {deliveryStatus === 'idle' && previousPhotos.length > 0 && (
-          <div className="absolute top-3 right-12 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm z-20">
+          <div className="absolute top-3 right-3 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm z-20">
             <Image className="h-3 w-3" /> {previousPhotos.length}
           </div>
         )}
@@ -492,7 +486,7 @@ export default function UnitDeliverySheet({
           <button
             onTouchEnd={(e) => { e.stopPropagation(); touchXRef.current = null }}
             onClick={(e) => { e.stopPropagation(); onPrev() }}
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 h-12 w-10 flex items-center justify-center bg-black/5 text-white/50 hover:bg-black/20 hover:text-white/90 rounded-r-lg backdrop-blur-sm cursor-pointer transition-all"
+            className={`absolute left-0 top-1/2 -translate-y-1/2 z-20 h-12 w-10 flex items-center justify-center ${t.navArrowBg} ${t.navArrowText} hover:bg-black/20 hover:text-white/90 rounded-r-lg backdrop-blur-sm cursor-pointer transition-all`}
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
@@ -501,70 +495,39 @@ export default function UnitDeliverySheet({
           <button
             onTouchEnd={(e) => { e.stopPropagation(); touchXRef.current = null }}
             onClick={(e) => { e.stopPropagation(); onNext() }}
-            className="absolute right-0 top-1/2 -translate-y-1/2 z-20 h-12 w-10 flex items-center justify-center bg-black/5 text-white/50 hover:bg-black/20 hover:text-white/90 rounded-l-lg backdrop-blur-sm cursor-pointer transition-all"
+            className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 h-12 w-10 flex items-center justify-center ${t.navArrowBg} ${t.navArrowText} hover:bg-black/20 hover:text-white/90 rounded-l-lg backdrop-blur-sm cursor-pointer transition-all`}
           >
             <ChevronRight className="h-5 w-5" />
           </button>
         )}
 
-        {/* Gallery icon button on hero image */}
-        {heroImages.length > 0 && (
-          <button
-            onClick={() => setGalleryOpen(true)}
-            className="absolute top-12 right-3 z-20 h-7 w-7 flex items-center justify-center rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white backdrop-blur-sm cursor-pointer transition-colors"
-            aria-label="Open gallery"
-          >
-            <Image className="h-3.5 w-3.5" />
-          </button>
-        )}
+        {/* House info — below top strip, text-shadow for readability against bright images */}
+        <div className="absolute top-14 left-3 right-3 z-10">
+          <p className={`text-base font-bold text-white truncate ${t.bodyTextShadow}`}>{unit.consumer_name || 'Unknown'}</p>
+          {unit.address && (
+            <p className={`text-xs ${t.bodyTextMuted} truncate mt-0.5 ${t.bodyTextShadow}`}>{unit.address}</p>
+          )}
+          {unit.uc_name && (
+            <span className={`inline-flex items-center gap-1 text-[11px] ${t.bodyTextSubtle} mt-1 ${t.bodyTextShadow}`}>
+              <MapPin className="h-3 w-3" /> {unit.uc_name}
+            </span>
+          )}
+        </div>
 
         {/* Bottom content overlaid on hero */}
         <div className="absolute bottom-0 left-0 right-0 pt-1 pb-5 px-4 z-10 flex flex-col gap-2">
-          {/* Consumer info — no Amount */}
-          <div>
-            <p className="text-base font-bold text-white truncate">{unit.consumer_name || 'Unknown'}</p>
-            {unit.address && (
-              <p className="text-xs text-white/70 truncate mt-0.5">{unit.address}</p>
-            )}
-            {unit.uc_name && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-white/50 mt-1">
-                <MapPin className="h-3 w-3" /> {unit.uc_name}
-              </span>
-            )}
-          </div>
-
-          {/* Thumbnail strip */}
-          {thumbnails.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto">
-              {thumbnails.map((url, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSelectedImageIdx(i)}
-                  className={cn(
-                    'h-8 w-8 rounded-md overflow-hidden shrink-0 border-2 cursor-pointer transition-all',
-                    i === selectedImageIdx ? 'border-white' : 'border-transparent opacity-60 hover:opacity-90'
-                  )}
-                >
-                  <img
-                    src={url}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Action buttons + status hints */}
           {deliveryStatus === 'idle' && (
-            <div className="flex flex-col gap-2">
-              {itemStatus === 'delivered' && (
-                <span className="text-[10px] text-white/50 text-center">Previously delivered — tap Redeliver to update photo</span>
-              )}
-              {itemStatus === 'processing' && (
-                <span className="text-[10px] text-amber-300/70 text-center">Needs attention — GPS was out of range</span>
-              )}
+            <div className="flex flex-col gap-1.5">
+              {/* Status hint — permanent reserved spot, no content shifting */}
+              <div className="h-4 flex items-center justify-center">
+                {itemStatus === 'delivered' && (
+                  <span className={`text-[10px] ${t.bodyTextSubtle} text-center leading-none`}>Previously delivered — tap Redeliver to update photo</span>
+                )}
+                {itemStatus === 'processing' && (
+                  <span className={`text-[10px] ${t.hintText} text-center leading-none`}>Needs attention — GPS was out of range</span>
+                )}
+              </div>
 
               {/* Single action row */}
               <div className="flex items-stretch gap-2">
@@ -598,7 +561,7 @@ export default function UnitDeliverySheet({
                     disabled={isDelivering || inputCooldown}
                     className={
                       assignmentItemId && staffMode !== 'browse'
-                        ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm disabled:opacity-50"
+                        ? `h-11 px-4 text-xs font-medium rounded-xl ${t.detailsBg} text-white border ${t.detailsBorder} hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm disabled:opacity-50`
                         : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md disabled:opacity-50"
                     }
                   >
@@ -614,7 +577,7 @@ export default function UnitDeliverySheet({
                 {(assignmentItemId || isAdmin) && (
                   <button
                     onClick={handleFlag}
-                    className="h-11 w-11 flex items-center justify-center rounded-xl bg-white/15 text-white/60 hover:bg-white/25 hover:text-white shrink-0 backdrop-blur-sm cursor-pointer transition-colors"
+                    className={`h-11 w-11 flex items-center justify-center rounded-xl ${t.flagBg} ${t.flagText} hover:bg-white/25 hover:text-white shrink-0 backdrop-blur-sm cursor-pointer transition-colors`}
                     title="Flag for review"
                   >
                     <Flag className="h-4 w-4" />
@@ -627,38 +590,28 @@ export default function UnitDeliverySheet({
 
         {/* Success overlay — inside hero so it covers everything */}
         {deliveryStatus !== 'idle' && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 backdrop-blur-sm rounded-t-2xl">
+          <div className={`absolute inset-0 z-30 flex items-center justify-center ${t.overlayBg} backdrop-blur-sm rounded-t-2xl`}>
             <div className="flex flex-col items-center gap-1.5 text-white">
               <div className={`h-14 w-14 rounded-full flex items-center justify-center backdrop-blur-sm ${deliveryStatus === 'processing' ? 'bg-amber-500/80' : 'bg-green-500/80'}`}>
                 <CheckCircle2 className="h-7 w-7" />
               </div>
               <span className="text-sm font-bold">{deliveryStatus === 'processing' ? 'Processing' : 'Delivered'}</span>
               {deliveryStatus === 'processing' && deliveryDistance == null && (
-                <span className="text-[10px] text-white/70">Saved — Awaiting GPS Verification</span>
+                <span className={`text-[10px] ${t.bodyTextMuted}`}>Saved — Awaiting GPS Verification</span>
               )}
               {deliveryStatus === 'processing' && deliveryDistance != null && (
-                <span className="text-[10px] text-white/70">Out of range — Awaiting Review</span>
+                <span className={`text-[10px] ${t.bodyTextMuted}`}>Out of range — Awaiting Review</span>
               )}
               {deliveryDistance != null && (
-                <span className="text-[10px] text-white/70">{deliveryDistance}m from target</span>
+                <span className={`text-[10px] ${t.bodyTextMuted}`}>{deliveryDistance}m from target</span>
               )}
               {deliveryGpsLat != null && deliveryGpsLng != null && (
-                <span className="text-[10px] text-white/50 font-mono">
+                <span className={`text-[10px] ${t.bodyTextSubtle} font-mono`}>
                   {deliveryGpsLat.toFixed(4)}, {deliveryGpsLng.toFixed(4)}
                 </span>
               )}
               {processingStep && (
-                <span className="text-[10px] text-white/70 mt-0.5">{processingStep}</span>
-              )}
-              {isAdmin && deliveryStatus === 'processing' && (
-                <button
-                  onClick={handleForceComplete}
-                  disabled={forceCompleting}
-                  className="mt-2 w-full h-8 text-[11px] font-semibold rounded-lg bg-amber-500/70 text-white border border-amber-400/30 hover:bg-amber-500 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors"
-                >
-                  {forceCompleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {forceCompleting ? 'Marking...' : 'Force Complete (admin)'}
-                </button>
+                <span className={`text-[10px] ${t.bodyTextMuted} mt-0.5`}>{processingStep}</span>
               )}
             </div>
           </div>
@@ -667,14 +620,56 @@ export default function UnitDeliverySheet({
 
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
 
-      {/* Gallery Lightbox */}
-      <Lightbox
-        open={galleryOpen}
-        close={() => setGalleryOpen(false)}
-        slides={slides}
-        plugins={[Counter, Zoom]}
-        counter={{ container: { style: { top: 0, right: 0 } } }}
-      />
+      {/* Custom lightweight gallery lightbox */}
+      {galleryOpen && (
+        <div
+          className="fixed inset-0 z-[2000] bg-black/95 flex items-center justify-center"
+          onClick={() => setGalleryOpen(false)}
+        >
+          {/* Close button — large for mobile */}
+          <button
+            onClick={() => setGalleryOpen(false)}
+            className="absolute top-4 right-4 z-10 h-10 w-10 flex items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40 active:bg-white/60 cursor-pointer transition-colors"
+            aria-label="Close gallery"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          {/* Image */}
+          <img
+            src={slides[selectedImageIdx]?.src}
+            alt=""
+            className="max-w-full max-h-full object-contain px-4"
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          {/* Prev/Next arrows */}
+          {slides.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelectedImageIdx((prev) => (prev - 1 + slides.length) % slides.length)
+                }}
+                className="absolute left-2 top-1/2 -translate-y-1/2 h-12 w-12 flex items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40 active:bg-white/60 cursor-pointer transition-colors"
+                aria-label="Previous image"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelectedImageIdx((prev) => (prev + 1) % slides.length)
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-12 w-12 flex items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/40 active:bg-white/60 cursor-pointer transition-colors"
+                aria-label="Next image"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

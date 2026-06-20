@@ -24,6 +24,7 @@ import { ErrorLogSection } from '@/components/settings/error-log-section'
 import { FailedUploadsTab } from '@/components/settings/failed-uploads-tab'
 import { DeliveryQualityTab } from '@/components/settings/delivery-quality-tab'
 import { DeliveryTable } from '@/components/settings/delivery-table'
+import { UdsThemeSelector } from '@/components/settings/uds-theme-selector'
 
 const THEMES = [
   { id: 'light', label: 'Light', icon: Sun, desc: 'Default light' },
@@ -486,6 +487,10 @@ export default function SettingsPage() {
                     )
                   })}
                 </div>
+              </CollapsibleSection>
+
+              <CollapsibleSection title="Delivery Sheet">
+                <UdsThemeSelector />
               </CollapsibleSection>
 
               <CollapsibleSection title="Map">
