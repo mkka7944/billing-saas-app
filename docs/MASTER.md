@@ -3098,6 +3098,125 @@ Before writing a query, ask:
 
 ---
 
+## 30. UnitDeliverySheet Redesign Plan (2026-06-20)
+
+### Problem Statement
+
+The UDS has two issues blocking the no-photo delivery flow:
+1. **z-index conflict** — confirm dialog (`z-50`) opens **behind** the delivery sheet (`z-[1001]`), making the "skip photo" action unusable on mobile.
+2. **No-photo mode is buried** — it's a secondary "Photo not working?" fallback link instead of a first-class flow when `allowNoPhoto=true`.
+
+### Scope
+
+Full visual redesign of `UnitDeliverySheet` (`src/components/delivery/unit-delivery-sheet.tsx`). The calling code (`map/page.tsx`) and all stores remain unchanged.
+
+### New Layout (top → bottom)
+
+```
+┌──────────────────────────────────────┐
+│ ×    📍45m ●●●              #351     │  ← top row: close | GPS | survey_id
+├──────────────────────────────────────┤
+│                                      │
+│   Muhammad Kashif                    │  ← consumer info (no Amount)
+│   Mohallah Abbas, St #4, H #12      │
+│   UC-51 MC Sargodha                 │
+│                                      │
+├──────────────────────────────────────┤
+│ ┌────────────────────────────────┐   │
+│ │          HERO IMAGE            │   │  ← full-bleed, same as current
+│ │    (or gradient fallback)      │   │     min-h-[300px], flex-1
+│ │                        [🗞️]   │   │  ← gallery icon (new)
+│ └────────────────────────────────┘   │
+│                                      │
+│  [■] [■] [■] [■] [■]               │  ← thumbnail strip (max 5, new)
+│                                      │
+├──────────────────────────────────────┤
+│                                      │
+│  [📷 Deliver]  [Details]  [🏴]      │  ← single action row (all states)
+│  or [✓ Mark]                         │     flag is icon-only
+│                                      │
+│  Previously delivered — tap Redeliver│  ← status hint (conditional)
+├──────────────────────────────────────┤
+│   ✓ Delivered (45m away)             │  ← success overlay (on outer
+│   ─→ auto-advance 2s                │     container, covers everything)
+└──────────────────────────────────────┘
+```
+
+### Key Changes from Current
+
+| Change | Detail |
+|--------|--------|
+| **GPS row moved** | From bottom area → top row. Dots slightly bigger, distance text more vibrant. Shares row with close (left) and survey_id (right). |
+| **Amount removed** | Delete `totalDue` block entirely. |
+| **No-photo primary button** | When `allowNoPhoto=true`, replaces "Take Picture & Deliver" with direct "Mark Delivery" — single tap, no confirm dialog. |
+| **Flag → icon-only** | Shrinks from full-width text to icon button in the action row. |
+| **Single action row** | All action buttons in one `flex-row`: primary action (flex-1) | Details (shrink) | Flag (icon, shrink). |
+| **Thumbnail strip** | New — shows up to 5 `unit.image_urls` thumbnails. Tap swaps the hero image. |
+| **Gallery lightbox** | New — `yet-another-react-lightbox` instance inside UDS. Opens on 🗞️ icon tap. Shows all portal images. Does NOT close UDS. |
+| **Admin can flag** | Flag condition changes from `assignmentItemId` to `assignmentItemId \|\| isAdmin`. |
+| **Swipe on outer container** | Touch handlers moved from hero div to outer `fixed bottom-0` container so swipe works regardless of hero image presence. |
+| **Success overlay on outer container** | Moved from hero div to outer container so it covers the full sheet. |
+| **Confirm dialog** | Existing `useConfirm()` kept for Flag and Force Complete paths only. No-photo confirm removed (direct mark). z-index bug remains but only affects Flag/ForceComplete (less frequent). |
+
+### Action Row States
+
+| Condition | Primary Button | Details | Flag |
+|---|---|---|---|
+| Has assignment, photo mode | `[📷 Take Picture & Deliver]` | `[Details →]` | `[🏴]` |
+| Has assignment, no-photo mode | `[✓ Mark Delivery]` | `[Details →]` | `[🏴]` |
+| Already delivered (redeliver) | `[↻ Redeliver]` | `[Details →]` | `[🏴]` |
+| Admin (no assignment) | `[→ View Details]` (full width) | — | `[🏴]` |
+| Processing (GPS out of range) | `[↻ Mark as Delivered]` | `[Details →]` | `[🏴]` |
+
+### Gallery Implementation
+
+- Import `yet-another-react-lightbox` (already in `package.json`)
+- `<Lightbox>` rendered inside UDS, portal-based — overlays everything
+- Slides = `unit.image_urls.map(src => ({ src }))` (portal images only)
+- Plugins: Counter, Zoom (same as HDS)
+- Opens on 🗞️ icon tap, closes on backdrop click/×
+- Does NOT close UDS — staff stays in delivery flow
+
+### Risk Analysis
+
+**Breaking:**
+1. **Swipe navigation** — touch handlers on hero div currently. Moving to outer container fixes this, but testing needed to confirm swipe distance threshold still feels right.
+2. **Auto-advance overlay** — currently inside hero div (`absolute inset-0`). Moving to outer container ensures coverage of all new elements.
+
+**Moderate:**
+3. **Nav arrows** — currently `top-1/3` on hero. With new top row, arrows may need `top-1/2` to avoid collision with GPS/survey_id.
+4. **Previous photos badge** — currently `top-3 right-3`, same position as survey_id. Merge or reposition.
+5. **Thumbnail strip** — new element. Edge cases: 0 images (don't render), 15 images (overflow scroll), broken URLs (`onError`).
+
+**Low:**
+6. **GPS row repositioning** — pure CSS, no logic change.
+7. **Amount removed** — delete block, clean.
+8. **Flag condition change** — `assignmentItemId || isAdmin` addition only.
+
+**No Risk (untouched):**
+- `billing-store.ts` — `setDeliverTarget`, `deliverableList`, prev/next navigation
+- `map/page.tsx` — UDS props identical
+- `survey-markers.tsx` / `staff-map-markers.tsx` — marker click flow unchanged
+- `handleFlag` / `handleForceComplete` callbacks — same logic, just different UI
+
+### Git Rollback
+
+Before implementation, checkpoint is committed:
+
+```bash
+# View checkpoint hash
+git log --oneline -1
+# → abc1234 checkpoint: before UDS redesign
+
+# Full hard reset (throw away redesign)
+git reset --hard abc1234
+
+# Soft reset (keep files as unstaged)
+git reset --soft abc1234
+```
+
+---
+
 ## Session History
 All development session logs have been moved to `docs/SESSION.md`.
 For the current working state (active phase, next steps, blockers), see `.opencode/context.json`.

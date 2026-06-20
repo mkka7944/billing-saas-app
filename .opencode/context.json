@@ -1,42 +1,30 @@
 {
-{
-  "lastSession": "2026-06-19 (final) — MC list fixed, toolbar redesign, 1000-row bugs",
-  "currentPhase": "All bug fixes and UI improvements complete",
-  "currentStep": "MC list loads with correct counts (parallel batched fetch), cross-city collision fixed, toolbar redesigned, 1000-row truncation fixed in 2 more places.",
+  "lastSession": "2026-06-20 — UDS Redesign Plan + Checkpoint Commit",
+  "currentPhase": "UDS Redesign — Planning Complete, Ready for Implementation",
+  "currentStep": "Full UDS redesign plan documented in MASTER.md Section 30. Key changes: GPS to top row, no-photo primary button, flag icon-only, single action row, thumbnail strip, gallery lightbox, swipe/success on outer container. Checkpoint committed.",
   "phaseProgress": {
-    "2a": "done",
-    "2b": "done",
-    "3": "done",
-    "multiStaffDelivery": "done",
-    "bugFixes_toolbarRedesign": "done",
-    "mcListPerformance": "done — parallel batched uc_name fetch + total_items, no hierarchy_summary, no assignment_items",
-    "4": "deferred",
-    "5": "deferred"
+    "UDSRedesignPlan": "done",
+    "UDSRedesignImpl": "not started"
   },
   "filesModified": [
-    "src/lib/repositories/assignment-repository.ts",
-    "src/app/deliver/page.tsx",
-    "src/components/layout/AppShell.tsx",
-    "src/components/delivery/qr-scanner-button.tsx",
-    "src/components/assignments/uc-detail-panel.tsx",
-    "src/app/api/uc-stats/route.ts",
-    "src/components/assignments/create-assignment-tab.tsx",
-    "AGENTS.md",
+    "docs/MASTER.md",
     "docs/SESSION.md",
     ".opencode/context.json"
   ],
   "keyDecisions": [
-    "MC list: parallel batched fetch of just uc_name column, count in JS. ~12.6s on slow connection, cached 5 min.",
-    "Assigned per UC: sum daily_assignments.total_items, cap at total. No assignment_items fetch needed.",
-    "status=NULL matching: must use or=(status.is.null,status.eq.ACTIVE) — in.(null,ACTIVE) silently excludes NULL values in SQL.",
-    "Flash-on-switch fix: key={selectedUc} on UCDetailPanel forces remount.",
-    "Option B (future): admin-only RPC for GROUP BY count (~200ms)."
+    "Gallery is UDS's own Lightbox instance (not shared with HDS)",
+    "Admin flag condition: assignmentItemId || isAdmin",
+    "No-photo mode: single 'Mark Delivery' button, no confirm dialog, no camera",
+    "Success overlay on outer container (covers full sheet including new elements)",
+    "Swipe handlers on outer container (works when hero image absent)"
   ],
   "nextActions": [
-    "HIGH — Tomorrow office: test all in browser (MC list counts, create table, toolbar, staff popover, progress, Full MC, My Position, QR scan)",
-    "PENDING — Create admin-only RPC for uc_name GROUP BY count (SQL migration + API route update)",
-    "Deferred — Phase 4 (staff batch header), Phase 5 (supervisor roles)",
-    "Deferred — Remaining tests 9-12 (batch auto-increment, route-switch warning, refresh button, daily target display)"
+    "P0 — Implement UDS redesign: GPS top row, info block (no amount), thumbnail strip, gallery lightbox, single action row, success overlay on outer container",
+    "P0 — Move swipe handlers to outer container",
+    "P0 — Change flag condition to include isAdmin",
+    "P0 — Verify no-photo flow (direct mark, no confirm dialog, no camera)",
+    "PENDING — Create admin-only RPC for uc_name GROUP BY count"
   ],
-  "testingChecklist": "Test all in browser at office with fast connection."
+  "gitCheckpoint": "before UDS redesign — committed as checkpoint",
+  "testingChecklist": "UDS redesign: open UDS from staff deliver flow and admin map. Verify all states (photo mode, no-photo mode, already delivered, admin no-assignment). Verify swipe navigation. Verify success overlay covers all elements. Verify gallery lightbox opens on top of UDS. Verify admin can flag."
 }

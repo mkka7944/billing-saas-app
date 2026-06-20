@@ -4048,3 +4048,37 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - **HIGH — Test all** in browser: MC list loads with correct counts, create table works, toolbar layout, staff popover, progress indicator, Assign Full MC, My Position tab, QR scan
 - **PENDING —** Create admin-only RPC for uc_name GROUP BY count (performance optimization ~200ms)
 
+---
+
+## 2026-06-20 — UDS Redesign Plan + Checkpoint Commit
+
+### Phase: UDS Redesign — Planning & Checkpoint
+
+### What
+- **UDS redesign fully planned and documented** in Section 30 of MASTER.md:
+  - GPS row moved from bottom to top (share row with close + survey_id)
+  - Amount removed from info block
+  - No-photo mode: "Mark Delivery" primary button (no confirm dialog, no camera)
+  - Flag collapsed to icon-only in single action row
+  - Thumbnail strip (max 5) with tap-to-swap hero image
+  - Gallery lightbox (`yet-another-react-lightbox`) inside UDS (portal overlay, doesn't close UDS)
+  - Admin can flag (condition change from `assignmentItemId` to `assignmentItemId || isAdmin`)
+  - Swipe handlers moved from hero div to outer container
+  - Success overlay moved to outer container (covers full sheet)
+  - Risk analysis: 2 breaking (swipe, success overlay), 3 moderate, 7 low, 0 untouched
+- **Git rollback instructions documented** in Section 30 for safe recovery
+- **Checkpoint committed** — current working state saved before implementation begins
+- **UDS discussion findings** documented: gallery opens via lightbox inside UDS (not HDS), admin flag permission, gradient fallback for no-photo, single-row action layout
+
+### Key Decisions
+- Gallery is UDS's own `<Lightbox>` instance (not shared with HDS) — cleaner, no cross-component coupling
+- Admin flag condition: `assignmentItemId || isAdmin` — admins can flag units they don't have assigned
+- No-photo mode removes the "Photo not working?" fallback entirely — single "Mark Delivery" button IS the flow
+- Success overlay on outer container (not hero div) — required to cover new thumbnail strip + action row
+- Swipe on outer container — ensures swipe works when hero image is absent (no-photo fallback gradient)
+
+### Files Modified
+- `docs/MASTER.md` — Section 30 added (UDS Redesign Plan + Risk Analysis + Git Rollback)
+- `docs/SESSION.md` — this entry appended
+- `.opencode/context.json` — updated
+
