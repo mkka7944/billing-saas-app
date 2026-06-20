@@ -36,6 +36,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // QR scanner state
   const [showScanner, setShowScanner] = useState(false)
   const [scanItems, setScanItems] = useState<AssignmentItemWithUnit[]>([])
+  const scanItemsRef = useRef<AssignmentItemWithUnit[]>([])
+  scanItemsRef.current = scanItems
   const [scanError, setScanError] = useState<string | null>(null)
   const [isScanning, setIsScanning] = useState(false)
   const [manualInput, setManualInput] = useState('')
@@ -69,12 +71,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const startScanner = useCallback(async () => {
     setScanError(null)
     setIsScanning(true)
+
+    // Brief delay to stabilize camera init on Samsung Chrome
+    await new Promise((r) => setTimeout(r, 500))
+
     const scanner = new Html5Qrcode('qr-reader-shell')
     scannerRef.current = scanner
     try {
       await scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        {
+          fps: 20,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.777778,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: false },
+        } as any,
         (decodedText) => {
           const raw = decodedText.substring(0, 80)
           let surveyId: string | null = null
@@ -89,7 +100,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             setScanError(`No survey ID found in QR: "${raw}"`)
             return
           }
-          const matched = scanItems.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
+          const matched = scanItemsRef.current.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
           if (!matched) {
             setScanError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
             return
@@ -109,7 +120,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setIsScanning(false)
       }
     }
-  }, [scanItems, stopScanner, router])
+  }, [stopScanner, router])
 
   const openScanner = useCallback(async () => {
     setShowScanner(true)
@@ -131,14 +142,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const handleManualSubmit = useCallback(() => {
     const sid = manualInput.trim()
     if (!sid) return
-    const matched = scanItems.find((i) => i.survey_id === sid || i.unit?.survey_id === sid)
+    const matched = scanItemsRef.current.find((i) => i.survey_id === sid || i.unit?.survey_id === sid)
     if (!matched) {
       setScanError(`No assignment matches survey ID: ${sid}`)
       return
     }
     handleCloseScanner()
     router.push(`/map?target=${encodeURIComponent(matched.psid)}`)
-  }, [manualInput, scanItems, handleCloseScanner, router])
+  }, [manualInput, handleCloseScanner, router])
 
   // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [

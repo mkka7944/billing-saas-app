@@ -15,6 +15,8 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
   const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [manualInput, setManualInput] = useState('')
+  const itemsRef = useRef<AssignmentItemWithUnit[]>(items)
+  itemsRef.current = items
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const mountedRef = useRef(true)
 
@@ -41,13 +43,21 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
     setError(null)
     setScanning(true)
 
+    // Brief delay to stabilize camera init on Samsung Chrome
+    await new Promise((r) => setTimeout(r, 500))
+
     const scanner = new Html5Qrcode('qr-reader')
     scannerRef.current = scanner
 
     try {
       await scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        {
+          fps: 20,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.777778,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: false },
+        } as any,
         (decodedText) => {
           const raw = decodedText.substring(0, 80)
           let surveyId: string | null = null
@@ -62,7 +72,7 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
             setError(`No survey ID found in QR: "${raw}"`)
             return
           }
-          const matched = items.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
+          const matched = itemsRef.current.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
           if (!matched) {
             setError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
             return
@@ -82,7 +92,7 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
         setScanning(false)
       }
     }
-  }, [items, onUnitScanned, stopScanner])
+  }, [onUnitScanned, stopScanner])
 
   const handleClose = useCallback(() => {
     stopScanner()
@@ -94,14 +104,14 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
   const handleManualSubmit = useCallback(() => {
     const sid = manualInput.trim()
     if (!sid) return
-    const matched = items.find((i) => i.survey_id === sid || i.unit?.survey_id === sid)
+    const matched = itemsRef.current.find((i) => i.survey_id === sid || i.unit?.survey_id === sid)
     if (!matched) {
       setError(`No assignment matches survey ID: ${sid}`)
       return
     }
     handleClose()
     onUnitScanned(matched.psid)
-  }, [manualInput, items, onUnitScanned, handleClose])
+  }, [manualInput, onUnitScanned, handleClose])
 
   return (
     <>
