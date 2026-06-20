@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -21,6 +22,7 @@ const LiveDeliveryTrail = dynamic(
 )
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { cn } from '@/lib/utils'
+import { Loader2 } from 'lucide-react'
 import UnitDeliverySheet from '@/components/delivery/unit-delivery-sheet'
 import QRScannerButton from '@/components/delivery/qr-scanner-button'
 import { useUserLocation } from '@/hooks/use-user-location'
@@ -31,7 +33,7 @@ const StaffMap = dynamic(
   { ssr: false }
 )
 
-export default function MapPage() {
+function MapPageContent() {
   const activeView = useBillingStore((s) => s.activeView)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
@@ -56,17 +58,21 @@ export default function MapPage() {
 
   useEffect(() => { setPageIdentity('Map') }, [setPageIdentity])
 
-  // Read ?target=PSID from URL (passed from /deliver page) on initial mount
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  // Read ?target=PSID from URL — re-fires on same-route nav (e.g. QR scan from map)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const target = params.get('target')
+    const target = searchParams.get('target')
     if (target && !deliverTargetId) {
       setDeliverTarget(target)
-      const url = new URL(window.location.href)
-      url.searchParams.delete('target')
-      window.history.replaceState({}, '', url.toString())
+      // Clean up param from URL
+      const newParams = new URLSearchParams(searchParams.toString())
+      newParams.delete('target')
+      const qs = newParams.toString()
+      router.replace(qs ? `/map?${qs}` : '/map', { scroll: false })
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams, deliverTargetId, setDeliverTarget, router])
 
   // Fetch staff assignment items for field_staff role
   const { data: staffData } = useStaffAssignment(
@@ -209,5 +215,13 @@ export default function MapPage() {
         {selectedHouseId && <HouseDetailSheet layoutMode={hdsLayoutMode} />}
       </div>
     </AppShell>
+  )
+}
+
+export default function MapPage() {
+  return (
+    <Suspense fallback={<AppShell><div className="flex-1 flex items-center justify-center bg-background"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div></AppShell>}>
+      <MapPageContent />
+    </Suspense>
   )
 }
