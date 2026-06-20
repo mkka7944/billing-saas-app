@@ -88,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {
           fps: 20,
           qrbox: (vw: number, vh: number) => {
-            const size = Math.floor(Math.min(vw, vh) * 0.4)
+            const size = Math.floor(Math.min(vw, vh) * 0.7)
             return { width: size, height: size }
           },
           aspectRatio: 1.777778,
@@ -132,7 +132,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           if (scannerRef.current) {
             await scannerRef.current.applyVideoConstraints({
               focusMode: 'continuous',
-              advanced: [{ zoom: 3.0 } as any],
+              advanced: [{ zoom: 1.5 } as any],
             } as MediaTrackConstraints)
           }
         } catch {}
