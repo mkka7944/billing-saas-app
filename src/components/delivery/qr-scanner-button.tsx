@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
 import { QrCode, X, Loader2, Scan } from 'lucide-react'
 import type { AssignmentItemWithUnit } from '@/types'
 
@@ -54,9 +54,13 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
         { facingMode: 'environment' },
         {
           fps: 20,
-          qrbox: { width: 250, height: 250 },
+          qrbox: (vw: number, vh: number) => {
+            const size = Math.floor(Math.min(vw, vh) * 0.7)
+            return { width: size, height: size }
+          },
           aspectRatio: 1.777778,
           experimentalFeatures: { useBarCodeDetectorIfSupported: false },
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
         } as any,
         (decodedText) => {
           const raw = decodedText.substring(0, 80)
@@ -88,6 +92,18 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
         },
         () => {}
       )
+
+      // Apply continuous focus and zoom after camera stabilizes
+      setTimeout(async () => {
+        try {
+          if (scannerRef.current) {
+            await scannerRef.current.applyVideoConstraints({
+              focusMode: 'continuous',
+              advanced: [{ zoom: 1.5 } as any],
+            } as MediaTrackConstraints)
+          }
+        } catch {}
+      }, 2000)
     } catch (e) {
       if (mountedRef.current) {
         setError(`Camera error: ${(e as Error).message}`)
