@@ -2841,6 +2841,263 @@ The fallback `psids.indexOf(psid) + 1` uses the PSID position in the `psids` arr
 - Pagination controls at the bottom (Previous/Next with range display)
 
 ---
+## 29. Supabase Query Patterns — The Definitive Reference
+
+### 29.1 The Core Rule
+**All client data goes through SSR API routes.** The Supabase JS client is only used in `src/app/api/` route files. Hooks call `fetch('/api/...')`. The only exception is `supabase.auth.*` calls.
+
+### 29.2 Decision Tree — Pick a Pattern
+
+```
+How many rows will the query return?
+├── < 1000 rows
+│   └── Use Supabase JS client: sup.from('table').select(COLS).eq(...)
+│
+├── >= 1000 rows (or unknown)
+│   └── Use fetchAllRows() with REST API + Range headers
+│
+Does the query need SUM / COUNT(DISTINCT) / GROUP BY?
+├── YES, and it's admin-only
+│   └── Create a PL/pgSQL RPC (the only allowed exception)
+├── YES, and it's for all users
+│   └── Fetch rows → aggregate in TypeScript (in route.ts)
+├── SIMPLE COUNT only
+│   └── head: true + prefer: 'count' — no rows returned
+
+Does the query filter by a list of PSIDs/survey_ids?
+├── < 300 items in the list
+│   └── Use sup.from().in('psid', smallList)
+├── >= 300 items in the list
+│   └── Chunk at 300 + Promise.all + fetchAllRows() per chunk
+
+Does the query span multiple tables?
+├── Use two separate queries + TypeScript join in route.ts
+│── Avoid SQL joins when one side is a large table
+│── Simplify: fetch small reference table, use Map lookups
+```
+
+### 29.3 Pattern 1 — Simple Query (< 1000 rows)
+
+Use the Supabase JS client directly. Always name columns.
+
+```ts
+const COLS = 'id, name, city_district, tehsil'
+const { data } = await sup
+  .from('staff')
+  .select(COLS)
+  .eq('city_district', 'SARGODHA')
+  .order('name')
+
+// For count-only (no rows returned):
+const { count } = await sup
+  .from('survey_units')
+  .select('*', { count: 'exact', head: true })
+  .eq('status', 'ACTIVE')
+```
+
+### 29.4 Pattern 2 — Batched Fetch (sequential)
+
+For queries returning more than 1000 rows. Fetches pages one at a time using the PostgREST Range header directly. The Supabase JS client's `.range()` cannot override the 1000-row hard limit — this is a Supabase project config, not a PostgREST limit.
+
+```ts
+async function fetchAllRows<T = any>(
+  url: string,
+  batchSize = 1000
+): Promise<T[]> {
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  const all: T[] = []
+  let offset = 0
+  while (true) {
+    const res = await fetch(url, {
+      headers: {
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Range: `${offset}-${offset + batchSize - 1}`,
+      },
+    })
+    if (!res.ok) throw new Error(`PostgREST ${res.status}`)
+    const chunk: T[] = await res.json()
+    if (!chunk?.length) break
+    all.push(...chunk)
+    offset += chunk.length
+    if (chunk.length < batchSize) break
+  }
+  return all
+}
+
+// Usage: build a PostgREST URL with all filters + order
+const url = `${SUPABASE_URL}/rest/v1/survey_units?select=psid,uc_name&uc_name=eq.${encodeURIComponent(uc)}&order=survey_id.desc`
+const rows = await fetchAllRows(url)
+```
+
+**When to use this pattern:** Order matters (sequential pages preserve sort order), or the total row count is unknown and you need to fetch until empty.
+
+**Important:** Always include `order=` in the URL. Without it, pagination is inconsistent — PostgREST may return different rows on different pages.
+
+### 29.5 Pattern 3 — Chunked PSID/Survey ID List
+
+When filtering by an array of IDs (e.g., fetching survey_units for a list of 3000 PSIDs), the Supabase JS client `.in('psid', largeArray)` silently truncates at 1000 items. Never use it with large arrays.
+
+**Chunk size 300** — PostgREST URLs with 300 PSIDs in the `in.(...)` filter are ~6K characters. At 800 PSIDs, the URL reaches ~16K and **may silently fail with a 500 error** (Supabase/PostgREST URL length limit). Always chunk at 300.
+
+```ts
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size))
+  return chunks
+}
+
+// For large PSID lists, chunk + fetchAllRows per chunk
+const psidChunks = chunkArray(psids, 300)
+const results = await Promise.all(
+  psidChunks.map(async (chunk) => {
+    const url = `${SUPABASE_URL}/rest/v1/survey_units?select=survey_id,psid,uc_name&psid=in.(${chunk.map(encodeURIComponent).join(',')})`
+    return fetchAllRows(url)
+  })
+)
+const allRows = results.flat()
+```
+
+**When to use this pattern:** Creating assignments with > 300 items, fetching metadata for a large batch of PSIDs, payment history lookups by PSID.
+
+### 29.6 Pattern 4 — Parallel Batched Fetch (for speed)
+
+When you need all rows quickly and order doesn't matter across pages. First does a HEAD request to get the total count, then fetches all pages in parallel.
+
+```ts
+async function fetchAllParallel<T = any>(
+  url: string,
+  batchSize = 1000
+): Promise<T[]> {
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  // HEAD request for total count
+  const headRes = await fetch(url, {
+    method: 'HEAD',
+    headers: {
+      apikey: svcKey,
+      Authorization: `Bearer ${svcKey}`,
+      Prefer: 'count=exact',
+    },
+  })
+  const total = parseInt(headRes.headers.get('content-range')?.split('/')[1] || '0', 10)
+  if (total === 0) return []
+  const pageCount = Math.ceil(total / batchSize)
+  const pages = Array.from({ length: pageCount }, (_, i) => {
+    const offset = i * batchSize
+    return fetch(url, {
+      headers: {
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Range: `${offset}-${offset + batchSize - 1}`,
+      },
+    }).then((r) => r.json() as Promise<T[]>)
+  })
+  const results = await Promise.all(pages)
+  return results.flat()
+}
+```
+
+**When to use this pattern:** Speed is critical (e.g., MC list counts where sequential 42s → parallel 12s). Do NOT use when order across pages matters or when the server might rate-limit parallel requests.
+
+**When to AVOID:** If the total is > 100,000 rows (too many parallel requests), or the server is shared with active users (avoid flooding).
+
+### 29.7 Pattern 5 — Admin-Only Aggregate Queries (RPC)
+
+The only case where PL/pgSQL RPCs are allowed. The Supabase REST API cannot do `SUM`, `COUNT(DISTINCT)`, `GROUP BY` through `.select()`. Even `?select=sum:amount` returns column values, not aggregates.
+
+```sql
+CREATE OR REPLACE FUNCTION get_billing_stats(
+  p_month text DEFAULT NULL,
+  p_district text DEFAULT NULL,
+  p_tehsil text DEFAULT NULL
+) RETURNS json AS $$
+  -- Aggregate logic here
+$$ LANGUAGE plpgsql;
+```
+
+```ts
+// Called from route.ts:
+const { data, error } = await sup.rpc('get_billing_stats', {
+  p_month: month,
+  p_district: district,
+  p_tehsil: tehsil,
+})
+```
+
+**Approved RPCs:** Listed in `scripts/sql/007-data-insight-rpcs.sql`. No new RPCs should be created without reviewing this rule.
+
+### 29.8 The Status Filter Trap
+
+`survey_units` has ~160,000 rows with `status = NULL` (enriched units with PSIDs). These are ACTIVE but the column value is null, not 'ACTIVE'. Never use a bare filter:
+
+```ts
+// WRONG — misses 160K rows:
+.eq('status', 'ACTIVE')
+
+// CORRECT — includes null-status units:
+.or('status.is.null,status.eq.ACTIVE')
+```
+
+The shared helper `applyActiveFilter(query)` in `src/lib/queries/survey-units.ts` does this correctly. Always import it.
+
+### 29.9 The 1MB Response Body Trap
+
+PostgREST silently truncates responses at 1MB, even when Range headers are used. If a single page of 1000 rows exceeds 1MB (e.g., wide rows with many columns), the response is silently truncated and you get fewer rows than requested.
+
+**Detection:** If `chunk.length < batchSize` but you know there are more rows, the 1MB limit was hit. The `fetchAllRows()` sequential pattern handles this — it breaks the loop when it gets fewer rows than requested, but this may give you incomplete data.
+
+**Mitigation:**
+- Use smaller batch sizes (e.g., 500 instead of 1000) to keep each page under 1MB
+- Select fewer columns (never `select('*')`)
+- For wide rows (e.g., survey_units with 20+ columns), batchSize=300 is safer
+
+### 29.10 What NOT to Do
+
+| Anti-Pattern | Why It's Wrong | What Happens |
+|---|---|---|
+| `.range(0, 1_000_000)` | 1000-row limit is a project config, not a range limit | Silently returns only 1000 rows |
+| `.select('*')` on big tables | Wastes egress + 1MB limit risk | Appears to work until row count grows |
+| `.in('psid', arrayOf3000)` | Supabase JS client truncates at 1000 | 2000 rows silently lost |
+| `sum:amount_due` in select | PostgREST doesn't support aggregates | Returns column values, NOT sum |
+| Client-side `.filter()` on > 1000 items | Fetches all rows to browser | Slow load, wasted egress |
+| Joining 2 large tables via REST | PostgREST does nested joins poorly | Timeout or massive data transfer |
+| `order` without explicit direction | Default may not match expectation | Inconsistent sort for paginated fetches |
+
+### 29.11 URL Construction Reference
+
+Construct PostgREST URLs manually for **all batched fetches**. The pattern:
+
+```
+{SUPABASE_URL}/rest/v1/{table}?select={cols}&{filter1}&{filter2}&order={col}.{dir}
+```
+
+| Parameter | Example | Notes |
+|---|---|---|
+| `select` | `select=psid,uc_name,status` | CSV, no spaces |
+| `eq` | `uc_name=eq.MC-123` | URL-encode value |
+| `in` | `psid=in.(PSID1,PSID2,PSID3)` | Max 300 items |
+| `or` | `or=(status.is.null,status.eq.ACTIVE)` | Parens required |
+| `order` | `order=survey_id.desc` | Always include for pagination |
+| `limit` | `limit=50` | Use with Range for single page |
+| `not` | `status=not.eq.ARCHIVED` | Not equals |
+
+**Standard Supabase URL:** `https://qrxbsoqepfaryolwcedk.supabase.co`
+
+### 29.12 Quick Checklist for Any New Query
+
+Before writing a query, ask:
+
+1. **How many rows?** If > 1000, use `fetchAllRows()`.
+2. **Do I need aggregates?** If yes, fetch raw rows + TypeScript, or admin-only RPC.
+3. **Am I filtering by status?** Use `applyActiveFilter()` — never bare `.eq('status', 'ACTIVE')`.
+4. **Am I using `.in()` with a big array?** Chunk at 300.
+5. **Did I name my columns?** Never `select('*')`.
+6. **Did I include `order`?** Required for consistent pagination.
+7. **Am I joining large tables?** Two queries + Map lookup is often faster.
+8. **Is this in a client hook?** It should call `/api/*`, not Supabase directly.
+
+---
+
 ## Session History
 All development session logs have been moved to `docs/SESSION.md`.
 For the current working state (active phase, next steps, blockers), see `.opencode/context.json`.

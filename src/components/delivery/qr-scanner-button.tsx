@@ -49,15 +49,22 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
-          const match = decodedText.match(/sid=([A-Za-z0-9_-]+)/)
-          if (!match) {
-            setError('No survey ID (sid=) found in QR code')
+          const raw = decodedText.substring(0, 80)
+          let surveyId: string | null = null
+          const sidMatch = decodedText.match(/sid=([A-Za-z0-9_-]+)/)
+          if (sidMatch) {
+            surveyId = sidMatch[1]
+          } else {
+            const plainNum = decodedText.match(/(\d{5,10})/)
+            if (plainNum) surveyId = plainNum[1]
+          }
+          if (!surveyId) {
+            setError(`No survey ID found in QR: "${raw}"`)
             return
           }
-          const surveyId = match[1]
           const matched = items.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
           if (!matched) {
-            setError(`No assignment matches survey ID: ${surveyId}`)
+            setError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
             return
           }
           if (mountedRef.current) {

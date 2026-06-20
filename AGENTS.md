@@ -25,15 +25,26 @@ All plans, data model, workflow, and edge case decisions live in `docs/MASTER.md
 - Maps via react-leaflet + Google Maps tiles (not MapTiler)
 - Offline photo queue via IndexedDB
 
-## Performance Rules
-1. Never `select('*')` — name explicit columns
-2. Push filters to the server — `.eq()`, `.in()`, not JS `.filter()`
-3. No N+1 queries — use `Promise.all` for independent queries
-4. **Reference tables for all filter dropdowns** — hierarchy, surveyors, bill_months. Never DISTINCT on 212K rows.
-5. No RPCs — all aggregation in TypeScript (EXCEPTION: admin-only aggregate queries for Data Insight and admin dashboards — see `scripts/sql/007-data-insight-rpcs.sql`)
-6. `staleTime: 5min` for billing data (daily updates), `30min` for hierarchy (rarely changes)
-7. Index every filtered column in Supabase — especially `survey_units.status`
-8. No client-side `.filter()` / `.find()` on large datasets
+## Performance Rules — Supabase Query Patterns (MUST READ)
+
+Before writing ANY new query, read `docs/MASTER.md` **Section 29** (Supabase Query Patterns — The Definitive Reference). It documents all the hard-learned traps and working patterns.
+
+**Quick reference** (full examples in Section 29):
+1. **Never `select('*')`** — name explicit columns
+2. **Push filters to the server** — `.eq()`, `.in()`, not JS `.filter()`
+3. **No N+1 queries** — use `Promise.all` for independent queries
+4. **Reference tables for all filter dropdowns** — hierarchy, surveyors, bill_months
+5. **No RPCs for client features** — EXCEPTION: admin-only aggregate queries (approved list in `scripts/sql/007-data-insight-rpcs.sql`)
+6. **`staleTime`** — 5min billing, 30min hierarchy, 30s delivery, 2min performance
+7. **Index every filtered column** — especially `survey_units.status`
+8. **No client-side `.filter()`** on large datasets
+9. **> 1000 rows?** Use `fetchAllRows()` with REST + Range headers (§29.4)
+10. **PSID list > 300?** Chunk at 300 + `Promise.all` + `fetchAllRows()` per chunk (§29.5)
+11. **Need aggregates?** TypeScript in route.ts, or admin-only RPC (§29.7)
+12. **Status filter?** Always `or(status.is.null,status.eq.ACTIVE)` — never bare `.eq('status', 'ACTIVE')` (§29.8)
+13. **Order required** for consistent pagination in batched fetches
+14. **1MB response limit** — use batchSize 300-500 for wide rows (§29.9)
+15. **URL length** — max 300 items in `in.(...)` filter, or get silent 500 error (§29.5)
 
 ## Conventions
 - Hooks: `src/hooks/use-{feature}.ts`
@@ -84,33 +95,7 @@ All legacy files copied from office PC (`F:\qoder\billing-system\` + `F:\Routing
 - **scripts/data/** (gitignored, ~1.1 GB): `excel_dumps/`, `scraped_data/`, `processed_pdfs/`, `routing-station-pro-data/`
 
 ## Batched PostgREST Fetch (Bypass 1000 max-rows)
-PostgREST has a hard limit of 1000 rows per request (Supabase project config). `.range()` cannot override this. For queries that return more than 1000 rows, use batched fetching:
-
-```ts
-async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
-  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const all: any[] = []
-  let offset = 0
-  while (true) {
-    const res = await fetch(url, {
-      headers: {
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-        Range: `${offset}-${offset + batchSize - 1}`,
-      },
-    })
-    if (!res.ok) throw new Error(`PostgREST ${res.status}`)
-    const chunk = await res.json()
-    if (!chunk?.length) break
-    all.push(...chunk)
-    offset += chunk.length
-    if (chunk.length < batchSize) break
-  }
-  return all
-}
-```
-
-Usage: construct a PostgREST URL with all filters + order, then pass to `fetchAllRows(url)`. The service role key is used directly via REST headers.
+PostgREST has a hard limit of 1000 rows per request (Supabase project config). `.range()` cannot override this. For queries that return more than 1000 rows, use batched fetching. See `docs/MASTER.md` **Section 29.4-29.6** for the three patterns: sequential (`fetchAllRows`), parallel (`fetchAllParallel`), and chunked (`chunkArray` + per-chunk `fetchAllRows`).
 
 ## Route Tree RPC
 `get_route_tree(p_city text DEFAULT '')` — returns distinct routes per city/UC with `unit_count` and `is_unrouted` flag. Source: `scripts/sql/029-route-tree-rpc.sql`. Called by `GET /api/routes` Mode 2.

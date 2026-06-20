@@ -192,9 +192,9 @@ export default function MapPage() {
             />
           )}
 
-          {/* QR scanner — desktop only (mobile uses bottom bar button) */}
+          {/* QR scanner — desktop/tablet (mobile uses bottom bar button) */}
           {roleName === 'field_staff' && activeView === 'map' && (
-            <div className="hidden lg:block">
+            <div className="hidden md:block">
               <QRScannerButton
                 items={staffItems}
                 onUnitScanned={handleQRScanned}

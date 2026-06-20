@@ -76,15 +76,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
-          const match = decodedText.match(/sid=([A-Za-z0-9_-]+)/)
-          if (!match) {
-            setScanError('No survey ID (sid=) found in QR code')
+          const raw = decodedText.substring(0, 80)
+          let surveyId: string | null = null
+          const sidMatch = decodedText.match(/sid=([A-Za-z0-9_-]+)/)
+          if (sidMatch) {
+            surveyId = sidMatch[1]
+          } else {
+            const plainNum = decodedText.match(/(\d{5,10})/)
+            if (plainNum) surveyId = plainNum[1]
+          }
+          if (!surveyId) {
+            setScanError(`No survey ID found in QR: "${raw}"`)
             return
           }
-          const surveyId = match[1]
           const matched = scanItems.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
           if (!matched) {
-            setScanError(`No assignment matches survey ID: ${surveyId}`)
+            setScanError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
             return
           }
           if (mountedRef.current) {
