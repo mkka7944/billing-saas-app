@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft, Crosshair } from 'lucide-react'
+import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft, Crosshair, Flag } from 'lucide-react'
 import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
@@ -17,6 +17,11 @@ import { cn } from '@/lib/utils'
 import { useUserLocation } from '@/hooks/use-user-location'
 import { haversine } from '@/lib/geo'
 import type { AssignmentItemUnit, AssignmentItemWithUnit } from '@/types'
+import Lightbox from 'yet-another-react-lightbox'
+import 'yet-another-react-lightbox/styles.css'
+import Counter from 'yet-another-react-lightbox/plugins/counter'
+import 'yet-another-react-lightbox/plugins/counter.css'
+import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 
 const TOAST_DURATION = 12000
 
@@ -54,6 +59,8 @@ export default function UnitDeliverySheet({
   const [manualSync, setManualSync] = useState(false)
   const [inputCooldown, setInputCooldown] = useState(false)
   const [processingStep, setProcessingStep] = useState<string | null>(null)
+  const [selectedImageIdx, setSelectedImageIdx] = useState(0)
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const touchXRef = useRef<number | null>(null)
 
   const queryClient = useQueryClient()
@@ -90,6 +97,11 @@ export default function UnitDeliverySheet({
     : gpsError ? 'unavailable'
     : 'ready'
 
+  const heroImages = useMemo(() => (unit?.image_urls)?.filter(Boolean) || [], [unit?.image_urls])
+  const displayImage = heroImages[selectedImageIdx] || null
+  const thumbnails = heroImages.slice(0, 5)
+  const slides = heroImages.map((src) => ({ src }))
+
   useEffect(() => {
     setDeliveryStatus('idle')
     setIsDelivering(false)
@@ -97,6 +109,8 @@ export default function UnitDeliverySheet({
     setDeliveryDistance(null)
     setDeliveryGpsLat(null)
     setDeliveryGpsLng(null)
+    setSelectedImageIdx(0)
+    setGalleryOpen(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unit?.psid])
 
@@ -106,8 +120,6 @@ export default function UnitDeliverySheet({
     const timer = setTimeout(() => setInputCooldown(false), 2000)
     return () => clearTimeout(timer)
   }, [unit?.psid])
-
-
 
   // Auto-advance after successful delivery
   useEffect(() => {
@@ -267,15 +279,8 @@ export default function UnitDeliverySheet({
     }
   }, [assignmentItemId, unit?.psid, unit?.survey_id, unit?.lat, unit?.lng, deliveryLat, deliveryLng, userEmail, mark, enqueuePhoto, queueCount, manualSync, toast, updateToast, queryClient, userId])
 
-  const handleSkipPhoto = useCallback(async () => {
+  const handleNoPhotoMark = useCallback(async () => {
     if (!assignmentItemId || !unit?.psid) return
-    const ok = await confirm({
-      title: 'Deliver without photo?',
-      message: 'GPS coordinates and timestamp will be recorded. No photo will be saved.',
-      confirmLabel: 'Deliver without Photo',
-      variant: 'default',
-    })
-    if (!ok) return
 
     setIsDelivering(true)
     try {
@@ -326,11 +331,9 @@ export default function UnitDeliverySheet({
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
-      setIsDelivering(false)  // reset on error
-    } finally {
-      // isDelivering stays true on success — auto-advance timer handles it
+      setIsDelivering(false)
     }
-  }, [assignmentItemId, unit, deliveryLat, deliveryLng, mark, confirm, toast, queryClient, userId])
+  }, [assignmentItemId, unit, deliveryLat, deliveryLng, mark, toast, queryClient, userId])
 
   const handleForceComplete = useCallback(async () => {
     if (!unit?.psid) return
@@ -398,25 +401,22 @@ export default function UnitDeliverySheet({
 
   if (!unit) return null
 
-  const totalDue = (unit.monthly_fee ?? 0) + (unit.arrears ?? 0)
-  const displayImage = unit.image_urls?.[0] || null
-
   return (
-    <div className="fixed bottom-0 inset-x-0 z-[1001] flex flex-col rounded-t-2xl overflow-hidden shadow-2xl bg-background max-h-[80vh] min-h-[300px] mx-auto w-full max-w-md">
-      {/* Full-bleed hero image with everything overlaid */}
-      <div
-        className="relative flex-1 min-h-[300px]"
-        onTouchStart={(e) => { touchXRef.current = e.touches[0].clientX }}
-        onTouchEnd={(e) => {
-          if (touchXRef.current == null) return
-          const dx = e.changedTouches[0].clientX - touchXRef.current
-          touchXRef.current = null
-          if (Math.abs(dx) > 50) {
-            if (dx > 0) onPrev?.()
-            else onNext?.()
-          }
-        }}
-      >
+    <div
+      className="fixed bottom-0 inset-x-0 z-[1001] flex flex-col rounded-t-2xl overflow-hidden shadow-2xl bg-background max-h-[80vh] min-h-[300px] mx-auto w-full max-w-md"
+      onTouchStart={(e) => { touchXRef.current = e.touches[0].clientX }}
+      onTouchEnd={(e) => {
+        if (touchXRef.current == null) return
+        const dx = e.changedTouches[0].clientX - touchXRef.current
+        touchXRef.current = null
+        if (Math.abs(dx) > 50) {
+          if (dx > 0) onPrev?.()
+          else onNext?.()
+        }
+      }}
+    >
+      {/* Hero section */}
+      <div className="relative flex-1 min-h-[300px]">
         {/* Background image or gradient fallback */}
         {displayImage ? (
           <img
@@ -432,34 +432,67 @@ export default function UnitDeliverySheet({
         {/* Gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
 
-        {/* Survey ID badge — top right */}
-        {unit.survey_id && (
-          <div className="absolute top-3 right-3 z-20 bg-black/50 text-white/80 text-[10px] px-2 py-0.5 rounded font-mono backdrop-blur-sm">
-            #{unit.survey_id}
-          </div>
-        )}
+        {/* Top row: Close | GPS + dots | Survey ID */}
+        <div className="absolute top-1.5 left-3 right-3 z-20 flex items-center gap-1.5">
+          <button
+            onClick={onClose}
+            className="shrink-0 h-8 w-8 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 backdrop-blur-sm cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
 
-        {/* Previous photos badge */}
+          {/* GPS row — centered in available space */}
+          {deliveryStatus === 'idle' && liveGpsStatus !== 'idle' && unit?.lat && unit?.lng && (
+            <div className={cn(
+              'flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold drop-shadow-sm',
+              liveGpsStatus === 'locating' && 'text-white/60',
+              liveGpsStatus === 'unavailable' && 'text-white/50',
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance <= 50 && 'text-green-300',
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 50 && liveDistance <= 200 && 'text-amber-300',
+              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 200 && 'text-white/80',
+            )}>
+              <Crosshair className="h-3.5 w-3.5 shrink-0" />
+              {liveGpsStatus === 'locating' && <span>Locating...</span>}
+              {liveGpsStatus === 'unavailable' && <span>GPS unavailable</span>}
+              {liveGpsStatus === 'ready' && liveDistance != null && (
+                <span>{liveDistance >= 1000 ? `${(liveDistance / 1000).toFixed(1)} km` : `${liveDistance} m`}</span>
+              )}
+              {liveGpsStatus === 'ready' && gpsAccuracy != null && (
+                <span className="flex items-center gap-1 ml-1">
+                  {[10, 50, Infinity].map((threshold, i) => (
+                    <span
+                      key={i}
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        gpsAccuracy <= threshold ? 'bg-current' : 'bg-white/20'
+                      }`}
+                    />
+                  ))}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Survey ID badge — pill style */}
+          {unit.survey_id && (
+            <span className="shrink-0 text-sm font-bold text-white font-mono bg-black/50 backdrop-blur-sm px-2 py-0.5 rounded-md">
+              #{unit.survey_id}
+            </span>
+          )}
+        </div>
+
+        {/* Previous photos badge — top right area */}
         {deliveryStatus === 'idle' && previousPhotos.length > 0 && (
-          <div className="absolute top-3 right-3 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm z-10">
+          <div className="absolute top-3 right-12 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm z-20">
             <Image className="h-3 w-3" /> {previousPhotos.length}
           </div>
         )}
-
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="absolute top-3 left-3 z-20 h-8 w-8 flex items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60 backdrop-blur-sm cursor-pointer"
-        >
-          <X className="h-4 w-4" />
-        </button>
 
         {/* Navigation arrows */}
         {onPrev && (
           <button
             onTouchEnd={(e) => { e.stopPropagation(); touchXRef.current = null }}
             onClick={(e) => { e.stopPropagation(); onPrev() }}
-            className="absolute left-0 top-1/3 -translate-y-1/2 z-20 h-12 w-10 flex items-center justify-center bg-black/5 text-white/50 hover:bg-black/20 hover:text-white/90 rounded-r-lg backdrop-blur-sm cursor-pointer transition-all"
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 h-12 w-10 flex items-center justify-center bg-black/5 text-white/50 hover:bg-black/20 hover:text-white/90 rounded-r-lg backdrop-blur-sm cursor-pointer transition-all"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
@@ -468,15 +501,133 @@ export default function UnitDeliverySheet({
           <button
             onTouchEnd={(e) => { e.stopPropagation(); touchXRef.current = null }}
             onClick={(e) => { e.stopPropagation(); onNext() }}
-            className="absolute right-0 top-1/3 -translate-y-1/2 z-20 h-12 w-10 flex items-center justify-center bg-black/5 text-white/50 hover:bg-black/20 hover:text-white/90 rounded-l-lg backdrop-blur-sm cursor-pointer transition-all"
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-20 h-12 w-10 flex items-center justify-center bg-black/5 text-white/50 hover:bg-black/20 hover:text-white/90 rounded-l-lg backdrop-blur-sm cursor-pointer transition-all"
           >
             <ChevronRight className="h-5 w-5" />
           </button>
         )}
 
-        {/* Delivered overlay */}
+        {/* Gallery icon button on hero image */}
+        {heroImages.length > 0 && (
+          <button
+            onClick={() => setGalleryOpen(true)}
+            className="absolute top-12 right-3 z-20 h-7 w-7 flex items-center justify-center rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white backdrop-blur-sm cursor-pointer transition-colors"
+            aria-label="Open gallery"
+          >
+            <Image className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        {/* Bottom content overlaid on hero */}
+        <div className="absolute bottom-0 left-0 right-0 pt-1 pb-5 px-4 z-10 flex flex-col gap-2">
+          {/* Consumer info — no Amount */}
+          <div>
+            <p className="text-base font-bold text-white truncate">{unit.consumer_name || 'Unknown'}</p>
+            {unit.address && (
+              <p className="text-xs text-white/70 truncate mt-0.5">{unit.address}</p>
+            )}
+            {unit.uc_name && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-white/50 mt-1">
+                <MapPin className="h-3 w-3" /> {unit.uc_name}
+              </span>
+            )}
+          </div>
+
+          {/* Thumbnail strip */}
+          {thumbnails.length > 1 && (
+            <div className="flex gap-1.5 overflow-x-auto">
+              {thumbnails.map((url, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSelectedImageIdx(i)}
+                  className={cn(
+                    'h-8 w-8 rounded-md overflow-hidden shrink-0 border-2 cursor-pointer transition-all',
+                    i === selectedImageIdx ? 'border-white' : 'border-transparent opacity-60 hover:opacity-90'
+                  )}
+                >
+                  <img
+                    src={url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Action buttons + status hints */}
+          {deliveryStatus === 'idle' && (
+            <div className="flex flex-col gap-2">
+              {itemStatus === 'delivered' && (
+                <span className="text-[10px] text-white/50 text-center">Previously delivered — tap Redeliver to update photo</span>
+              )}
+              {itemStatus === 'processing' && (
+                <span className="text-[10px] text-amber-300/70 text-center">Needs attention — GPS was out of range</span>
+              )}
+
+              {/* Single action row */}
+              <div className="flex items-stretch gap-2">
+                {/* Primary action */}
+                {assignmentItemId && staffMode !== 'browse' ? (
+                  allowNoPhoto ? (
+                    <button
+                      onClick={handleNoPhotoMark}
+                      disabled={isDelivering || inputCooldown}
+                      className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
+                    >
+                      {(isDelivering || inputCooldown) ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                      {(isDelivering || inputCooldown) ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Mark Delivery'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={openCamera}
+                      disabled={isDelivering || inputCooldown}
+                      className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
+                    >
+                      {(isDelivering || inputCooldown) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                      {(isDelivering || inputCooldown) ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Take Picture & Deliver'}
+                    </button>
+                  )
+                ) : null}
+
+                {/* Details button */}
+                {onViewDetails && (
+                  <button
+                    onClick={() => onViewDetails()}
+                    disabled={isDelivering || inputCooldown}
+                    className={
+                      assignmentItemId && staffMode !== 'browse'
+                        ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm disabled:opacity-50"
+                        : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md disabled:opacity-50"
+                    }
+                  >
+                    {assignmentItemId && staffMode !== 'browse' ? (
+                      <>Details <ChevronRight className="h-3.5 w-3.5" /></>
+                    ) : (
+                      <>View Details <ChevronRight className="h-4 w-4" /></>
+                    )}
+                  </button>
+                )}
+
+                {/* Flag button — icon only */}
+                {(assignmentItemId || isAdmin) && (
+                  <button
+                    onClick={handleFlag}
+                    className="h-11 w-11 flex items-center justify-center rounded-xl bg-white/15 text-white/60 hover:bg-white/25 hover:text-white shrink-0 backdrop-blur-sm cursor-pointer transition-colors"
+                    title="Flag for review"
+                  >
+                    <Flag className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Success overlay — inside hero so it covers everything */}
         {deliveryStatus !== 'idle' && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center">
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 backdrop-blur-sm rounded-t-2xl">
             <div className="flex flex-col items-center gap-1.5 text-white">
               <div className={`h-14 w-14 rounded-full flex items-center justify-center backdrop-blur-sm ${deliveryStatus === 'processing' ? 'bg-amber-500/80' : 'bg-green-500/80'}`}>
                 <CheckCircle2 className="h-7 w-7" />
@@ -512,125 +663,18 @@ export default function UnitDeliverySheet({
             </div>
           </div>
         )}
-
-        {/* Bottom content — info + actions on the image */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 pb-6 z-10 flex flex-col gap-3">
-          {/* Consumer info */}
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-base font-bold text-white truncate">{unit.consumer_name || 'Unknown'}</p>
-              {unit.address && (
-                <p className="text-xs text-white/70 truncate mt-0.5">{unit.address}</p>
-              )}
-              {unit.uc_name && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-white/50 mt-1">
-                  <MapPin className="h-3 w-3" /> {unit.uc_name}
-                </span>
-              )}
-            </div>
-            {totalDue > 0 && (
-              <div className="shrink-0 text-right">
-                <p className="text-[10px] text-white/50 uppercase tracking-wide">Amount</p>
-                <p className="text-sm font-bold text-white">Rs.{totalDue.toLocaleString()}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Live GPS distance indicator */}
-          {deliveryStatus === 'idle' && liveGpsStatus !== 'idle' && unit?.lat && unit?.lng && (
-            <div className={cn(
-              'flex items-center gap-1.5 text-[11px] font-medium',
-              liveGpsStatus === 'locating' && 'text-white/50',
-              liveGpsStatus === 'unavailable' && 'text-white/40',
-              liveGpsStatus === 'ready' && liveDistance != null && liveDistance <= 50 && 'text-green-400',
-              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 50 && liveDistance <= 200 && 'text-amber-400',
-              liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 200 && 'text-white/70',
-            )}>
-              <Crosshair className="h-3 w-3" />
-              {liveGpsStatus === 'locating' && <span>Locating your position...</span>}
-              {liveGpsStatus === 'unavailable' && <span>GPS unavailable — proceed manually</span>}
-              {liveGpsStatus === 'ready' && liveDistance != null && (
-                <span>{liveDistance >= 1000 ? `${(liveDistance / 1000).toFixed(1)} km` : `${liveDistance} m`} away</span>
-              )}
-              {liveGpsStatus === 'ready' && gpsAccuracy != null && (
-                <span className="flex items-center gap-0.5 ml-auto">
-                  {[10, 50, Infinity].map((threshold, i) => (
-                    <span
-                      key={i}
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        gpsAccuracy <= threshold ? 'text-green-400 bg-green-400' : 'bg-white/20'
-                      }`}
-                    />
-                  ))}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Action buttons */}
-          {deliveryStatus === 'idle' && (
-            <div className="flex flex-col gap-2">
-              {itemStatus === 'delivered' && (
-                <span className="text-[10px] text-white/50 text-center">Previously delivered — tap Redeliver to update photo</span>
-              )}
-              {itemStatus === 'processing' && (
-                <span className="text-[10px] text-amber-300/70 text-center">Needs attention — GPS was out of range</span>
-              )}
-              <div className="flex items-stretch gap-2">
-                {assignmentItemId && staffMode !== 'browse' ? (
-                  <button
-                    onClick={openCamera}
-                    disabled={isDelivering || inputCooldown}
-                    className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
-                  >
-                    {(isDelivering || inputCooldown) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                    {(isDelivering || inputCooldown) ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Take Picture & Deliver'}
-                  </button>
-                ) : null}
-                {onViewDetails && (
-                  <button
-                    onClick={() => onViewDetails()}
-                    disabled={isDelivering || inputCooldown}
-                    className={
-                      assignmentItemId && staffMode !== 'browse'
-                        ? "h-11 px-4 text-xs font-medium rounded-xl bg-white/15 text-white border border-white/20 hover:bg-white/25 flex items-center justify-center gap-1 cursor-pointer shrink-0 backdrop-blur-sm disabled:opacity-50"
-                        : "flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer shadow-md disabled:opacity-50"
-                    }
-                  >
-                {assignmentItemId && staffMode !== 'browse' ? (
-                      <>Details <ChevronRight className="h-3.5 w-3.5" /></>
-                    ) : (
-                      <>View Details <ChevronRight className="h-4 w-4" /></>
-                    )}
-                  </button>
-                )}
-              </div>
-              {allowNoPhoto && assignmentItemId && staffMode !== 'browse' && (
-                <button
-                  onClick={handleSkipPhoto}
-                  disabled={isDelivering || inputCooldown}
-                  className='w-full h-9 text-[11px] font-medium rounded-lg bg-white/10 text-white/70 border border-white/10 hover:bg-white/20 hover:text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 backdrop-blur-sm transition-colors'
-                >
-                  {(isDelivering || inputCooldown) ? <Loader2 className='h-3 w-3 animate-spin' /> : <Crosshair className='h-3 w-3' />}
-                  {(isDelivering || inputCooldown) ? 'Processing...' : 'Photo not working? Tap to deliver without photo'}
-                </button>
-              )}
-              {deliveryStatus === 'idle' && assignmentItemId && (
-                <button
-                  onClick={handleFlag}
-                  className='w-full h-8 text-[10px] font-medium text-white/40 hover:text-white/70 flex items-center justify-center gap-1 cursor-pointer transition-colors'
-                >
-                  Flag for Review
-                </button>
-              )}
-            </div>
-          )}
-        </div>
       </div>
 
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
+
+      {/* Gallery Lightbox */}
+      <Lightbox
+        open={galleryOpen}
+        close={() => setGalleryOpen(false)}
+        slides={slides}
+        plugins={[Counter, Zoom]}
+        counter={{ container: { style: { top: 0, right: 0 } } }}
+      />
     </div>
   )
 }
-
-
