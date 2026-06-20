@@ -177,7 +177,7 @@ export default function DeliverPage() {
     let list = items
     if (selectedUc !== 'all') list = list.filter((i) => (i.unit?.uc_name || 'Unknown') === selectedUc)
     if (filterTab === 'my-position') return list
-    if (filterTab === 'pending') return list.filter((i) => i.status === 'pending')
+    if (filterTab === 'pending') return list.filter((i) => i.status === 'pending' && !i.deliveredByOther)
     if (filterTab === 'issues') return list.filter((i) => i.status === 'processing' || i.status === 'missed')
     if (filterTab === 'delivered') return list.filter((i) => i.status === 'delivered')
     return list
@@ -190,6 +190,10 @@ export default function DeliverPage() {
   const handleSelect = (id: string) => {
     const item = items.find((i) => i.id === id)
     if (!item?.unit) return
+    if (item.deliveredByOther) {
+      toast(`Already delivered by ${item.deliveredByStaffName || 'another staff member'}`, 'info')
+      return
+    }
     if (staffMode === 'browse') {
       toast('Switch to delivery mode to deliver this bill', 'warning')
       return
@@ -423,16 +427,19 @@ export default function DeliverPage() {
             {/* List — flat paginated */}
             <div className="flex-1 overflow-y-auto">
               {pageItems.map((item) => {
-                const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending
+                const isOther = item.deliveredByOther
+                const cfg = STATUS_CONFIG[isOther ? 'delivered' : item.status] || STATUS_CONFIG.pending
                 const sid = item.survey_id
                 const isNext = filterTab === 'my-position' && item.status === 'pending' && item.route_seq === continuation
                 return (
                   <button
                     key={item.id}
                     onClick={() => handleSelect(item.id)}
+                    disabled={isOther}
                     className={cn(
                       'w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer',
-                      isNext && 'bg-emerald-500/5 border-l-2 border-l-emerald-500'
+                      isNext && 'bg-emerald-500/5 border-l-2 border-l-emerald-500',
+                      isOther && 'opacity-50 cursor-not-allowed hover:bg-transparent active:bg-transparent'
                     )}
                   >
                     {/* Route seq */}
@@ -475,13 +482,14 @@ export default function DeliverPage() {
                       </p>
                       <p className={cn(
                         'text-[10px] font-semibold mt-0.5',
-                        item.status === 'delivered' && 'text-green-600',
-                        item.status === 'missed' && 'text-red-600',
-                        item.status === 'pending' && 'text-blue-600',
-                        item.status === 'processing' && 'text-amber-600',
-                        item.status === 'skipped' && 'text-gray-500',
+                        isOther && 'text-gray-400',
+                        !isOther && item.status === 'delivered' && 'text-green-600',
+                        !isOther && item.status === 'missed' && 'text-red-600',
+                        !isOther && item.status === 'pending' && 'text-blue-600',
+                        !isOther && item.status === 'processing' && 'text-amber-600',
+                        !isOther && item.status === 'skipped' && 'text-gray-500',
                       )}>
-                        {cfg.label}
+                        {isOther ? `by ${item.deliveredByStaffName || 'other'}` : cfg.label}
                       </p>
                     </div>
                   </button>

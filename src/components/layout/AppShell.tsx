@@ -116,6 +116,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             setScanError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
             return
           }
+          if (matched.deliveredByOther) {
+            stopScanner()
+            setScanError(`Bill already delivered by ${matched.deliveredByStaffName || 'another staff member'}`)
+            return
+          }
           if (mountedRef.current) {
             stopScanner()
             setShowScanner(false)

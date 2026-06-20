@@ -83,6 +83,11 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
             setError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
             return
           }
+          if (matched.deliveredByOther) {
+            stopScanner()
+            setError(`Bill already delivered by ${matched.deliveredByStaffName || 'another staff member'}`)
+            return
+          }
           if (mountedRef.current) {
             stopScanner()
             setOpen(false)

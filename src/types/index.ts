@@ -145,6 +145,8 @@ export interface AssignmentItemUnit {
 
 export interface AssignmentItemWithUnit extends AssignmentItem {
   unit: AssignmentItemUnit | null
+  deliveredByOther?: boolean
+  deliveredByStaffName?: string | null
 }
 
 // ─── Bill Info (Bill Summary section in HouseDetailSheet) ──

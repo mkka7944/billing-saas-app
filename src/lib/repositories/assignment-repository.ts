@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { applyActiveFilter } from '@/lib/queries/survey-units'
 import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 import { currentMonth } from '@/lib/constants'
+import { pktDayRange } from '@/lib/pkt'
 
 async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
   const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -249,10 +250,55 @@ export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery
     units = []
   }
 
+  // Check for same PSIDs delivered today by other staff
+  const staffOtherMap = new Map<string, string | null>()
+  if (psids.length) {
+    const { start, end } = pktDayRange()
+    const { data: todayDeliveries } = await sup
+      .from('assignment_items')
+      .select('psid, assignment_id, delivered_at')
+      .in('psid', psids)
+      .eq('status', 'delivered')
+      .gte('delivered_at', start)
+      .lte('delivered_at', end)
+    if (todayDeliveries?.length) {
+      const ownIds = new Set(assignmentIds)
+      const otherItems = todayDeliveries.filter((d: any) => !ownIds.has(d.assignment_id))
+      if (otherItems.length) {
+        const otherAssIds = [...new Set(otherItems.map((d: any) => d.assignment_id))]
+        const { data: otherAssigns } = await sup
+          .from('daily_assignments')
+          .select('id, staff_id')
+          .in('id', otherAssIds)
+        const otherStaffIds = [...new Set((otherAssigns || []).map((a: any) => a.staff_id))]
+        const { data: otherStaff } = await sup
+          .from('staff')
+          .select('id, name')
+          .in('id', otherStaffIds)
+        const staffNameMap = new Map((otherStaff || []).map((s: any) => [s.id, s.name]))
+        const assignStaffMap = new Map((otherAssigns || []).map((a: any) => [a.id, a.staff_id]))
+        // For each PSID, keep only the most recent delivery
+        const latestByPsid = new Map<string, string | null>()
+        for (const o of otherItems) {
+          const existing = latestByPsid.get(o.psid)
+          if (!existing || o.delivered_at > existing) {
+            const sid = assignStaffMap.get(o.assignment_id)
+            latestByPsid.set(o.psid, sid ? (staffNameMap.get(sid) || null) : null)
+          }
+        }
+        for (const [psid, name] of latestByPsid) {
+          staffOtherMap.set(psid, name)
+        }
+      }
+    }
+  }
+
   const unitMap = new Map((units || []).map((u: any) => [u.psid, u]))
   const itemsWithUnits = (items || []).map((item: any) => ({
     ...item,
     unit: unitMap.get(item.psid) || null,
+    deliveredByOther: staffOtherMap.has(item.psid),
+    deliveredByStaffName: staffOtherMap.get(item.psid) || null,
   }))
 
   return { data: (assignments as any[])[0], items: itemsWithUnits }
