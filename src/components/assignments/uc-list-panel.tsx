@@ -11,6 +11,7 @@ interface Props {
 }
 
 function ucGroup(uc_name: string): number {
+  if (!uc_name) return 2
   if (uc_name.startsWith('MC')) return 0
   if (uc_name.startsWith('UC')) return 1
   return 2

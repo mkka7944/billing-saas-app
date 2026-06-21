@@ -13,7 +13,7 @@ import { AppHeader } from './AppHeader'
 import { PageLoader } from '@/components/page-loader'
 import { DesktopFilterBar } from '@/components/filter-panel'
 import { MapIcon, List, Truck, BarChart3, QrCode, X, Loader2, Scan } from 'lucide-react'
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
+import { createScanner, type QrScannerAdapter } from '@/lib/qr-scanner-adapter'
 import { cn } from '@/lib/utils'
 import type { AssignmentItemWithUnit } from '@/types'
 
@@ -48,7 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isScanning, setIsScanning] = useState(false)
   const [scanLoading, setScanLoading] = useState(false)
   const [manualInput, setManualInput] = useState('')
-  const scannerRef = useRef<Html5Qrcode | null>(null)
+  const scannerRef = useRef<QrScannerAdapter | null>(null)
   const mountedRef = useRef(true)
 
   useEffect(() => {
@@ -60,7 +60,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (scannerRef.current) {
       try {
         await scannerRef.current.stop()
-        await scannerRef.current.clear()
       } catch {}
       scannerRef.current = null
     }
@@ -83,72 +82,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Brief delay to stabilize camera init on Samsung Chrome
     await new Promise((r) => setTimeout(r, 500))
 
-    const scanner = new Html5Qrcode('qr-reader-shell')
-    scannerRef.current = scanner
-    try {
-      await scanner.start(
-        { facingMode: 'environment' },
-        {
-          fps: 20,
-          qrbox: (vw: number, vh: number) => {
-            const size = Math.floor(Math.min(vw, vh) * 0.7)
-            return { width: size, height: size }
-          },
-          aspectRatio: 1.777778,
-          experimentalFeatures: { useBarCodeDetectorIfSupported: false },
-          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-        } as any,
-        (decodedText) => {
-          const raw = decodedText.substring(0, 80)
-          let surveyId: string | null = null
-          const sidMatch = decodedText.match(/sid=([A-Za-z0-9_-]+)/)
-          if (sidMatch) {
-            surveyId = sidMatch[1]
-          } else {
-            const plainNum = decodedText.match(/(\d{5,10})/)
-            if (plainNum) surveyId = plainNum[1]
-          }
-          if (!surveyId) {
-            stopScanner()
-            setScanError(`No survey ID found in QR: "${raw}"`)
-            return
-          }
-          const matched = scanItemsRef.current.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
-          if (!matched) {
-            stopScanner()
-            setScanError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
-            return
-          }
-          if (matched.deliveredByOther) {
-            stopScanner()
-            setScanError(`Bill already delivered by ${matched.deliveredByStaffName || 'another staff member'}`)
-            return
-          }
-          if (mountedRef.current) {
-            stopScanner()
-            setShowScanner(false)
-            setScanError(null)
-            router.push(`/map?target=${encodeURIComponent(matched.psid)}`)
-          }
-        },
-        () => {},
-      )
+    const container = document.getElementById('qr-reader-shell')
+    if (!container) { setScanError('Scanner container not found'); setIsScanning(false); return }
 
-      // Apply continuous focus and zoom after camera stabilizes
-      setTimeout(async () => {
-        try {
-          if (scannerRef.current) {
-            await scannerRef.current.applyVideoConstraints({
-              focusMode: 'continuous',
-              advanced: [{ zoom: 1.5 } as any],
-            } as MediaTrackConstraints)
-          }
-        } catch {}
-      }, 2000)
-    } catch (e) {
+    const onDecode = (decodedText: string) => {
+      const raw = decodedText.substring(0, 80)
+      let surveyId: string | null = null
+      const sidMatch = decodedText.match(/sid=([A-Za-z0-9_-]+)/)
+      if (sidMatch) {
+        surveyId = sidMatch[1]
+      } else {
+        const plainNum = decodedText.match(/(\d{5,10})/)
+        if (plainNum) surveyId = plainNum[1]
+      }
+      if (!surveyId) {
+        stopScanner()
+        setScanError(`No survey ID found in QR: "${raw}"`)
+        return
+      }
+      const matched = scanItemsRef.current.find((i) => i.survey_id === surveyId || i.unit?.survey_id === surveyId)
+      if (!matched) {
+        stopScanner()
+        setScanError(`Unrecognized bill: "${raw}" (ID: ${surveyId})`)
+        return
+      }
+      if (matched.deliveredByOther) {
+        stopScanner()
+        setScanError(`Bill already delivered by ${matched.deliveredByStaffName || 'another staff member'}`)
+        return
+      }
       if (mountedRef.current) {
-        setScanError(`Camera error: ${(e as Error).message}`)
+        stopScanner()
+        setShowScanner(false)
+        setScanError(null)
+        router.push(`/map?target=${encodeURIComponent(matched.psid)}`)
+      }
+    }
+
+    const onScanError = (err: string) => {
+      if (mountedRef.current) {
+        setScanError(`Scan error: ${err}`)
         setIsScanning(false)
+      }
+    }
+
+    try {
+      const scanner = createScanner('nimiq', container, onDecode, onScanError)
+      scannerRef.current = scanner
+      await scanner.start()
+    } catch {
+      if (!mountedRef.current) return
+      // Fallback to html5-qrcode
+      try {
+        await stopScanner()
+        const scanner = createScanner('html5', container, onDecode, onScanError)
+        scannerRef.current = scanner
+        await scanner.start()
+      } catch (e2) {
+        if (mountedRef.current) {
+          setScanError(`Camera error: ${(e2 as Error).message}`)
+          setIsScanning(false)
+        }
       }
     }
   }, [stopScanner, router])
