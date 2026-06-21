@@ -12,6 +12,7 @@ import { BillingSidebar } from './BillingSidebar'
 import { AppHeader } from './AppHeader'
 import { PageLoader } from '@/components/page-loader'
 import { DesktopFilterBar } from '@/components/filter-panel'
+import { FloatingActions } from '@/components/layout/floating-actions'
 import { MapIcon, List, Truck, BarChart3, QrCode, X, Loader2, Scan } from 'lucide-react'
 import { createScanner, type QrScannerAdapter } from '@/lib/qr-scanner-adapter'
 import { cn } from '@/lib/utils'
@@ -245,6 +246,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <main className="flex-1 overflow-hidden relative">
+          <FloatingActions />
           {children}
         </main>
 

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, useMap, CircleMarker } from 'react-leaflet'
 import L from 'leaflet'
 import StaffMapMarkers from './staff-map-markers'
+import SearchResultMarker from '@/components/search-result-marker'
 import { useBillingStore } from '@/stores/billing-store'
 import { useUserLocation } from '@/hooks/use-user-location'
 import { useMapZoom } from '@/hooks/use-map-zoom'
@@ -109,6 +110,7 @@ export default function StaffMap({ items, userLocation }: StaffMapProps) {
         />
         <FitStaffBounds items={items} />
         <FlyToTarget items={items} />
+        <SearchResultMarker />
         <StaffMapMarkers items={items} selectedPsid={deliverTargetId ?? null} />
         <UserMarker location={userLocation} />
       </MapContainer>

@@ -48,6 +48,7 @@ export default function DeliverPage() {
   const [selectedUc, setSelectedUc] = useState<string>('all')
   const [ucDropdownOpen, setUcDropdownOpen] = useState(false)
   const [dbUnsyncedCount, setDbUnsyncedCount] = useState(0)
+  const [highlightItemId, setHighlightItemId] = useState<string | null>(null)
 
   const tabInitialized = useRef(false)
 
@@ -55,6 +56,9 @@ export default function DeliverPage() {
 
   const { data, isLoading, isError, refetch } = useStaffAssignment(user?.id || null)
   const isOnline = useOnlineStatus()
+
+  const searchResult = useBillingStore((s) => s.searchResult)
+  const setSearchResult = useBillingStore((s) => s.setSearchResult)
 
   useEffect(() => { setPageIdentity('Deliver') }, [setPageIdentity])
 
@@ -181,6 +185,19 @@ export default function DeliverPage() {
       if (idx >= 0) setPage(Math.floor(idx / PAGE_SIZE))
     }
   }, [filterTab, continuation, sorted])
+
+  // Navigate to search result in the deliver list
+  useEffect(() => {
+    if (!searchResult?.assignment_item_id) return
+    const idx = sorted.findIndex((i) => i.id === searchResult.assignment_item_id)
+    if (idx >= 0) {
+      const targetPage = Math.floor(idx / PAGE_SIZE)
+      setPage(targetPage)
+      setHighlightItemId(searchResult.assignment_item_id)
+      setTimeout(() => setHighlightItemId(null), 3000)
+    }
+    setSearchResult(null)
+  }, [searchResult, sorted, setSearchResult])
 
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
   const pageItems = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -458,7 +475,8 @@ export default function DeliverPage() {
                     className={cn(
                       'w-full flex items-center gap-3 px-4 py-3 border-b border-border/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-left cursor-pointer',
                       isNext && 'bg-emerald-500/5 border-l-2 border-l-emerald-500',
-                      isOther && 'opacity-50 cursor-not-allowed hover:bg-transparent active:bg-transparent'
+                      isOther && 'opacity-50 cursor-not-allowed hover:bg-transparent active:bg-transparent',
+                      item.id === highlightItemId && 'bg-blue-500/10 ring-2 ring-blue-500/50'
                     )}
                   >
                     {/* Route seq */}

@@ -12,7 +12,7 @@ import { Dashboard } from '@/components/dashboard'
 import { HouseDetailSheet } from '@/components/house-detail-sheet'
 import { DataInsight } from '@/components/data-insight'
 import { AppShell } from '@/components/layout/AppShell'
-import { FloatingActions } from '@/components/layout/floating-actions'
+
 import { MapMarkerCount } from '@/components/map-marker-count'
 import { LivePanel } from '@/components/live/live-panel'
 
@@ -149,7 +149,6 @@ function MapPageContent() {
 
   return (
     <AppShell>
-      <FloatingActions />
       <div className="flex flex-col lg:flex-row h-full">
         <div className="flex-1 relative min-h-0 min-w-0 h-full">
           {activeView !== 'stats' && activeView !== 'data-insight' && activeView !== 'live' && (

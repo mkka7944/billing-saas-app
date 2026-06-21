@@ -68,6 +68,12 @@
 25. [Remaining Corrections](#25-remaining-corrections)
 26. [Delivery KPI Queries (Future)](#26-delivery-kpi-queries-future)
 27. [Photo Upload Priority: Direct Browser-to-GAS](#27-photo-upload-priority-direct-browser-to-gas-replace-ssr-proxy)
+28. [New Delivery Model — Multi-Staff Same-MC](#28-new-delivery-model---multi-staff-same-mc-proposed-2026-06-19)
+29. [Supabase Query Patterns — The Definitive Reference](#29-supabase-query-patterns---the-definitive-reference)
+30. [UnitDeliverySheet Redesign Plan](#30-unitdeliverysheet-redesign-plan-2026-06-20)
+31. [M3 — JSON Marker Chunks + Global Search Design](#31-m3--json-marker-chunks--global-search-2026-06-21)
+32. [T1 — Transition & Zoom Uniformity Plan](#32-t1--transition--zoom-uniformity-plan-2026-06-21)
+33. [Global Search Implementation & UI Refinements](#33-global-search-implementation--ui-refinements-2026-06-22)
 ---
 ## App Vision â€” Daily Reference
 
@@ -3441,3 +3447,163 @@ These change intentional behavior. Each must be tested before moving to the next
 ### Why Not Batch All
 
 Each session is independently testable. If Session 2 causes an issue, Session 1 is already deployed and working. If Session 3 breaks something, Sessions 1-2 are unaffected. This avoids the "one big change breaks everything and you don't know which part" scenario.
+
+---
+
+## 33. Global Search Implementation & UI Refinements (2026-06-22)
+
+### Divergence from M3 Design (Section 31)
+
+The original M3 design proposed **client-side chunk-based search** (JSON files in Supabase Storage, fetched per-UC, indexed in browser memory). The actual implementation uses a **SSR API route** (`/api/search`) with PostgREST `ilike` filters. Rationale:
+
+| Aspect | M3 Design (Section 31) | Actual Implementation | Why |
+|--------|----------------------|----------------------|-----|
+| Data source | JSON chunks in Storage bucket | PostgREST query on `survey_units` table | No chunk generation scripts needed, no bucket setup, works immediately |
+| Search engine | Client-side substring match | Server-side `ilike` | Simpler, no JSON parse overhead, leverages existing DB indexes |
+| Offline | Works offline after chunk loaded | Requires network | Search is a lightweight API call (~200ms), acceptable for current usage |
+| Deliver page | Listed as deferred (#7 in M3 risks) | Implemented (FloatingActions in AppShell) | Easy win once FloatingActions moved to AppShell |
+
+The chunk-based approach remains as Phase M3 for the **marker loading** use case (10-15s Supabase batch fetch → 600ms chunk fetch), not for search. Search is now delivered via the API route.
+
+### 33.1 Architecture
+
+```
+Client (DesktopFilterBar / SlideDownSearch)
+  │  onChange → debounce 300ms → AbortController
+  ▼
+useGlobalSearch({ scope })
+  │  fetch(`/api/search?q=...&scope=...`)
+  ▼
+GET /api/search/route.ts
+  │  20-digit → PSID.exact priority
+  │  else → SID.ilike priority
+  │  scope=assignment → filter by staff's today's assignment PSIDs
+  ▼
+Survey_units table (PostgREST ilike)
+  │  return top 30 → prioritySort → slice(0,20)
+  ▼
+SearchResultsPopover component
+  │  desktop: full info + text buttons
+  │  mobile: compact (name + last 8 PSID) + icon buttons
+  ▼
+User action: Map / Details
+  │  Map → setSearchResult → SearchResultMarker (blue CircleMarker, flyTo 20)
+  │  Details → selectHouse → HDS opens
+```
+
+### 33.2 Components
+
+| Component | Path | Purpose |
+|-----------|------|---------|
+| `GET /api/search` | `src/app/api/search/route.ts` | SSR endpoint, `?q=` and `?scope=global|assignment` |
+| `useGlobalSearch` | `src/hooks/use-global-search.ts` | Debounced fetch hook with AbortController, `minQueryLength=2` |
+| `SearchResultsPopover` | `src/components/search-results-popover.tsx` | Result cards, responsive layout |
+| `SearchResultMarker` | `src/components/search-result-marker.tsx` | Blue CircleMarker, always-visible, zoom 20 flyTo |
+| `SearchResultUnit` | `src/types/search.ts` | Type: psid, survey_id, consumer_name, address, lat, lng, uc_name, assignment_item_id |
+
+### 33.3 Smart PSID/SID Detection
+
+```ts
+function isPsidQuery(q: string) {
+  return /^\d{20}$/.test(q)
+}
+
+function prioritySort(units, q, isPsid20) {
+  if (isPsid20) {
+    // PSID exact match (eq) → PSID ilike → SID ilike
+    score = psid === q ? 0 : psid.includes(q) ? 1 : 2
+  } else {
+    // SID ilike → PSID ilike
+    score = survey_id.includes(q) ? 0 : 1
+  }
+}
+```
+
+### 33.4 DesktopFilterBar Redesign
+
+**Previous layout (left to right):**
+```
+[Search w=180px] [Status] [Month] | [MC/UC] | [Surveyor] | [Clear] | [Sort] | [Actions]
+```
+
+**New layout:**
+```
+Left group: [Status] [Month] | [MC/UC] | [Surveyor] | [Clear]
+Center:    [🔍 Search PSID or SID... max-w=400px]
+Right:     [Sort] [Actions]
+```
+
+Key changes:
+- Search moved from far-left to center, width 180px → 400px max
+- Placeholder: "Search name or ID..." → "Search PSID or SID..."
+- Search de-linked from Cancel/Apply: `setFilters({ search })` (immediate on both `filters`+`pendingFilters`) instead of `setPendingFilter({ search })`
+- `setSearchResult(null)` added to clear marker on new search or X button
+
+### 33.5 FloatingActions Route-Aware Behavior
+
+FloatingActions moved from `map/page.tsx` to `AppShell.tsx` to be available on all pages.
+
+| Route | Search | Filters | Satellite | Staff Mode | Photos |
+|-------|--------|---------|-----------|------------|--------|
+| `/map` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `/deliver` | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Other | ❌ (component returns null) | | | | |
+
+Search scope detection uses `usePathname()`:
+- `isDeliver` (`/deliver`) → scope = `assignment` (staff's assignment items only)
+- `isMap` (`/map`) → scope = `global` (all survey_units)
+
+### 33.6 Clear Search Result
+
+When user types a new query or clicks the X button in the search input, `setSearchResult(null)` is called, which:
+1. Removes the blue `SearchResultMarker` from the map
+2. Clears the `searchResult` state in billing-store
+3. If the user clicks "Map" on a result, `searchResult` stays set until explicitly cleared
+
+### 33.7 Mobile Responsive Results
+
+**Desktop (`lg+`):**
+```
+┌──────────────────────────────────┐
+│ Consumer Name                    │
+│ PSID: 1234567890  SID: ABC123    │
+│ Address: Some place              │
+│                [Map] [Details]    │
+└──────────────────────────────────┘
+```
+
+**Mobile (`<lg`):**
+```
+┌──────────────────────┐
+│ Consumer Name   1234 │  ← last 8 PSID digits
+│                  [🗺] │  ← icon-only
+└──────────────────────┘
+```
+
+### 33.8 Files
+
+**Created:**
+- `src/app/api/search/route.ts`
+- `src/hooks/use-global-search.ts`
+- `src/components/search-results-popover.tsx`
+- `src/components/search-result-marker.tsx`
+- `src/types/search.ts`
+
+**Modified:**
+- `src/stores/billing-store.ts` — added `searchResult` / `setSearchResult`
+- `src/components/filter-panel.tsx` — layout restructured, search widened, de-linked from Cancel/Apply
+- `src/components/layout/floating-actions.tsx` — pathname detection, route-aware buttons, scope fix
+- `src/components/layout/AppShell.tsx` — added FloatingActions render
+- `src/app/map/page.tsx` — removed duplicate FloatingActions
+- `src/components/map-view.tsx` — added SearchResultMarker
+- `src/components/delivery/staff-map.tsx` — added SearchResultMarker
+- `src/app/deliver/page.tsx` — search result navigation effect (pre-existing)
+
+### 33.9 Testing Protocol
+
+See SESSION.md 2026-06-22 entry for full 14-step testing regime. Key ones:
+1. Desktop search centered, wider, de-linked from Cancel/Apply
+2. 20-digit PSID → exact match first; short query → SID first
+3. Clear search → marker disappears
+4. Mobile deliver page → FloatingActions shows Search + Photos only
+5. Deliver page search → navigates to item page + blue ring highlight

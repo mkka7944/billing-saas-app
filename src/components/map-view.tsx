@@ -20,6 +20,10 @@ const SurveyMarkers = dynamic(
   () => import('@/components/survey-markers'),
   { ssr: false }
 )
+const SearchResultMarker = dynamic(
+  () => import('@/components/search-result-marker'),
+  { ssr: false }
+)
 
 import type { SurveyUnit } from '@/types'
 
@@ -162,6 +166,7 @@ export const MapView = memo(function MapView({ visible = true, children }: { vis
           </>
         )}
         {visible && <SurveyMarkers data={markers} />}
+        <SearchResultMarker />
         {children}
       </MapContainer>
     </div>

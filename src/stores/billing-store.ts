@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { FilterState, SurveyUnit, SortConfig, AssignmentItemUnit } from '@/types'
+import type { SearchResultUnit } from '@/types/search'
 import { currentMonth } from '@/lib/constants'
 import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 
@@ -26,6 +27,7 @@ interface BillingState {
   mapMarkers: SurveyUnit[]
   houseSource: 'map' | 'list' | 'data-insight' | null
   staffMode: 'delivery' | 'browse'
+  searchResult: SearchResultUnit | null
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setListPage: (page: number) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight' | 'live') => void
@@ -52,6 +54,7 @@ interface BillingState {
   setMapMarkers: (markers: SurveyUnit[]) => void
   setHouseSource: (source: 'map' | 'list' | 'data-insight' | null) => void
   setStaffMode: (mode: 'delivery' | 'browse') => void
+  setSearchResult: (result: SearchResultUnit | null) => void
 }
 
 const defaultFilters: FilterState = {
@@ -96,6 +99,7 @@ export const useBillingStore = create<BillingState>()(
       mapCenter: [32.0836, 72.6712],
       mapZoom: 18,
       mapType: 'streets',
+      searchResult: null,
 
       setCity: (city, district, tehsil) => {
         const districts = district ? [district] : []
@@ -226,6 +230,7 @@ export const useBillingStore = create<BillingState>()(
       setMapMarkers: (markers) => set({ mapMarkers: markers }),
       setHouseSource: (source) => set({ houseSource: source }),
       setStaffMode: (mode) => set({ staffMode: mode }),
+      setSearchResult: (result) => set({ searchResult: result }),
     }),
     {
       name: 'billing-store',

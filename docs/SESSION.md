@@ -4202,3 +4202,84 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - Phase M2 — Marker clustering + UC count badges
 - Phase M1 — Map Unification
 
+---
+
+## 2026-06-22 — Global Search Implementation + UI Refinements
+
+### Phase: Search & UX Refinements
+
+### What
+- **Search API (`/api/search`)** — New SSR endpoint for PSID/SID search. Smart detection: 20-digit queries prioritize PSID exact match (`.eq()`), shorter queries prioritize SID (`ilike`). Two scopes: `global` (full DB) and `assignment` (restricted to staff's today's assignment items). Returns up to 20 results sorted by relevance, grabs 30 from DB for dedup.
+- **`useGlobalSearch` hook** — Debounced (300ms), AbortController-cancelled, exposes `query/results/isSearching/showResults/clearResults`. Configurable scope.
+- **`SearchResultsPopover` component** — Floating result cards (consumer_name, PSID, SID, address). Responsive: desktop shows full info with "Map" / "Details" text buttons; mobile shows compact one-line (name + last 8 PSID digits) with icon-only buttons.
+- **`SearchResultMarker` component** — Blue CircleMarker (r=10), `flyTo` at zoom 20, renders on both `map-view.tsx` and `staff-map.tsx`. Always visible regardless of active filters.
+- **DesktopFilterBar redesign** — Layout changed from `[Search][Status][Month]|[MC/UC]|[Surveyor]|[Clear]|[Sort]|[Actions]` to `[Status][Month]|[MC/UC]|[Surveyor]|[Clear] | [🔍 Search 400px centered] | [Sort] [Actions]`. Search box widened from `w-[180px]` to `max-w-[400px]`, height increased to `h-9`, placeholder changed to "Search PSID or SID...". Search is de-linked from Cancel/Apply buttons — typing search now calls `setFilters()` (immediate apply on both `filters` and `pendingFilters`) instead of `setPendingFilter()`. Cancel/Apply buttons no longer appear when only search changes.
+- **Mobile search — FloatingActions moved to AppShell** — Removed from `map/page.tsx`, added to `AppShell.tsx` (inside `<main>`). Conditionally shows buttons per route: `/map` (Search, Filters, Satellite, Staff Mode, Photos), `/deliver` (Search, Photos only). Routing-based scope detection (`isDeliver → assignment`, otherwise `global`) replaces broken `activeView === 'deliver'` check (which was always false). Early-returns for non-map/non-deliver pages.
+- **Search result clearing** — `setSearchResult(null)` added to all search onChange handlers and X-clear buttons in both DesktopFilterBar and SlideDownSearch. When user types a new query or clears input, the blue map marker disappears.
+- **Smart PSID/SID detection in API route** — Added `isPsidQuery()` (`/^\d{20}$/`). Results sorted so exact PSID match → PSID ilike → SID ilike for 20-digit queries; SID ilike → PSID ilike for shorter queries. Fetch limit 30, dedup down to 20 after sort.
+- **Deliver page** — Existing `useEffect` at `deliver/page.tsx:189-200` navigates to search result in the paginated list (finds item in `sorted` array, calculates `page = Math.floor(index/PAGE_SIZE)`, highlights row with `ring-2 ring-blue-500/50` for 3s). Now accessible because `FloatingActions` is available on `/deliver` route.
+
+### Key Decisions
+- **Server-side search, not client-side chunks** — Initial M3 design proposed client-side chunk-based search. Actual implementation uses SSR API route (`/api/search`) with PostgREST ilike filters. Much simpler to deploy, no chunk generation scripts, no storage bucket setup. Chunk approach deferred to Phase M3.
+- **Smart PSID/SID detection** — 20-digit = PSID query (exact match priority). Other lengths = SID query priority. Prevents "type a PSID, get 20 SID results first" confusion.
+- **Search de-linked from Cancel/Apply** — `setFilters({ search })` syncs both `filters` and `pendingFilters` immediately, so JSON-stringify comparison never flags search as unapplied. Cleaner than removing `search` from the filter state.
+- **FloatingActions in AppShell** — One component for all pages, route-dependent buttons, simpler than creating a separate deliver-page search.
+- **Mobile result streamlined** — One-line (name + last 8 PSID chars) with icon-only buttons. Address and full IDs hidden to avoid crowding on small screens.
+
+### Files Created
+- `src/app/api/search/route.ts` — GET handler, `?q=` and `?scope=global|assignment`
+- `src/hooks/use-global-search.ts` — debounced search hook with AbortController
+- `src/components/search-results-popover.tsx` — result cards, responsive (desktop full / mobile compact)
+- `src/components/search-result-marker.tsx` — blue CircleMarker + flyTo
+- `src/types/search.ts` — SearchResultUnit interface
+
+### Files Modified
+- `src/stores/billing-store.ts` — added `searchResult` state + `setSearchResult` action
+- `src/components/filter-panel.tsx` — DesktopFilterBar: widened/centered search, de-linked from Cancel/Apply, added `setSearchResult(null)` on clear
+- `src/components/layout/floating-actions.tsx` — Added `usePathname()`, route-aware buttons (isMap/isDeliver), fixed scope detection, added `setSearchResult(null)` on change/close
+- `src/components/layout/AppShell.tsx` — Added `<FloatingActions />` inside `<main>`
+- `src/app/map/page.tsx` — Removed duplicate `<FloatingActions />` import and render
+- `src/components/map-view.tsx` — Added `SearchResultMarker` dynamic import + render
+- `src/components/delivery/staff-map.tsx` — Added `SearchResultMarker` import + render
+- `src/app/deliver/page.tsx` — Added `searchResult`/`setSearchResult` selectors, highlighting effect (pre-existing)
+
+### Testing Verification (Priority — Tomorrow Morning)
+1. Desktop `/map` → search bar centered, wider, placeholder "Search PSID or SID..."
+2. Desktop → type 20-digit PSID → exact match at top → blue marker on map
+3. Desktop → type short number → SID results first
+4. Desktop → type search → Cancel/Apply buttons do NOT appear
+5. Desktop → clear search X → marker disappears from map
+6. Mobile `<lg` → FloatingActions ✧ button → Search → compact result cards (name + last 8 PSID)
+7. Mobile deliver page → ✧ button → only Search + Photos shown
+8. Deliver page mobile → type PSID → result with `assignment_item_id` → tap → list navigates to correct page + blue ring highlight
+9. Map page mobile → search scope = `global` (shows all DB, not just assignment)
+10. Edge: no results → popover stays hidden (zero-state handled by `showResults` guard)
+11. Edge: 1-char query → no search fires (`minQueryLength=2`)
+12. Edge: network error → empty results, no crash
+13. Edge: search for null-GPS unit → marker still renders (lat/lng check in marker component)
+14. Desktop → apply filters (UC, status) → search still finds results outside filter scope (always visible)
+
+### Prior Sessions (2026-06-21 — QR, GPS, Photo fixes)
+**These were committed before the search feature. Documented here for completeness.**
+- **QR Scanner adapter** — `src/lib/qr-scanner-adapter.ts`: Nimiq primary + Html5 fallback, camera2 0 selection, BarcodeDetector disabled for Samsung A35. Both `qr-scanner-button.tsx` and AppShell bottom bar use adapter.
+- **UDS second-scan fix** — Bottom bar QR calls `setDeliverTarget(psid, unit)` directly instead of `router.push('/map?target=...')`. Eliminates race with cleanup `router.replace()`.
+- **Photo upload reliability** — `drive-upload.ts`: timeout 8s → 30s. `use-photo-queue.ts`: removed `lastError` skip, removed `MAX_RETRIES=3` cap, exponential backoff `min(retryCount*5, 60)s`.
+- **NULL GPS rejection** — `mark/route.ts`: returns 400 when `survey_units.lat/lng` is NULL.
+- **GPS enforcement bypass removed** — Removed `ownership.status === 'processing'` auto-approve from `mark/route.ts`. Staff re-delivery must still pass distance check.
+- **Nav buttons dimmed** — `BillingSidebar.tsx` and `AppShell.tsx`: buttons dimmed (`opacity-40 cursor-not-allowed`) instead of hidden when staffMode doesn't match. Toast on tap.
+- **Dim button toast fix** — Swapped toast messages (was showing wrong mode).
+- **GPS OOR flag dialog** — `unit-delivery-sheet.tsx`: modal with native `<select>` (UnSent / Duplicate PSID / Duplicate SID) when distance exceeds threshold. Flag reason posted to `/api/admin/flagged-psids`.
+- **Admin delivery table: flag column** — `revoke-delivery/route.ts`: includes `flagged_reason`. `delivery-table.tsx`: red pill badge in new Flag column. Local state update on revoke/accept (no full re-fetch).
+- **SQL migration 049** — `scripts/sql/049-add-flag-reasons.sql`: added unsent, duplicate_psid, duplicate_sid to CHECK constraint.
+- **UC List Panel null guard** — `uc-list-panel.tsx`: `!uc_name` prevents `startsWith` crash.
+- **T1 Phase documented** — `docs/MASTER.md` Section 32, `docs/PHASES.md` updated.
+
+### Next Steps
+1. **Test all search features tomorrow morning** — see testing regime above
+2. Phase M3 — JSON Marker Chunks (bucket setup + chunk gen scripts on office PC)
+3. Phase G.2 — Staff Positions (live GPS blue dots on admin map)
+4. Phase M2 — Marker clustering + UC count badges
+5. Phase M1 — Map Unification
+6. T1 Session 1 — Persist mapZoom, HDS/List flyTo zoom 20
+7. T1 Session 2 — selectedHouseId persistence, default UC for staff browse, filter persistence across nav
+

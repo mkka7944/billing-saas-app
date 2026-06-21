@@ -15,6 +15,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SortSelector } from '@/components/sort-selector'
+import { useGlobalSearch } from '@/hooks/use-global-search'
+import SearchResultsPopover from '@/components/search-results-popover'
+import type { SearchResultUnit } from '@/types/search'
 
 // ─── Accordion Group ───────────────────────────────────────────
 
@@ -366,10 +369,39 @@ export function DesktopFilterBar() {
   const selectedCity = useBillingStore((s) => s.selectedCity)
   const setPendingFilter = useBillingStore((s) => s.setPendingFilter)
   const setFilters = useBillingStore((s) => s.setFilters)
+  const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
+  const selectHouse = useBillingStore((s) => s.selectHouse)
+  const setSearchResult = useBillingStore((s) => s.setSearchResult)
   const { data: hierarchy } = useHierarchy()
   const { data: billMonths } = useBillMonths()
 
   const [searchFocused, setSearchFocused] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+  const [searchPopoverPos, setSearchPopoverPos] = useState({ top: 0, left: 0, width: 0 })
+
+  const globalSearch = useGlobalSearch({ scope: 'global' })
+
+  useEffect(() => {
+    if (globalSearch.showResults && searchRef.current) {
+      const rect = searchRef.current.getBoundingClientRect()
+      setSearchPopoverPos({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 320) })
+    }
+  }, [globalSearch.showResults, globalSearch.results])
+
+  const handleSearchResultMap = useCallback((result: SearchResultUnit) => {
+    const unit = { psid: result.psid, survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] }
+    setSearchResult(result)
+    setDeliverTarget(result.psid, unit)
+    globalSearch.clearResults()
+  }, [setSearchResult, setDeliverTarget, globalSearch])
+
+  const handleSearchResultDetails = useCallback((result: SearchResultUnit) => {
+    const surveyUnit = { survey_id: result.survey_id || '', consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, psid: result.psid, uc_name: result.uc_name, arrears: null, current_bill_month: null, route_name: null, route_seq: null, image_urls: null, city_district: null, tehsil: null, surveyor_name: null, survey_date: null, survey_time: null, monthly_fee: 0, billing_category: '', status: '' }
+    setSearchResult(null)
+    setDeliverTarget(result.psid, { psid: result.psid, survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] })
+    selectHouse(result.survey_id, [surveyUnit])
+    globalSearch.clearResults()
+  }, [setSearchResult, setDeliverTarget, selectHouse, globalSearch])
 
   const ucs = useMemo(() => getFilteredUcList(hierarchy, selectedCity), [selectedCity, hierarchy])
 
@@ -407,112 +439,142 @@ export function DesktopFilterBar() {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/20 shrink-0">
-      {/* Search */}
-      <div className={cn(
-        'relative flex items-center rounded-lg border transition-colors shrink-0',
-        searchFocused ? 'border-primary ring-1 ring-primary/20 shadow-sm' : 'border-border hover:border-muted-foreground/30'
-      )}>
-        <Search className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-        <Input
-          placeholder="Search name or ID..."
-          value={pendingFilters.search}
-          onChange={(e) => setPendingFilter({ search: e.target.value })}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          className="pl-8 h-8 text-xs border-0 ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 w-[180px]"
+      {/* Left group: filters */}
+      <div className="flex items-center gap-2 shrink-0">
+        {/* Payment Status */}
+        <Select
+          value={pendingFilters.paymentStatus}
+          onValueChange={(v) => setPendingFilter({ paymentStatus: (v || 'all') as typeof pendingFilters.paymentStatus })}
+        >
+          <SelectTrigger className="w-[100px] h-8 text-xs">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent className="z-[9999]">
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="paid">Paid</SelectItem>
+            <SelectItem value="unpaid">Unpaid</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Bill Month */}
+        <Select
+          value={pendingFilters.billMonth || ''}
+          onValueChange={(v) => setPendingFilter({ billMonth: v || null })}
+        >
+          <SelectTrigger className="w-[110px] h-8 text-xs">
+            <SelectValue placeholder="Month" />
+          </SelectTrigger>
+          <SelectContent className="z-[9999]">
+            {(billMonths || []).map((m) => (
+              <SelectItem key={m} value={m}>{m}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
+
+        {/* MC/UC */}
+        <FilterDropdown
+          key={`mcuc-${selectedCity || 'all'}`}
+          id="mcuc"
+          label="MC/UC"
+          items={ucs}
+          selected={new Set(pendingFilters.ucs)}
+          onToggle={(v) => toggleSelect('ucs', v)}
+          onSelectAll={() => { setPendingFilter({ ucs: ucs.map((u) => u.value) }) }}
+          onSelectNone={() => { setPendingFilter({ ucs: [] }) }}
+          className="min-w-[80px]"
         />
-        {pendingFilters.search && (
-          <button
-            onClick={() => setPendingFilter({ search: '' })}
-            className="absolute right-1 h-6 w-6 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
-          >
-            <X className="h-3 w-3 text-muted-foreground" />
-          </button>
+
+        {/* Surveyor */}
+        {hierarchy?.surveyors && hierarchy.surveyors.length > 0 && (
+          <>
+            <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
+            <Select
+              value={pendingFilters.surveyor || ''}
+              onValueChange={(v) => setPendingFilter({ surveyor: v || null })}
+            >
+              <SelectTrigger className="w-[130px] h-8 text-xs">
+                <SelectValue placeholder="Surveyor" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Surveyors</SelectItem>
+                {hierarchy.surveyors.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        )}
+
+        {hasActiveFilters && (
+          <>
+            <div className="w-px h-6 bg-border mx-1 shrink-0" />
+            <button
+              onClick={resetPendingFilters}
+              className="h-8 text-xs font-bold text-red-500 hover:text-red-600 px-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors whitespace-nowrap cursor-pointer shrink-0"
+            >
+              Clear ({activeFilterCount})
+            </button>
+          </>
         )}
       </div>
 
-      {/* Payment Status */}
-      <Select
-        value={pendingFilters.paymentStatus}
-        onValueChange={(v) => setPendingFilter({ paymentStatus: (v || 'all') as typeof pendingFilters.paymentStatus })}
-      >
-        <SelectTrigger className="w-[100px] h-8 text-xs">
-          <SelectValue placeholder="Status" />
-        </SelectTrigger>
-        <SelectContent className="z-[9999]">
-          <SelectItem value="all">All Status</SelectItem>
-          <SelectItem value="paid">Paid</SelectItem>
-          <SelectItem value="unpaid">Unpaid</SelectItem>
-        </SelectContent>
-      </Select>
+      {/* Center: search */}
+      <div className="flex-1 flex justify-center px-4">
+        <div ref={searchRef} className={cn(
+          'relative flex items-center rounded-lg border transition-colors w-full max-w-[400px]',
+          searchFocused ? 'border-primary ring-1 ring-primary/20 shadow-sm' : 'border-border hover:border-muted-foreground/30'
+        )}>
+          <Search className="absolute left-3 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search PSID or SID..."
+            value={pendingFilters.search}
+            onChange={(e) => {
+              setFilters({ search: e.target.value })
+              setSearchResult(null)
+              globalSearch.setQuery(e.target.value)
+            }}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+            className="pl-9 h-9 text-sm border-0 ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+          {pendingFilters.search && (
+            <button
+              onClick={() => {
+                setFilters({ search: '' })
+                setSearchResult(null)
+                globalSearch.clearResults()
+              }}
+              className="absolute right-1.5 h-7 w-7 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
+            >
+              <X className="h-4 w-4 text-muted-foreground" />
+            </button>
+          )}
+        </div>
+      </div>
 
-      {/* Bill Month */}
-      <Select
-        value={pendingFilters.billMonth || ''}
-        onValueChange={(v) => setPendingFilter({ billMonth: v || null })}
-      >
-        <SelectTrigger className="w-[110px] h-8 text-xs">
-          <SelectValue placeholder="Month" />
-        </SelectTrigger>
-        <SelectContent className="z-[9999]">
-          {(billMonths || []).map((m) => (
-            <SelectItem key={m} value={m}>{m}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
-
-      {/* MC/UC */}
-      <FilterDropdown
-        key={`mcuc-${selectedCity || 'all'}`}
-        id="mcuc"
-        label="MC/UC"
-        items={ucs}
-        selected={new Set(pendingFilters.ucs)}
-        onToggle={(v) => toggleSelect('ucs', v)}
-        onSelectAll={() => { setPendingFilter({ ucs: ucs.map((u) => u.value) }) }}
-        onSelectNone={() => { setPendingFilter({ ucs: [] }) }}
-        className="min-w-[80px]"
-      />
-
-      {/* Surveyor */}
-      {hierarchy?.surveyors && hierarchy.surveyors.length > 0 && (
-        <>
-          <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
-          <Select
-            value={pendingFilters.surveyor || ''}
-            onValueChange={(v) => setPendingFilter({ surveyor: v || null })}
-          >
-            <SelectTrigger className="w-[130px] h-8 text-xs">
-              <SelectValue placeholder="Surveyor" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">All Surveyors</SelectItem>
-              {hierarchy.surveyors.map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </>
+      {globalSearch.showResults && searchPopoverPos.top > 0 && createPortal(
+        <div
+          className="fixed z-[9999] bg-popover border border-border rounded-lg shadow-lg overflow-hidden"
+          style={{ top: searchPopoverPos.top, left: searchPopoverPos.left, minWidth: searchPopoverPos.width }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <SearchResultsPopover
+            results={globalSearch.results}
+            isSearching={globalSearch.isSearching}
+            onViewOnMap={handleSearchResultMap}
+            onViewDetails={handleSearchResultDetails}
+          />
+        </div>,
+        document.body
       )}
 
-      {hasActiveFilters && (
-        <>
-          <div className="w-px h-6 bg-border mx-1 shrink-0" />
-          <button
-            onClick={resetPendingFilters}
-            className="h-8 text-xs font-bold text-red-500 hover:text-red-600 px-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950 transition-colors whitespace-nowrap cursor-pointer shrink-0"
-          >
-            Clear ({activeFilterCount})
-          </button>
-        </>
-      )}
-
-      <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
-      <SortSelector />
-
-      <ActionButtons />
+      {/* Right group: actions */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <SortSelector />
+        <ActionButtons />
+      </div>
     </div>
   )
 }
