@@ -78,6 +78,11 @@ export async function POST(request: Request) {
       }
     }
 
+    // Reject if survey unit has no GPS coordinates — cannot verify location
+    if (target_lat == null || target_lng == null) {
+      return NextResponse.json({ error: 'Survey unit has no GPS coordinates — cannot verify location' }, { status: 400 })
+    }
+
     // Read app settings (allow_no_photo + gps_enforcement) in one query
     const { data: settingsRows } = await sup
       .from('app_settings')
