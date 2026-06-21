@@ -1,7 +1,7 @@
 {
-  "lastSession": "2026-06-21 — UDS Tweaks (Round 2) + Zoom Fix + UDS Close Double-Tap Fix",
-  "currentPhase": "UDS Tweaks — All Done. Bug Fixes — All Done.",
-  "currentStep": "UDS P0 tweaks done (z-index, force complete removed, GPS dots green, distance text dynamic + away, combined top strip, custom lightbox, status hint reserve). UDS Theme System done (default + outdoor, localStorage). deliveryStartTime removed. Map zoom 20 for unit targeting (FlyToTarget with useMap()). UDS floating badge removed, gallery count added. UDS close double-tap fixed (lastClosedPsidRef pattern).",
+  "lastSession": "2026-06-21 — Nav Button Visibility by staffMode + M3 Chunks & Search Design",
+  "currentPhase": "M3 — JSON Marker Chunks + Global Search Design (approved, pending implementation)",
+  "currentStep": "Nav buttons hidden by staffMode (BillingSidebar + AppShell, commit 82442fd). M3 design saved to docs/superpowers/specs/2026-06-21-m3-chunks-and-search-design.md and Section 31 of MASTER.md. Next: implement M3 (bucket setup + chunk generation scripts on office PC).",
   "phaseProgress": {
     "UDSRedesignPlan": "done",
     "UDSRedesignImpl": "done",
@@ -9,36 +9,31 @@
     "UDSTheme": "done",
     "MapZoomFix": "done",
     "UDSCloseDoubleTapFix": "done",
-    "DeliveryStartTimeRemoval": "done"
+    "DeliveryStartTimeRemoval": "done",
+    "NavButtonStaffMode": "done",
+    "M3Design": "done",
+    "M3Implementation": "pending"
   },
   "filesModified": [
-    "src/components/ui/dialog.tsx",
-    "src/components/delivery/unit-delivery-sheet.tsx",
-    "src/components/map-marker-count.tsx",
-    "src/stores/billing-store.ts",
-    "src/app/deliver/page.tsx",
-    "src/lib/version.ts",
-    "src/components/map-view.tsx",
-    "src/components/delivery/staff-map.tsx",
-    "src/app/map/page.tsx",
-    "src/config/uds-themes.ts",
-    "src/hooks/use-uds-theme.ts",
-    "src/components/settings/uds-theme-selector.tsx",
-    "src/app/settings/page.tsx",
+    "src/components/layout/BillingSidebar.tsx",
+    "src/components/layout/AppShell.tsx",
+    "docs/superpowers/specs/2026-06-21-m3-chunks-and-search-design.md",
+    "docs/MASTER.md",
     ".opencode/context.json",
-    "docs/SESSION.md",
-    "docs/MASTER.md"
+    "docs/SESSION.md"
   ],
   "keyDecisions": [
-    "FlyToTarget uses useMap() inside MapContainer — eliminates mapRef timing race",
-    "FitStaffBounds maxZoom raised to 20 — no cap on initial view",
-    "lastClosedPsidRef prevents stale ?target= URL param from re-opening UDS after close",
-    "UDS theme stored in localStorage (key 'uds-theme'), independent of next-themes light/dark",
-    "DeliveryStartTime removed — meaningless for multi-day delivery sessions"
+    "Nav button hiding: List hidden when staffMode=delivery, Deliver hidden when staffMode=browse, field_staff only. Pure conditional rendering.",
+    "M3 chunks stored in Supabase Storage bucket 'marker-chunks' (not public/ directory) — office PC scripts use service_role key, no git involvement.",
+    "Full marker data + payment status (13 fields) in each chunk — one file for search + marker rendering.",
+    "Chunks regenerated daily by load-payments.py with updated is_paid — CDN staleness mitigated by ?v={date} query param.",
+    "On UC select: fetch single chunk (~250KB gzipped, ~600ms on 4G), index in browser memory as Map<survey_id,Unit> + Map<psid,Unit>.",
+    "Search is pure client-side substring match across survey_id, psid, consumer_name, address. Top 20 results, relevance-sorted.",
+    "Marker source swap (chunk replaces API fetch) is optional Phase 2 — no dependency on search feature."
   ],
   "nextActions": [
+    "Phase M3 — Implementation (bucket setup + chunk generation scripts on office PC)",
     "Phase G.2 — Staff Positions (live GPS blue dots on admin map)",
-    "Phase M3 — JSON Marker Chunks (per-UC static JSON)",
     "Phase M2 — Marker clustering + UC count badges",
     "Phase M1 — Map Unification (staff sees survey overlay)",
     "Phase F — Auto-Route Generation",
@@ -47,5 +42,5 @@
     "Pipeline: update bill-extractor-v4.py for city/tehsil, add updated_at to payment_history"
   ],
   "gitCheckpoint": "6f650e9 — UDS redesign implementation",
-  "gitCurrentHead": "b646c60 — Fix map zoom (flyTo at 20) + UDS close double-tap + remove overlapping badge"
+  "gitCurrentHead": "82442fd — Hide List/Deliver nav buttons based on staffMode for field_staff only"
 }

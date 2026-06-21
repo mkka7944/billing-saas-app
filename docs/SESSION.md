@@ -4169,13 +4169,36 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - `docs/SESSION.md` — this entry appended
 - `docs/MASTER.md` — Section 30 updated
 
-### Remaining
+---
+
+## 2026-06-21 — Nav Button Visibility by staffMode + M3 Chunks & Search Design
+
+### Phase: Post-UDS Polish + M3 Design
+
+### What
+- **Nav buttons hidden by staffMode** — `BillingSidebar.tsx` and `AppShell.tsx`: List hidden when `staffMode === 'delivery'`, Deliver hidden when `staffMode === 'browse'`, field_staff only. Empty category groups filtered out. Commit `82442fd`.
+- **M3 JSON Chunks + Global Search designed** — Full design document written to `docs/superpowers/specs/2026-06-21-m3-chunks-and-search-design.md`. Appended Section 31 to `docs/MASTER.md`.
+
+### Key Decisions
+- Chunks stored in Supabase Storage bucket `marker-chunks` (not `public/` directory) — office PC scripts already have service_role key for uploads, no git involvement
+- Full marker data + payment status included in chunks (13 fields) — one file serves both search and marker rendering
+- Chunks regenerated daily by `load-payments.py` with updated `is_paid` — CDN staleness mitigated by `?v={date}` query param
+- On UC select — fetch single chunk (~250KB gzipped, ~600ms on 4G), index in browser memory
+- Search is pure client-side — substring match across survey_id, psid, consumer_name, address
+- Marker source swap (chunk replaces API) is optional Phase 2 — no dependency on search feature
+- Nav button hiding is pure conditional rendering — no new state, no API changes, routes still accessible directly
+
+### Files Changed
+- `src/components/layout/BillingSidebar.tsx` — staffMode conditional filtering of nav items + empty group filter
+- `src/components/layout/AppShell.tsx` — staffMode conditional filtering of bottom tabs
+- `docs/superpowers/specs/2026-06-21-m3-chunks-and-search-design.md` — new design document
+- `docs/MASTER.md` — added Section 31 (M3 design summary)
+- `.opencode/context.json` — updated
+- `docs/SESSION.md` — this entry
+
+### Next Steps
+- **Phase M3 implementation** — start with bucket setup + chunk generation scripts (office PC)
 - Phase G.2 — Staff Positions (live GPS blue dots on admin map)
-- Phase M3 — JSON Marker Chunks (per-UC static JSON for map markers)
 - Phase M2 — Marker clustering + UC count badges
-- Phase M1 — Map Unification (staff sees survey overlay)
-- Phase F — Auto-Route Generation
-- Phase E — `/flagged-units` page with resolve/confirm/note
-- Alternative QR scanner (`@nimiq/qr-scanner` or `@agicash/qr-scanner`)
-- Pipeline: update `bill-extractor-v4.py` for city/tehsil, add `updated_at` to `payment_history`
+- Phase M1 — Map Unification
 

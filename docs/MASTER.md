@@ -3249,3 +3249,113 @@ git reset --soft b34039f
 All development session logs have been moved to `docs/SESSION.md`.
 For the current working state (active phase, next steps, blockers), see `.opencode/context.json`.
 For the complete phase catalog with status tracking, see `docs/PHASES.md`.
+
+---
+
+## 31. M3 — JSON Marker Chunks + Global Search (2026-06-21)
+
+**Design doc:** `docs/superpowers/specs/2026-06-21-m3-chunks-and-search-design.md`
+
+### Problem
+
+The app is server-dependent for everything. Every action — searching a unit, loading markers, opening a sheet — makes a network call to Supabase. The old RoutingStation app loaded everything from local JSON files. Instant. No loading states. Staff could search any survey_id in milliseconds.
+
+We have none of that:
+1. **No instant global search** — Staff can't type survey_id or psid and jump to the unit.
+2. **No client-side data cache** — Map remounts re-fetch 3000+ markers taking 10s+.
+3. **No offline capability** — Slow network means slow app.
+4. **Delivery flow on critical path** — Every step depends on the server.
+
+### Solution: Client-first architecture, server for writes only
+
+Generate per-UC compact JSON chunks during the monthly enrichment pipeline and the daily payment update pipeline. Store them in a Supabase Storage bucket (`marker-chunks`). Fetch once per UC selection, index in browser memory (`Map<survey_id, Unit>` + `Map<psid, Unit>`), and serve search + marker rendering from local memory — zero network calls per interaction.
+
+### Architecture
+
+```
+Month-end script (enrich-survey-units.py add-on)
+Daily payment script (load-payments.py add-on)
+         │
+         ▼
+Supabase Storage bucket: /marker-chunks/{CITY}/{UC}.json
+         │
+         ▼ (fetched once per UC selection)
+useUcChunk() hook → in-memory Map<survey_id, Unit> + Map<psid, Unit>
+         │
+   ┌─────┼─────┐
+   ▼     ▼     ▼
+Search  Map   QR
+bar     mkrs  scanner
+```
+
+### Storage details
+
+- **Bucket:** `marker-chunks` — public read, service_role write
+- **Path:** `{city_district}/{tehsil}/{uc_name}.json`
+- **Cache busting:** `?v={date}` query param, changed daily by payment script
+- **Per-UC size:** ~1.4MB uncompressed / ~250KB gzipped (4000 units avg)
+- **Total:** ~15MB gzipped across all ~50 UCs — well within Supabase free tier (1GB)
+- **Bandwidth per staff session:** ~250KB (one UC)
+
+### Chunk JSON fields
+
+`survey_id, psid, lat, lng, consumer_name, address, image_urls, is_paid, monthly_fee, billing_category, route_name, route_seq`
+
+13 fields (not full survey_units row which has 21+ fields — omitted: status (implicitly filtered at gen time), survey_date, survey_time, surveyor_name, city_district, tehsil, uc_name, start_month, current_bill_month, arrears).
+
+### useUcChunk hook (`src/hooks/use-uc-chunk.ts`)
+
+- Takes `city`, `tehsil`, `uc` from filter bar
+- Module-level cache keyed by `"city/tehsil/uc"` — persists across component remounts
+- Builds two Maps for O(1) lookup: `getBySurveyId(id)`, `getByPsid(id)`
+- `search(query)` — substring match across survey_id, psid, consumer_name, address — returns top 20, relevance-sorted
+- Distance via Haversine formula against stored `userLocation`
+- Stale time: 5 minutes (same as survey data)
+
+### Global Search UI
+
+- **Floating 🔍 button** on map — always visible when a UC is selected
+- **Modal overlay** with auto-focused input
+- Results appear after 3+ chars — instant from local memory
+- Each result: consumer_name, survey_id/psid, address, GPS distance, payment badge
+- Tapping result → map flies to unit (zoom 20) → UDS opens via existing `setDeliverTarget()` / `selectHouse()`
+
+### Marker Source Swap (optional Phase 2)
+
+After search is live, optionally replace API marker fetch with chunk data when UC is selected. Currently UC-level marker loads take 10-15s via batched Supabase fetch (pageSize 50000). With chunk: ~600ms first load, ~100ms subsequent (cached in memory).
+
+### Pipeline Integration
+
+**Monthly (`enrich-survey-units.py` add-on):** After lifecycle XLSX → survey_units upsert, query per-UC active units, write JSON, upload to Supabase Storage.
+
+**Daily (`load-payments.py` add-on):** After payment CSV → payment_history upsert, same query and upload (overwrites files). The `survey_units.is_paid` field is already synced by DB trigger on payment_history changes — the generation query reads the latest value.
+
+### Implementation Phases
+
+| Phase | What | Files |
+|-------|------|-------|
+| 1 — Infra | Create Storage bucket, add chunk gen to both pipeline scripts | Supabase config, `enrich-survey-units.py`, `load-payments.py` |
+| 2 — Hook | `useUcChunk` with fetch, index, cache, search | `src/hooks/use-uc-chunk.ts` |
+| 3 — Search UI | Floating button + search modal + result list | `global-search-button.tsx`, `global-search.tsx`, `map/page.tsx` |
+| 4 — Marker swap | Optionally source markers from chunk (replace API fetch for UC views) | `map-view.tsx`, `use-survey-data.ts` |
+
+### Risk
+
+**Breaking:** None — entirely additive. Nothing rewritten or removed.
+
+**Moderate:** Storage bucket permission (service_role key may need a policy grant), chunk generation performance (~5-10 min for 50 UCs, acceptable for batch), UC name URL encoding (underscore-separated names are safe).
+
+**Low:** Memory (~1.4MB per UC in browser, fine on modern phones), CDN staleness (mitigated by `?v=`), no-result search (shows "No results found").
+
+### Deferred Discussion Items
+
+1. Standalone script vs inline in existing scripts
+2. Timestamp vs counter versioning
+3. Chunk generation error handling (skip vs fail)
+4. UC name URL safety verification
+5. Storage policy for service_role write
+6. Marker swap scope (full replacement vs conditional)
+7. Search on `/deliver` page
+8. Urdu script search support (consumer names in Nastaliq)
+9. Chunk preload on app load (for assigned UC)
+10. Admin search experience
