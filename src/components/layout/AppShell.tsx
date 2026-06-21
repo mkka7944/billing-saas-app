@@ -272,7 +272,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={tab.id}
                 onClick={() => {
                   if ((tab as any).disabled) {
-                    toast(tab.id === 'list' ? 'Switch to Delivery Mode to view' : 'Switch to Browse Mode to view', 'info')
+                    toast(tab.id === 'list' ? 'Switch to Browse Mode to view' : 'Switch to Delivery Mode to view', 'info')
                     return
                   }
                   setPulsingTab(tab.id)

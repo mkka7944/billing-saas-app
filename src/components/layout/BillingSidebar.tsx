@@ -104,7 +104,7 @@ export function BillingSidebar() {
 
   const handleNavClick = (item: NavItem) => {
     if (item.disabled) {
-      toast(item.id === 'list' ? 'Switch to Delivery Mode to view' : 'Switch to Browse Mode to view', 'info')
+      toast(item.id === 'list' ? 'Switch to Browse Mode to view' : 'Switch to Delivery Mode to view', 'info')
       return
     }
     setPulsingItem(item.id)
