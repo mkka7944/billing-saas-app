@@ -1,7 +1,7 @@
 # Billing SaaS App — Complete Phase Reference
 
 > **Source of truth**: `docs/MASTER.md` (reference-only), `docs/SESSION.md` (session log), `docs/PHASES.md` (phase catalog), `.opencode/context.json` (machine-readable handoff state)
-> **Last updated**: 2026-06-17
+> **Last updated**: 2026-06-21
 
 ---
 
@@ -185,6 +185,23 @@
 | **Status** | ⏳ Not Started |
 | **Estimate** | 1.5 hrs |
 | **Description** | During enrichment, export per-UC JSON files with marker data. Static file serving for map markers. Eliminates API query entirely for map view — reduces egress and latency. |
+
+### Phase T1 — Transition & Zoom Uniformity
+| | |
+|---|---|
+| **Status** | ⏳ Not Started |
+| **Estimate** | 2 hrs (Session 1: 30 min — safe fixes. Session 2: 1.5 hrs — behavior changes) |
+| **Description** | Fix inconsistent zoom levels and state resets during view/page transitions. Three risk-separated sessions per the transition audit in MASTER.md Section 32. |
+| **Session 1 — Safe (30 min)** | |
+| | 1. Persist `mapZoom` in zustand (survives page navigation) |
+| | 2. HDS "Show on Map" flies to zoom 20 (was current store zoom) |
+| | 3. SurveyList "Map" button flies to zoom 20 (was current store zoom) |
+| **Session 2 — Behavior Changes (1.5 hrs)** | |
+| | 4. Keep `selectedHouseId` across all view switches (stats/live no longer close HDS) |
+| | 5. Default UC for staff browse mode (list page + map default to assignment UC) |
+| | 6. Persist `filters` across page navigation |
+| **Session 3 — Deferred (skip for now)** | |
+| | 7. Unified map component (replace dual MapContainer with single + conditional markers) |
 
 ### Phase Z — App Audit Cleanup
 | | |
@@ -646,20 +663,23 @@
 | Priority | Phase | Est. | Why | Status |
 |----------|-------|------|-----|--------|
 | — | **B3** (Delivery Stability) | 8 hrs | ✅ Done |
+| — | **Nav Button Dimming** (staffMode) | 15 min | ✅ Done |
+| — | **T1** (Transition & Zoom Uniformity) — Session 1 | 30 min | Persist mapZoom, HDS/List fly-to zoom 20 | ⏳ |
 | 1 | **0e** (Stabilize & Clean) | 2 hrs | Fix payment filter pagination bug (maps showing wrong paid/unpaid data) | ⏳ |
 | 2 | **0d** (Reference Tables) | 1.5 hrs | Performance: fix 212K-row filter queries | ⏳ |
-| 3 | **M2** (Show All + Counts) | ~1.5 hrs | Backend done; clustering, badges, toggle remaining | 🔜 |
-| 4 | **M1** (Map Unification) | 30 min | Quick win — staff sees overlay data | ⏳ |
-| 5 | **Phase E** (Flag Management) | ~3 hrs | Flag button done; `/flagged-units` page remaining | 🔜 |
-| 6 | **M3** (JSON Marker Chunks) | 1.5 hrs | Egress optimization for map data | ⏳ |
-| 7 | **0f** (Schema Restructuring) | 6 hrs | Foundation for delivery+house tables | ⏳ |
-| 8 | **Phase C** (Admin Dashboard) | ~1 hr remaining | Quality tab + stats done; perf notes/ratings remaining | 🔜 |
-| 9 | **Phase D** (Visual Rehaul) | ~1 hr remaining | Canvas, supersede, Zustand, CircleMarker done; route guard + sidebar persistence + theme remaining | 🔜 |
-| 10 | **Phase F** (Auto-Route) | 3 hrs | Route optimization | ⏳ |
-| 11 | **Phase G** (Live Monitoring) | 3 hrs | Real-time admin view | ⏳ |
-| 12 | **Phase RBAC** (Approval Chain) | 3 hrs | Access control | ⏳ |
-| 13 | **Phase Z** (App Audit Cleanup) | 4 hrs | Deep cleanup | ⏸️ |
-| 14 | **Audit P1-P6** | 21 hrs | Production hardening | ⏸️ |
+| 3 | **T1 Session 2** (Transition behavior) | 1.5 hrs | selectedHouseId persistence, default UC, filter persistence | ⏳ |
+| 4 | **M2** (Show All + Counts) | ~1.5 hrs | Backend done; clustering, badges, toggle remaining | 🔜 |
+| 5 | **M1** (Map Unification) | 30 min | Quick win — staff sees overlay data | ⏳ |
+| 6 | **Phase E** (Flag Management) | ~3 hrs | Flag button done; `/flagged-units` page remaining | 🔜 |
+| 7 | **M3** (JSON Marker Chunks) | 1.5 hrs | Egress optimization for map data | ⏳ |
+| 8 | **0f** (Schema Restructuring) | 6 hrs | Foundation for delivery+house tables | ⏳ |
+| 9 | **Phase C** (Admin Dashboard) | ~1 hr remaining | Quality tab + stats done; perf notes/ratings remaining | 🔜 |
+| 10 | **Phase D** (Visual Rehaul) | ~1 hr remaining | Canvas, supersede, Zustand, CircleMarker done; route guard + sidebar persistence + theme remaining | 🔜 |
+| 11 | **Phase F** (Auto-Route) | 3 hrs | Route optimization | ⏳ |
+| 12 | **Phase G** (Live Monitoring) | 3 hrs | Real-time admin view | ⏳ |
+| 13 | **Phase RBAC** (Approval Chain) | 3 hrs | Access control | ⏳ |
+| 14 | **Phase Z** (App Audit Cleanup) | 4 hrs | Deep cleanup | ⏸️ |
+| 15 | **Audit P1-P6** | 21 hrs | Production hardening | ⏸️ |
 
 ### Appendix Gaps — Quick Fixes (from Appendix above)
 
@@ -683,13 +703,13 @@
 
 | Metric | Count |
 |--------|-------|
-| **Total phases** | 44 |
+| **Total phases** | 45 |
 | **✅ Completed** | 30 |
 | **🔜 In Progress (partial)** | 4 (C, D, E, M2) |
-| **⏳ Not Started** | 9 (0d, 0e, 0f, M1, M3, F, G, RBAC) |
+| **⏳ Not Started** | 10 (T1, 0d, 0e, 0f, M1, M3, F, G, RBAC) |
 | **⏸️ Deferred** | 3 (Z, Audit P5, C3 GPS) |
 | **Completed work estimate** | ~44 hrs |
-| **Remaining work estimate (Section 10 phases only)** | ~39 hrs |
+| **Remaining work estimate (Section 10 phases only)** | ~41 hrs |
 | **Appendix Gaps (A-D): ⏳ Not Started** | 9 items |
 | **Appendix Gaps (A-D): ⏸️ Deferred** | 2 items |
 | **Appendix Gaps (A-D): ⚠️ Unplanned Gap** | 6 items |

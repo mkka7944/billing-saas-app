@@ -3359,3 +3359,85 @@ After search is live, optionally replace API marker fetch with chunk data when U
 8. Urdu script search support (consumer names in Nastaliq)
 9. Chunk preload on app load (for assigned UC)
 10. Admin search experience
+
+---
+
+## 32. T1 — Transition & Zoom Uniformity Plan (2026-06-21)
+
+### Background
+
+A comprehensive audit of all view transitions, page navigations, and zoom/flyTo settings revealed inconsistent behavior: zoom levels differ per component, state resets unnecessarily during view switches, and map experience varies depending on how the user arrives at a location. This phase fixes those inconsistencies in three risk-separated sessions.
+
+### Session 1 — Safe Fixes (30 min, isolated changes)
+
+These changes are purely additive or modify one-line constants. No behavioral side effects.
+
+| # | Fix | File | Change | Risk |
+|---|-----|------|--------|------|
+| 1 | **Persist `mapZoom`** | `src/stores/billing-store.ts` | Add `mapZoom` to zustand `partialize` allowlist, alongside `selectedCity` and `mapCenter` | Zero — field already exists, just survives page nav now |
+| 2 | **HDS "Show on Map" — zoom 20** | `src/components/house-detail-sheet.tsx` | Add `setMapZoom(20)` next to existing `setMapCenter()` call | Zero — marker clicks already use zoom 20 |
+| 3 | **SurveyList "Map" button — zoom 20** | `src/components/survey-list.tsx` | Add `setMapZoom(20)` next to existing `setMapCenter()` call | Zero — same pattern as HDS |
+
+**Testing:**
+- Open map → zoom to 14 → navigate to `/deliver` → back → zoom should still be 14
+- Open HDS → tap "Show on Map" → map flies to unit at building level (20)
+- Open List → tap "Map" on an item → same zoom 20 behavior
+
+### Session 2 — Behavior Changes (1.5 hrs, sequential)
+
+These change intentional behavior. Each must be tested before moving to the next.
+
+| # | Fix | File | Change | Risk | Mitigation |
+|---|-----|------|--------|------|-----------|
+| 4 | **Keep `selectedHouseId` across all view switches** | `src/stores/billing-store.ts` | `setView()` currently clears `selectedHouseId` when switching to `stats`, `data-insight`, or `live`. Keep it across all views. HDS stays open in background; re-appears when user returns to map. | Low — HDS re-fetches via `selectedHouseId` anyway. The `keepPreviousData` pattern ensures smooth transition. | Test that house is still visible after stats→map round trip |
+| 5 | **Default UC for staff browse mode** | `src/app/deliver/page.tsx`, `src/app/map/page.tsx` | `/deliver` page: change `selectedUc` default from `'all'` to `staffData?.data?.uc_names[0]` (falls back to `'all'` if undefined). Map page: initialize `filters.ucs` from assignment's `uc_names` for browse mode. | Low — both use data already in memory (`useStaffAssignment()`). Brief flash of "all" before assignment loads, then settles. | Guard with null check; flash is <500ms |
+| 6 | **Persist `filters` across page navigation** | `src/stores/billing-store.ts` | Add `filters` to zustand `partialize` allowlist alongside `selectedCity`. On page mount, restored filters determine the API query (which re-fetches fresh data anyway). | Low — saved filter is just a query parameter; data is always fresh from API. Risk of stale filter if DB changed while user was on another page (e.g., payment status updated), but this is identical to current behavior where filter survives view switches within the same page. | The API query re-fetches regardless; filter only determines what is requested, not the data itself |
+
+**Testing (Session 2, sequential):**
+1. After fix #4: Open HDS → switch to Stats → back to Map → HDS still open
+2. After fix #5: Staff browse mode → open `/deliver` → list shows only their MC by default → change dropdown → other MC works
+3. After fix #6: Set UC filter + payment status → navigate to `/deliver` → back → same filters still active → data is fresh API response
+
+### Session 3 — Deferred (not implemented in this phase)
+
+| # | Fix | Why Deferred | Alternative |
+|---|-----|-------------|-------------|
+| 7 | **Unified map component** (replace dual `MapContainer` in `StaffMap`/`MapView` with single container + conditional markers) | High risk: both `StaffMap` and `MapView` have separate `MapContainer` instances with different `TileLayer`, effects, and zoom settings. Merging them requires restructuring 250+ lines across 4 files (map-view.tsx, staff-map.tsx, staff-map-markers.tsx, survey-markers.tsx) with Leaflet lifecycle re-initialization risks. | Accept that toggling staffMode causes a brief map remount (~200ms). This happens only when explicitly toggling between delivery and browse modes — not during normal navigation. |
+
+### Zoom Consistency Reference
+
+| Action | Current Zoom | Session 1 Fix | Rationale |
+|--------|-------------|--------------|-----------|
+| Initial map load | DB setting (18 default) | No change | Fits city, user zooms in |
+| Filter change (fit bounds) | DB setting as maxZoom | No change | Shows all filtered markers |
+| Marker click / QR scan | 20 | No change | Building level — find exact house |
+| **HDS "Show on Map"** | **Current store zoom** | **→ 20** | Same as marker click |
+| **List "Map" button** | **Current store zoom** | **→ 20** | Same as marker click |
+| City change | 12 | No change | City-wide, shows all UCs |
+| Staff map initial fit | 20 | No change | Staff needs building-level for assignment items |
+| Live Panel city | 12 | No change | Intentional per-view context |
+| Live Panel UC | 15 | No change | Intentional per-view context |
+| Live Panel activity | 18 | No change | Intentional per-view context |
+
+### Full State Preservation Matrix (Post-Fix)
+
+| Transition | selectedHouseId | deliverTargetId | mapMarkers | filters | mapZoom | Fix # |
+|-----------|----------------|-----------------|------------|---------|---------|-------|
+| Map ↔ List | ✅ Preserved | ✅ Preserved | ✅ Preserved | ✅ Preserved | ✅ Preserved | — |
+| Map/List → Stats | ✅ **Preserved** *(was cleared)* | ✅ Preserved | ✅ Preserved | ✅ Preserved | ✅ Preserved | 4 |
+| Stats → Map | ✅ **Still there** *(was null)* | ✅ Preserved | ✅ Preserved | ✅ Preserved | ✅ Preserved | 4 |
+| Filter change | ⚠️ Cleared if filtered out | ✅ Preserved | Re-fetched | Updated | ✅ Preserved | — |
+| Navigate away/back | ⚠️ Lost (expected) | ⚠️ Lost (except URL param) | Re-fetched | ✅ **Persisted** *(was defaults)* | ✅ **Persisted** *(was 18)* | 6, 1 |
+| staffMode toggle | ✅ Preserved | ✅ Preserved | ⚠️ Re-fetched (acceptable) | ✅ Preserved | ✅ **Persisted** | 1 |
+
+### Risk Summary by Session
+
+| Session | Changes | Overall Risk | Rollback |
+|---------|---------|-------------|----------|
+| 1 | 3 one-line changes | **None** — additive only | `git revert` individual commits |
+| 2 | 3 behavior changes | **Low** — each is guarded by existing patterns (null checks, API re-fetch) | `git revert` the commit for the offending fix |
+| 3 | 1 structural refactor | **High** — 4 files, 250+ lines, Leaflet lifecycle | Full revert needed |
+
+### Why Not Batch All
+
+Each session is independently testable. If Session 2 causes an issue, Session 1 is already deployed and working. If Session 3 breaks something, Sessions 1-2 are unaffected. This avoids the "one big change breaks everything and you don't know which part" scenario.
