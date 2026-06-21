@@ -101,7 +101,7 @@ function MapFlyToTarget() {
     lastTargetRef.current = deliverTargetId
     const marker = mapMarkers.find((m) => m.psid === deliverTargetId)
     if (marker?.lat && marker?.lng) {
-      map.flyTo([marker.lat, marker.lng], mapZoom, { duration: 0.5 })
+      map.flyTo([marker.lat, marker.lng], 20, { duration: 0.5 })
     }
   }, [deliverTargetId, mapMarkers, map, mapZoom])
 

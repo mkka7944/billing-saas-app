@@ -3,7 +3,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft, Crosshair, Flag } from 'lucide-react'
-import { useDeliveryPhotos } from '@/hooks/use-delivery-photos'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
 import { useSettings } from '@/hooks/use-settings'
@@ -60,7 +59,6 @@ export default function UnitDeliverySheet({
   const touchXRef = useRef<number | null>(null)
 
   const queryClient = useQueryClient()
-  const { data: previousPhotos = [] } = useDeliveryPhotos(unit?.psid || null)
   const { mark } = useDeliverUnit()
   const { enqueuePhoto, queueCount } = usePhotoQueue()
   const { location: gpsLocation, isTracking: gpsIsTracking, error: gpsError } = useUserLocation()
@@ -455,14 +453,17 @@ export default function UnitDeliverySheet({
             </div>
           )}
 
-          {/* Gallery button — same size as close, green icon */}
+          {/* Gallery button with count */}
           {heroImages.length > 0 && (
             <button
               onClick={() => setGalleryOpen(true)}
-              className="shrink-0 h-8 w-8 flex items-center justify-center rounded-full bg-black/40 text-green-400 hover:bg-black/60 backdrop-blur-sm cursor-pointer transition-colors"
+              className="shrink-0 h-8 flex items-center gap-1.5 rounded-full bg-black/40 text-green-400 hover:bg-black/60 backdrop-blur-sm cursor-pointer transition-colors pl-1.5 pr-2.5"
               aria-label="Open gallery"
             >
               <Image className="h-4 w-4" />
+              {heroImages.length > 1 && (
+                <span className="text-[10px] font-bold leading-none">{heroImages.length}</span>
+              )}
             </button>
           )}
 
@@ -473,13 +474,6 @@ export default function UnitDeliverySheet({
             </span>
           )}
         </div>
-
-        {/* Previous photos badge — separate */}
-        {deliveryStatus === 'idle' && previousPhotos.length > 0 && (
-          <div className="absolute top-3 right-3 bg-black/50 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm z-20">
-            <Image className="h-3 w-3" /> {previousPhotos.length}
-          </div>
-        )}
 
         {/* Navigation arrows */}
         {onPrev && (

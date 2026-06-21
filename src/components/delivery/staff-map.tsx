@@ -39,7 +39,6 @@ function UserMarker({ location: propLocation }: { location?: UserLocation | null
 function FitStaffBounds({ items }: { items: AssignmentItemWithUnit[] }) {
   const map = useMap()
   const hasFittedRef = useRef(false)
-  const { data: mapZoom = 18 } = useMapZoom()
 
   useEffect(() => {
     if (hasFittedRef.current || !items?.length) return
@@ -53,23 +52,31 @@ function FitStaffBounds({ items }: { items: AssignmentItemWithUnit[] }) {
 
     if (coords.length >= 2) {
       const bounds = L.latLngBounds(coords)
-      map.flyToBounds(bounds, { padding: [60, 60], maxZoom: mapZoom, duration: 1.2 })
+      map.flyToBounds(bounds, { padding: [60, 60], maxZoom: 20, duration: 1.2 })
       hasFittedRef.current = true
     } else if (coords.length === 1) {
-      map.flyTo(coords[0], mapZoom, { duration: 1.2 })
+      map.flyTo(coords[0], 20, { duration: 1.2 })
       hasFittedRef.current = true
     }
-  }, [items, map, mapZoom])
+  }, [items, map])
 
   return null
 }
 
-function MapInstanceCapture({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
+function FlyToTarget({ items }: { items: AssignmentItemWithUnit[] }) {
   const map = useMap()
+  const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
+  const lastRef = useRef<string | null>(null)
+
   useEffect(() => {
-    mapRef.current = map
-    return () => { mapRef.current = null }
-  }, [map, mapRef])
+    if (!deliverTargetId) { lastRef.current = null; return }
+    if (lastRef.current === deliverTargetId) return
+    lastRef.current = deliverTargetId
+    const item = items.find((i) => i.psid === deliverTargetId)
+    if (!item?.unit?.lat || !item.unit?.lng) return
+    map.flyTo([item.unit.lat, item.unit.lng], 20, { duration: 0.5 })
+  }, [deliverTargetId, items, map])
+
   return null
 }
 
@@ -83,16 +90,6 @@ export default function StaffMap({ items, userLocation }: StaffMapProps) {
   const deliverTargetId = useBillingStore((s) => s.deliverTargetId)
   const tileUrl = TILE_URLS[mapType]
   const { data: mapZoom = 18 } = useMapZoom()
-  const mapRef = useRef<L.Map | null>(null)
-
-  useEffect(() => {
-    if (!deliverTargetId) return
-    const map = mapRef.current
-    if (!map) return
-    const item = items.find((i) => i.psid === deliverTargetId)
-    if (!item?.unit?.lat || !item.unit?.lng) return
-    map.flyTo([item.unit.lat, item.unit.lng], mapZoom, { duration: 0.5 })
-  }, [deliverTargetId, items, mapZoom])
 
   return (
     <div className="w-full h-full">
@@ -111,8 +108,8 @@ export default function StaffMap({ items, userLocation }: StaffMapProps) {
           attribution="&copy; Google"
         />
         <FitStaffBounds items={items} />
+        <FlyToTarget items={items} />
         <StaffMapMarkers items={items} selectedPsid={deliverTargetId ?? null} />
-        <MapInstanceCapture mapRef={mapRef} />
         <UserMarker location={userLocation} />
       </MapContainer>
     </div>

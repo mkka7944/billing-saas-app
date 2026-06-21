@@ -60,11 +60,17 @@ function MapPageContent() {
 
   const searchParams = useSearchParams()
   const router = useRouter()
+  const lastClosedPsidRef = useRef<string | null>(null)
 
   // Read ?target=PSID from URL — re-fires on same-route nav (e.g. QR scan from map)
   useEffect(() => {
     const target = searchParams.get('target')
     if (target && !deliverTargetId) {
+      // Ignore stale URL param — user just closed this unit via UDS close button
+      if (lastClosedPsidRef.current === target) {
+        lastClosedPsidRef.current = null
+        return
+      }
       setDeliverTarget(target)
       // Clean up param from URL
       const newParams = new URLSearchParams(searchParams.toString())
@@ -192,7 +198,10 @@ function MapPageContent() {
                   setHouseSource('map')
                 }
               }}
-              onClose={() => setDeliverTarget(null)}
+              onClose={() => {
+                lastClosedPsidRef.current = deliverTargetId
+                setDeliverTarget(null)
+              }}
               onPrev={prevDeliverable}
               onNext={nextDeliverable}
             />
