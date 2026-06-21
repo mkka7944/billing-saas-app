@@ -14,6 +14,17 @@ export function createScanner(id: string, containerEl: HTMLElement, onDecode: (t
   return new Html5Adapter(containerEl, onDecode, onError)
 }
 
+/** Find the standard rear lens (camera2 0) on Samsung multi-camera phones */
+async function findStandardCamera(): Promise<string | null> {
+  try {
+    const cameras = await Html5Qrcode.getCameras()
+    const standard = cameras.find(c => c.label.startsWith('camera2 0'))
+    return standard?.id ?? null
+  } catch {
+    return null
+  }
+}
+
 class Html5Adapter implements QrScannerAdapter {
   readonly id = 'html5'
   private scanner: Html5Qrcode | null = null
@@ -32,8 +43,11 @@ class Html5Adapter implements QrScannerAdapter {
     const scanner = new Html5Qrcode(this.containerId)
     this.scanner = scanner
 
+    const cameraId = await findStandardCamera()
+    const cameraConfig = cameraId ?? { facingMode: 'environment' }
+
     await scanner.start(
-      { facingMode: 'environment' },
+      cameraConfig as any,
       {
         fps: 20,
         qrbox: (vw: number, vh: number) => {
@@ -75,6 +89,9 @@ class NimiqAdapter implements QrScannerAdapter {
   }
 
   async start(): Promise<void> {
+    // Force JS QR engine — Samsung Chrome's native BarcodeDetector silently fails
+    ;(QrScanner as any)._disableBarcodeDetector = true
+
     const video = document.createElement('video')
     video.style.width = '100%'
     video.style.height = '100%'
@@ -94,6 +111,19 @@ class NimiqAdapter implements QrScannerAdapter {
     )
     this.scanner = scanner
     await scanner.start()
+
+    // Samsung multi-lens fix: switch to standard lens (camera2 0)
+    try {
+      const cameras = await QrScanner.listCameras(true)
+      const standard = cameras.find(c => c.label.startsWith('camera2 0'))
+      if (standard) {
+        const track = (video.srcObject as MediaStream | null)?.getVideoTracks()[0]
+        const currentId = track?.getSettings().deviceId
+        if (currentId !== standard.id) {
+          await scanner.setCamera(standard.id)
+        }
+      }
+    } catch {}
   }
 
   async stop(): Promise<void> {

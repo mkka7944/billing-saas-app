@@ -140,12 +140,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         await scanner.start()
       } catch (e2) {
         if (mountedRef.current) {
-          setScanError(`Camera error: ${(e2 as Error).message}`)
+          setScanError('Camera not available. Try Firefox browser if this persists.')
           setIsScanning(false)
+          toast(
+            'QR scanner could not start. Open this page in Firefox browser for best Samsung compatibility.',
+            'warning',
+          )
         }
       }
     }
-  }, [stopScanner, router])
+  }, [stopScanner, router, toast])
 
   const openScanner = useCallback(async () => {
     setShowScanner(true)

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { createScanner, type QrScannerAdapter } from '@/lib/qr-scanner-adapter'
+import { useToast } from '@/hooks/use-toast'
 import { QrCode, X, Loader2, Scan } from 'lucide-react'
 import type { AssignmentItemWithUnit } from '@/types'
 
@@ -11,6 +12,7 @@ interface QRScannerButtonProps {
 }
 
 export default function QRScannerButton({ items, onUnitScanned }: QRScannerButtonProps) {
+  const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -103,12 +105,16 @@ export default function QRScannerButton({ items, onUnitScanned }: QRScannerButto
         await scanner.start()
       } catch (e2) {
         if (mountedRef.current) {
-          setError(`Camera error: ${(e2 as Error).message}`)
+          setError(`Camera not available. Try Firefox browser if this persists.`)
           setScanning(false)
+          toast(
+            'QR scanner could not start. Open this page in Firefox browser for best Samsung compatibility.',
+            'warning',
+          )
         }
       }
     }
-  }, [onUnitScanned, stopScanner])
+  }, [onUnitScanned, stopScanner, toast])
 
   const handleClose = useCallback(() => {
     stopScanner()
