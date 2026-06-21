@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { usePathname, useRouter } from 'next/navigation'
+import { useToast } from '@/hooks/use-toast'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore, CITY_CONFIG } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
@@ -25,6 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
   const staffMode = useBillingStore((s) => s.staffMode)
+  const { toast } = useToast()
   const { setSidebarOpen } = useBillingUIStore()
 
   const queryClient = useQueryClient()
@@ -193,13 +195,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [
     { id: 'map' as const, label: 'Map', icon: MapIcon, href: undefined as string | undefined },
-    ...(!(roleName === 'field_staff' && staffMode === 'delivery')
-      ? [{ id: 'list' as const, label: 'List', icon: List, href: undefined as string | undefined }]
-      : []),
+    { id: 'list' as const, label: 'List', icon: List, href: undefined as string | undefined,
+      disabled: roleName === 'field_staff' && staffMode === 'delivery' },
     { id: 'scan' as const, label: 'SCAN', icon: QrCode, href: undefined as string | undefined },
-    ...(!(roleName === 'field_staff' && staffMode === 'browse')
-      ? [{ id: 'deliver' as const, label: 'Deliver', icon: Truck, href: '/deliver' as string | undefined }]
-      : []),
+    { id: 'deliver' as const, label: 'Deliver', icon: Truck, href: '/deliver' as string | undefined,
+      disabled: roleName === 'field_staff' && staffMode === 'browse' },
     { id: 'stats' as const, label: 'Stats', icon: BarChart3, href: '/stats' as string | undefined },
   ]
 
@@ -271,6 +271,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 key={tab.id}
                 onClick={() => {
+                  if ((tab as any).disabled) {
+                    toast(tab.id === 'list' ? 'Switch to Delivery Mode to view' : 'Switch to Browse Mode to view', 'info')
+                    return
+                  }
                   setPulsingTab(tab.id)
                   setTimeout(() => setPulsingTab(null), 1500)
                   useNavStore.getState().start()
@@ -281,10 +285,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }
                 }}
                 className={cn(
-                  "relative flex flex-col items-center gap-0.5 py-2 px-3 min-w-0 min-h-[48px] justify-center transition-colors cursor-pointer",
-                  isActive
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                  "relative flex flex-col items-center gap-0.5 py-2 px-3 min-w-0 min-h-[48px] justify-center transition-colors",
+                  (tab as any).disabled
+                    ? "opacity-40 cursor-not-allowed text-muted-foreground/40"
+                    : isActive
+                      ? "text-primary cursor-pointer"
+                      : "text-muted-foreground hover:text-foreground cursor-pointer"
                 )}
               >
                 <tab.icon className={cn(

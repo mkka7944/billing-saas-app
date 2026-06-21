@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { useToast } from '@/hooks/use-toast'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
@@ -37,6 +38,7 @@ interface NavItem {
   icon: React.ElementType
   isView?: boolean
   href?: string
+  disabled?: boolean
 }
 
 export function BillingSidebar() {
@@ -46,6 +48,7 @@ export function BillingSidebar() {
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
   const staffMode = useBillingStore((s) => s.staffMode)
+  const { toast } = useToast()
   const { sidebarOpen, sidebarCollapsed, toggleSidebarCollapse, setSidebarOpen } = useBillingUIStore()
   const { theme, setTheme } = useTheme()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -57,9 +60,8 @@ export function BillingSidebar() {
       category: 'Navigation',
       items: [
         { id: 'map', title: 'Map', icon: MapIcon, isView: true },
-        ...(!(roleName === 'field_staff' && staffMode === 'delivery')
-          ? [{ id: 'list', title: 'List', icon: List, isView: true }]
-          : []),
+        { id: 'list', title: 'List', icon: List, isView: true,
+          disabled: roleName === 'field_staff' && staffMode === 'delivery' },
         ...(roleName === 'admin' || roleName === 'super_admin'
           ? [
               { id: 'stats', title: 'Dashboard', icon: BarChart3, isView: true },
@@ -79,14 +81,13 @@ export function BillingSidebar() {
           ],
         }]
       : []),
-    ...(!(roleName === 'field_staff' && staffMode === 'browse')
-      ? [{
-          category: 'Field Operations',
-          items: [
-            { id: 'deliver', title: 'Deliver', icon: Truck, href: '/deliver' },
-          ],
-        }]
-      : []),
+    {
+      category: 'Field Operations',
+      items: [
+        { id: 'deliver', title: 'Deliver', icon: Truck, href: '/deliver',
+          disabled: roleName === 'field_staff' && staffMode === 'browse' },
+      ],
+    },
     {
       category: 'System',
       items: [
@@ -102,6 +103,10 @@ export function BillingSidebar() {
   }
 
   const handleNavClick = (item: NavItem) => {
+    if (item.disabled) {
+      toast(item.id === 'list' ? 'Switch to Delivery Mode to view' : 'Switch to Browse Mode to view', 'info')
+      return
+    }
     setPulsingItem(item.id)
     setTimeout(() => setPulsingItem(null), 1500)
     useNavStore.getState().start()
@@ -207,12 +212,15 @@ export function BillingSidebar() {
                     <button
                       onClick={() => handleNavClick(item)}
                       className={cn(
-                        'flex items-center rounded-lg text-sm font-bold transition-all cursor-pointer w-full',
+                        'flex items-center rounded-lg text-sm font-bold transition-all w-full',
                         effectiveCollapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5',
-                        active
-                          ? 'bg-sidebar-accent/60 text-sidebar-primary border border-sidebar-border shadow-sm'
-                          : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground border border-transparent'
+                        item.disabled
+                          ? 'opacity-40 cursor-not-allowed text-sidebar-foreground/40'
+                          : active
+                            ? 'bg-sidebar-accent/60 text-sidebar-primary border border-sidebar-border shadow-sm cursor-pointer'
+                            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground border border-transparent cursor-pointer'
                       )}
+                      disabled={item.disabled}
                       title={effectiveCollapsed ? item.title : undefined}
                     >
                       <item.icon
