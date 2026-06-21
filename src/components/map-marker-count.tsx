@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useIsFetching } from '@tanstack/react-query'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -8,17 +8,9 @@ import { shortenMCName } from '@/lib/mc-utils'
 import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 
 export function MapMarkerCount({ staffCount }: { staffCount?: number }) {
-  const [tick, setTick] = useState(0)
-
-  useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 30000)
-    return () => clearInterval(interval)
-  }, [])
-
   const filters = useBillingStore((s) => s.filters)
   const selectedCity = useBillingStore((s) => s.selectedCity)
   const queryDuration = useBillingStore((s) => s.queryDuration)
-  const deliveryStartTime = useBillingStore((s) => s.deliveryStartTime)
   const storeIsFetching = useIsFetching() > 0
   const mapMarkers = useBillingStore((s) => s.mapMarkers)
   const staffMode = useBillingStore((s) => s.staffMode)
@@ -27,16 +19,6 @@ export function MapMarkerCount({ staffCount }: { staffCount?: number }) {
   const showAll = filters.ucs.length > 0
 
   const count = staffCount != null ? staffCount : mapMarkers.length
-
-  const elapsedText = useMemo(() => {
-    if (!deliveryStartTime) return null
-    const mins = Math.floor((Date.now() - deliveryStartTime) / 60000)
-    if (mins < 1) return 'Just started'
-    if (mins < 60) return `${mins}m`
-    const hrs = Math.floor(mins / 60)
-    const rem = mins % 60
-    return `${hrs}h ${rem}m`
-  }, [deliveryStartTime, tick])
 
   const filterLabel = useMemo(() => {
     if (showAll) {
@@ -83,12 +65,6 @@ export function MapMarkerCount({ staffCount }: { staffCount?: number }) {
           <>
             <span className="w-px h-3 bg-white/20" />
             <span className="tabular-nums text-white/60">{durationText}</span>
-          </>
-        )}
-        {elapsedText && (
-          <>
-            <span className="w-px h-3 bg-white/20" />
-            <span className="tabular-nums text-green-400/80">{elapsedText}</span>
           </>
         )}
       </div>

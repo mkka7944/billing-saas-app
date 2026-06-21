@@ -102,19 +102,6 @@ export default function DeliverPage() {
   const totalCount = items.length
   const deliveredCount = useMemo(() => items.filter((i) => i.status === 'delivered').length, [items])
   const progressPct = totalCount > 0 ? Math.round((deliveredCount / totalCount) * 100) : 0
-  const setDeliveryStartTime = useBillingStore((s) => s.setDeliveryStartTime)
-
-  useEffect(() => {
-    let earliest: number | null = null
-    for (const item of items) {
-      const ts = item.started_at || item.delivered_at
-      if (!ts) continue
-      const t = new Date(ts).getTime()
-      if (earliest === null || t < earliest) earliest = t
-    }
-    setDeliveryStartTime(earliest)
-  }, [items, setDeliveryStartTime])
-
   const pendingCount = useMemo(() => items.filter((i) => i.status === 'pending' && !i.deliveredByOther).length, [items])
   const issuesCount = useMemo(() => items.filter((i) => i.status === 'processing' || i.status === 'missed').length, [items])
   const deliveredCountPill = useMemo(() => items.filter((i) => i.status === 'delivered').length, [items])

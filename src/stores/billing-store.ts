@@ -26,8 +26,6 @@ interface BillingState {
   mapMarkers: SurveyUnit[]
   houseSource: 'map' | 'list' | 'data-insight' | null
   staffMode: 'delivery' | 'browse'
-  deliveryStartTime: number | null
-  setDeliveryStartTime: (time: number | null) => void
   setCity: (city: string | null, district?: string | null, tehsil?: string | null) => void
   setListPage: (page: number) => void
   setView: (view: 'map' | 'list' | 'stats' | 'detail' | 'data-insight' | 'live') => void
@@ -95,7 +93,6 @@ export const useBillingStore = create<BillingState>()(
       mapMarkers: [],
       houseSource: null,
       staffMode: 'delivery',
-      deliveryStartTime: null,
       mapCenter: [32.0836, 72.6712],
       mapZoom: 18,
       mapType: 'streets',
@@ -229,7 +226,6 @@ export const useBillingStore = create<BillingState>()(
       setMapMarkers: (markers) => set({ mapMarkers: markers }),
       setHouseSource: (source) => set({ houseSource: source }),
       setStaffMode: (mode) => set({ staffMode: mode }),
-      setDeliveryStartTime: (time) => set({ deliveryStartTime: time }),
     }),
     {
       name: 'billing-store',
