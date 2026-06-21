@@ -16,8 +16,6 @@ import {
 import { uploadToGAS } from '@/lib/drive-upload'
 import type { QueuedPhoto } from '@/lib/photo-queue'
 
-const MAX_RETRIES = 3
-
 export function usePhotoQueue() {
   const queueCount = usePhotoQueueStore((s) => s.queueCount)
   const isProcessing = usePhotoQueueStore((s) => s.isProcessing)
@@ -76,26 +74,14 @@ export function usePhotoQueue() {
       return 'ok'
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error'
-      if (photo.retryCount >= MAX_RETRIES) {
-        await markFailed(photo.id!, errMsg)
-        setLastError(`Photo ${photo.psid} failed after ${MAX_RETRIES} retries: ${errMsg}`)
-        toast(`Photo for ${photo.psid} failed: ${errMsg}`, 'error')
-        fetch('/api/log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            level: 'error',
-            message: `Photo ${photo.psid} failed after ${MAX_RETRIES} retries: ${errMsg}`,
-            details: { psid: photo.psid, deliveryPhotoId: photo.deliveryPhotoId, retryCount: photo.retryCount },
-            source: 'photo-queue',
-          }),
-        }).catch((logErr) => console.error('Failed to write error log:', logErr))
-        return 'orphan'
-      } else {
-        await markFailed(photo.id!, errMsg)
-        await incrementRetry(photo.id!)
-        setLastError(`Photo ${photo.psid}: ${errMsg}`)
-      }
+      await markFailed(photo.id!, errMsg)
+      await incrementRetry(photo.id!)
+      setLastError(`Photo ${photo.psid}: ${errMsg} (attempt ${photo.retryCount + 1})`)
+
+      // Exponential backoff: wait longer between retries
+      const delay = Math.min((photo.retryCount + 1) * 5000, 60000)
+      await new Promise(r => setTimeout(r, delay))
+
       return 'retry'
     }
   }, [toast])
@@ -115,7 +101,6 @@ export function usePhotoQueue() {
 
         for (let i = 0; i < photos.length; i++) {
           const photo = photos[i]
-          if (photo.lastError) continue
           setProcessingIndex(i)
 
           const sizeKB = Math.round(photo.photoBlob.size / 1024)

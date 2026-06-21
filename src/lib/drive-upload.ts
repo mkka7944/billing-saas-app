@@ -23,7 +23,7 @@ export async function uploadToGAS(
   const filename = `${surveyId}_${Date.now()}.webp`
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8000)
+  const timeout = setTimeout(() => controller.abort(), 30000)
 
   let res: Response
   try {
