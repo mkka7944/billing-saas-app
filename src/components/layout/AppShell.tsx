@@ -26,6 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
   const staffMode = useBillingStore((s) => s.staffMode)
+  const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
   const { toast } = useToast()
   const { setSidebarOpen } = useBillingUIStore()
 
@@ -115,7 +116,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         stopScanner()
         setShowScanner(false)
         setScanError(null)
-        router.push(`/map?target=${encodeURIComponent(matched.psid)}`)
+        setDeliverTarget(matched.psid, matched.unit)
       }
     }
 
@@ -149,7 +150,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }
       }
     }
-  }, [stopScanner, router, toast])
+  }, [stopScanner, setDeliverTarget, toast])
 
   const openScanner = useCallback(async () => {
     setShowScanner(true)
@@ -187,8 +188,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return
     }
     handleCloseScanner()
-    router.push(`/map?target=${encodeURIComponent(matched.psid)}`)
-  }, [manualInput, handleCloseScanner, router])
+    setDeliverTarget(matched.psid, matched.unit)
+  }, [manualInput, handleCloseScanner, setDeliverTarget])
 
   // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [
