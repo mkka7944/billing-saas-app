@@ -4099,3 +4099,83 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 - `docs/SESSION.md` — this entry appended
 - `.opencode/context.json` — updated
 
+---
+
+## 2026-06-21 — UDS Tweaks (Round 2) + Zoom Fix + UDS Close Double-Tap Fix
+
+### Phase: UDS Tweaks Done + Bug Fixes
+
+### What
+- **UDS P0 Tweaks** (from previous session's remaining list):
+  - Fixed z-index on Flag confirm dialog `z-50` → `z-[2000]` in `src/components/ui/dialog.tsx`
+  - Removed Force Complete — admin handles processing units via Settings → Delivery tab
+  - GPS dots always bright green (`bg-green-400`) regardless of GPS accuracy
+  - Distance text dynamic colors: green ≤ GPS threshold, amber ≤ 100m, red > 100m
+  - Distance text says "away" (e.g. "450m away")
+  - House info moved to `top-14` with `text-shadow` instead of backdrop
+  - Combined top strip flush with UDS edges: Close (red X) | GPS + dots | Gallery (green) | Survey ID
+  - Top strip bg slightly darker (`bg-black/30`)
+  - Thumbnail strip removed — images accessible only via gallery button in top strip
+  - Custom lightweight lightbox replaced `yet-another-react-lightbox` (was unresponsive on low-end phones)
+  - Gradient changed from `via-black/40` to `to-transparent` with `text-shadow` for readability
+  - Status hint in permanent `h-4` reserved spot — action buttons never shift
+
+- **UDS Theme System**:
+  - Created `src/config/uds-themes.ts` — 15 CSS tokens per theme (default + outdoor)
+  - Created `src/hooks/use-uds-theme.ts` — localStorage persistence under key `uds-theme`
+  - Created `src/components/settings/uds-theme-selector.tsx` — toggle in Settings → Appearance tab
+  - All 15 UDS `className` strings replaced with `t.xxx` token variables
+  - Light/dark mode and UDS theme are independent
+
+- **Delivery elapsed time removed** (map info pill):
+  - Removed `deliveryStartTime` from billing store (field, initial value, setter)
+  - Removed `elapsedText` useMemo and `tick` interval from `map-marker-count.tsx`
+  - Removed the useEffect that set `deliveryStartTime` from `deliver/page.tsx`
+
+- **Map zoom at 20 for unit targeting**:
+  - `src/components/map-view.tsx` — `MapFlyToTarget` flyTo zoom changed from `mapZoom` to `20`
+  - `src/components/delivery/staff-map.tsx` — Replaced `mapRef`-based flyTo with `FlyToTarget` component inside `MapContainer` using `useMap()` (eliminates timing race where `mapRef` wasn't ready). `FitStaffBounds` maxZoom raised from `mapZoom` to `20`.
+
+- **UDS floating badge overlap**:
+  - Removed floating "Previous photos" badge (`absolute top-3 right-3`) — was overlapping survey_id text
+  - Removed `useDeliveryPhotos` hook call and import
+  - Gallery button now shows image count (`heroImages.length`) inline inside the top strip
+
+- **UDS close double-tap bug**:
+  - Root cause: `router.replace()` URL param cleanup is async. When user closed UDS, the stale `?target=PSID` in the URL param effect re-set `deliverTargetId`, re-opening the UDS.
+  - Fix: Added `lastClosedPsidRef` in `src/app/map/page.tsx` — tracks which PSID user just closed. The URL param effect checks this ref and ignores the stale param.
+
+### Key Decisions
+- `FlyToTarget` uses `useMap()` (Leaflet context) instead of `useRef<L.Map>` — guaranteed map ready
+- `FitStaffBounds` maxZoom raised to 20 — no reason to cap initial view below building level
+- `lastClosedPsidRef` pattern over `window.history.replaceState` — keeps React Router in sync
+- UDS theme stored in localStorage (key `uds-theme`), independent of `next-themes` light/dark
+
+### Files Modified
+- `src/components/ui/dialog.tsx` — z-index fix
+- `src/components/delivery/unit-delivery-sheet.tsx` — UDS tweaks: top strip, gradient, lightbox, status hint, gallery count, removed floating badge, removed `useDeliveryPhotos`
+- `src/components/map-marker-count.tsx` — removed elapsed text
+- `src/stores/billing-store.ts` — removed `deliveryStartTime` field/setter
+- `src/app/deliver/page.tsx` — removed `deliveryStartTime` effect
+- `src/lib/version.ts` — version bump
+- `src/components/map-view.tsx` — flyTo zoom `20`
+- `src/components/delivery/staff-map.tsx` — `FlyToTarget` component, `FitStaffBounds` maxZoom 20
+- `src/app/map/page.tsx` — `lastClosedPsidRef` for close double-tap fix
+- `src/config/uds-themes.ts` — NEW: UDS theme definitions
+- `src/hooks/use-uds-theme.ts` — NEW: localStorage UDS theme hook
+- `src/components/settings/uds-theme-selector.tsx` — NEW: theme toggle in Settings
+- `src/app/settings/page.tsx` — UDS theme selector integration
+- `.opencode/context.json` — updated
+- `docs/SESSION.md` — this entry appended
+- `docs/MASTER.md` — Section 30 updated
+
+### Remaining
+- Phase G.2 — Staff Positions (live GPS blue dots on admin map)
+- Phase M3 — JSON Marker Chunks (per-UC static JSON for map markers)
+- Phase M2 — Marker clustering + UC count badges
+- Phase M1 — Map Unification (staff sees survey overlay)
+- Phase F — Auto-Route Generation
+- Phase E — `/flagged-units` page with resolve/confirm/note
+- Alternative QR scanner (`@nimiq/qr-scanner` or `@agicash/qr-scanner`)
+- Pipeline: update `bill-extractor-v4.py` for city/tehsil, add `updated_at` to `payment_history`
+

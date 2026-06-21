@@ -1,36 +1,51 @@
 {
-  "lastSession": "2026-06-20 — UDS Tweaks Round 2: Simplified layout, custom lightbox, z-index fixes",
-  "currentPhase": "UDS Tweaks — Complete",
-  "currentStep": "All P0 UDS tweaks implemented: z-index fix (dialog.tsx), Force Complete removed, GPS dots always green, distance text dynamic colors with threshold, house info moved to top-14 with gradient readability, combined top strip (flush edges, close X red, gallery icon green), thumbnails removed, custom lightweight lightbox, status hint reserved h-4 spot (no shifting)",
+  "lastSession": "2026-06-21 — UDS Tweaks (Round 2) + Zoom Fix + UDS Close Double-Tap Fix",
+  "currentPhase": "UDS Tweaks — All Done. Bug Fixes — All Done.",
+  "currentStep": "UDS P0 tweaks done (z-index, force complete removed, GPS dots green, distance text dynamic + away, combined top strip, custom lightbox, status hint reserve). UDS Theme System done (default + outdoor, localStorage). deliveryStartTime removed. Map zoom 20 for unit targeting (FlyToTarget with useMap()). UDS floating badge removed, gallery count added. UDS close double-tap fixed (lastClosedPsidRef pattern).",
   "phaseProgress": {
     "UDSRedesignPlan": "done",
     "UDSRedesignImpl": "done",
-    "UDSTweaks": "done"
+    "UDSTweaks": "done",
+    "UDSTheme": "done",
+    "MapZoomFix": "done",
+    "UDSCloseDoubleTapFix": "done",
+    "DeliveryStartTimeRemoval": "done"
   },
   "filesModified": [
     "src/components/ui/dialog.tsx",
     "src/components/delivery/unit-delivery-sheet.tsx",
-    ".opencode/context.json"
+    "src/components/map-marker-count.tsx",
+    "src/stores/billing-store.ts",
+    "src/app/deliver/page.tsx",
+    "src/lib/version.ts",
+    "src/components/map-view.tsx",
+    "src/components/delivery/staff-map.tsx",
+    "src/app/map/page.tsx",
+    "src/config/uds-themes.ts",
+    "src/hooks/use-uds-theme.ts",
+    "src/components/settings/uds-theme-selector.tsx",
+    "src/app/settings/page.tsx",
+    ".opencode/context.json",
+    "docs/SESSION.md",
+    "docs/MASTER.md"
   ],
   "keyDecisions": [
-    "Dialog z-index bumped to z-[2000] (was z-50) — fixes Flag confirm behind UDS",
-    "Force Complete removed — admin handles processing units via Settings → Delivery tab",
-    "GPS dots always bright green (bg-green-400) regardless of accuracy",
-    "Distance text: green <= threshold, amber <= 100m, red > 100m (threshold from app_settings.gps_enforcement)",
-    "House info moved to top-14, no backdrop — gradient changed to to-black/30 for readability",
-    "Combined top strip flush with UDS edges, bg-black/20 p-1.5: Close (red X) | GPS + dots | Gallery (green, h-8) | Survey ID",
-    "Thumbnail strip removed — images accessible via gallery button in top strip",
-    "Custom lightweight lightbox replaced yet-another-react-lightbox (was unresponsive on low-end phones)",
-    "Status hint has permanent h-4 reserved spot — action buttons never shift",
-    "Distance text now says 'away' (e.g. '450m away')"
+    "FlyToTarget uses useMap() inside MapContainer — eliminates mapRef timing race",
+    "FitStaffBounds maxZoom raised to 20 — no cap on initial view",
+    "lastClosedPsidRef prevents stale ?target= URL param from re-opening UDS after close",
+    "UDS theme stored in localStorage (key 'uds-theme'), independent of next-themes light/dark",
+    "DeliveryStartTime removed — meaningless for multi-day delivery sessions"
   ],
   "nextActions": [
-    "HOME — Verify GPS readability, no-photo flow, and lightbox on mobile",
-    "HOME — Check distance text shows correct colors at threshold boundary",
-    "PENDING — Alternative QR scanner (@nimiq/qr-scanner or @agicash/qr-scanner)",
-    "PENDING — Phase G.2 Staff Positions (live GPS blue dots on admin map)",
-    "PENDING — Phase M3 JSON Marker Chunks, M2 Marker Clustering, M1 Map Unification"
+    "Phase G.2 — Staff Positions (live GPS blue dots on admin map)",
+    "Phase M3 — JSON Marker Chunks (per-UC static JSON)",
+    "Phase M2 — Marker clustering + UC count badges",
+    "Phase M1 — Map Unification (staff sees survey overlay)",
+    "Phase F — Auto-Route Generation",
+    "Phase E — /flagged-units page",
+    "Alternative QR scanner (@nimiq/qr-scanner or @agicash/qr-scanner)",
+    "Pipeline: update bill-extractor-v4.py for city/tehsil, add updated_at to payment_history"
   ],
   "gitCheckpoint": "6f650e9 — UDS redesign implementation",
-  "gitCurrentHead": "6f650e9 — UDS redesign implementation"
+  "gitCurrentHead": "b646c60 — Fix map zoom (flyTo at 20) + UDS close double-tap + remove overlapping badge"
 }

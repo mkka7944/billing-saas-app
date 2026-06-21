@@ -24,6 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setCity = useBillingStore((s) => s.setCity)
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
+  const staffMode = useBillingStore((s) => s.staffMode)
   const { setSidebarOpen } = useBillingUIStore()
 
   const queryClient = useQueryClient()
@@ -192,9 +193,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [
     { id: 'map' as const, label: 'Map', icon: MapIcon, href: undefined as string | undefined },
-    { id: 'list' as const, label: 'List', icon: List, href: undefined as string | undefined },
+    ...(!(roleName === 'field_staff' && staffMode === 'delivery')
+      ? [{ id: 'list' as const, label: 'List', icon: List, href: undefined as string | undefined }]
+      : []),
     { id: 'scan' as const, label: 'SCAN', icon: QrCode, href: undefined as string | undefined },
-    { id: 'deliver' as const, label: 'Deliver', icon: Truck, href: '/deliver' as string | undefined },
+    ...(!(roleName === 'field_staff' && staffMode === 'browse')
+      ? [{ id: 'deliver' as const, label: 'Deliver', icon: Truck, href: '/deliver' as string | undefined }]
+      : []),
     { id: 'stats' as const, label: 'Stats', icon: BarChart3, href: '/stats' as string | undefined },
   ]
 

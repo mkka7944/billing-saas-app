@@ -45,6 +45,7 @@ export function BillingSidebar() {
   const { user, signOut, roleName, displayName } = useAuthStore()
   const activeView = useBillingStore((s) => s.activeView)
   const setView = useBillingStore((s) => s.setView)
+  const staffMode = useBillingStore((s) => s.staffMode)
   const { sidebarOpen, sidebarCollapsed, toggleSidebarCollapse, setSidebarOpen } = useBillingUIStore()
   const { theme, setTheme } = useTheme()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -56,7 +57,9 @@ export function BillingSidebar() {
       category: 'Navigation',
       items: [
         { id: 'map', title: 'Map', icon: MapIcon, isView: true },
-        { id: 'list', title: 'List', icon: List, isView: true },
+        ...(!(roleName === 'field_staff' && staffMode === 'delivery')
+          ? [{ id: 'list', title: 'List', icon: List, isView: true }]
+          : []),
         ...(roleName === 'admin' || roleName === 'super_admin'
           ? [
               { id: 'stats', title: 'Dashboard', icon: BarChart3, isView: true },
@@ -76,12 +79,14 @@ export function BillingSidebar() {
           ],
         }]
       : []),
-    {
-      category: 'Field Operations',
-      items: [
-        { id: 'deliver', title: 'Deliver', icon: Truck, href: '/deliver' },
-      ],
-    },
+    ...(!(roleName === 'field_staff' && staffMode === 'browse')
+      ? [{
+          category: 'Field Operations',
+          items: [
+            { id: 'deliver', title: 'Deliver', icon: Truck, href: '/deliver' },
+          ],
+        }]
+      : []),
     {
       category: 'System',
       items: [
@@ -187,7 +192,7 @@ export function BillingSidebar() {
             effectiveCollapsed ? 'p-2' : 'p-3'
           )}
         >
-          {navGroups.map((group) => (
+          {navGroups.filter((g) => g.items.length > 0).map((group) => (
             <div key={group.category} className="space-y-1">
               {!effectiveCollapsed && (
                 <h3 className="px-2 text-xs font-bold uppercase tracking-wider text-sidebar-foreground/70 mb-3">

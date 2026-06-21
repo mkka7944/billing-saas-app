@@ -3201,16 +3201,31 @@ Full visual redesign of `UnitDeliverySheet` (`src/components/delivery/unit-deliv
 
 ### Implementation Status
 
-**Done** — Commit `6f650e9` — 2026-06-20
+**Done** — Commit `6f650e9` (initial redesign, 2026-06-20) + `6dfb4d7` (tweaks + theme, 2026-06-21) + `b646c60` (bug fixes, 2026-06-21)
 
-All changes implemented: GPS top row, survey_id pill background, brighter GPS colors (`text-green-300`, `h-2.5` dots, `drop-shadow-sm`), no-photo "Mark Delivery" button, flag icon-only in single action row, thumbnail strip, gallery lightbox, swipe/success on outer container, admin flag condition.
+**Phase 1 — Redesign (2026-06-20, `6f650e9`):**
+GPS top row, survey_id pill background, brighter GPS colors (`text-green-300`, `h-2.5` dots, `drop-shadow-sm`), no-photo "Mark Delivery" button, flag icon-only in single action row, thumbnail strip (later removed), gallery lightbox (`yet-another-react-lightbox`, later replaced), swipe/success on outer container, admin flag condition.
 
-### Remaining Tweaks (Home Session)
+**Phase 2 — Tweaks + Theme System (2026-06-21, `6dfb4d7`):**
+- z-index fix: Flag confirm dialog `z-50` → `z-[2000]`
+- Force Complete removed (admin handles via Settings → Delivery tab)
+- GPS dots always bright green (`bg-green-400`)
+- Distance text dynamic colors with "away" suffix
+- Combined top strip (flush edges, close X red, gallery icon green h-8)
+- Thumbnail strip removed (images via gallery button only)
+- Custom lightweight lightbox replaced `yet-another-react-lightbox`
+- Gradient changed to `to-transparent` with `text-shadow`
+- Status hint permanent `h-4` reserved spot
+- UDS Theme System: `src/config/uds-themes.ts` (default + outdoor), `use-uds-theme.ts`, `uds-theme-selector.tsx` in Settings → Appearance
 
-- z-index conflict remains for Flag and Force Complete confirm dialogs (rare, but should fix)
-- Visual polish: verify GPS colors visible against varying hero image backgrounds
-- Verify no-photo flow end-to-end on mobile (single tap mark, auto-advance)
-- Verify gallery lightbox opens/closes correctly on slow devices
+**Phase 3 — Bug Fixes (2026-06-21, `b646c60`):**
+- Map unit targeting uses zoom 20 (was `mapZoom`) in both `MapFlyToTarget` (admin) and new `FlyToTarget` (staff)
+- `FlyToTarget` uses `useMap()` inside `MapContainer` — eliminates race where `mapRef` wasn't ready
+- `FitStaffBounds` maxZoom raised to 20
+- Floating "Previous photos" badge removed (was overlapping survey_id text)
+- Gallery button shows image count count inline
+- UDS close double-tap bug fixed: `lastClosedPsidRef` prevents stale `?target=` URL param from re-opening UDS
+- `deliveryStartTime` removed from billing store and map info pill (was meaningless for multi-day delivery sessions)
 
 ### Git Rollback
 
