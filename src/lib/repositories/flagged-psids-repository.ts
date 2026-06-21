@@ -10,6 +10,9 @@ const ALLOWED_REASONS = [
   'psid_duplicate_monthly',
   'staff_flagged',
   'admin_flagged',
+  'unsent',
+  'duplicate_psid',
+  'duplicate_sid',
 ] as const
 
 const ALLOWED_RESOLUTIONS = ['confirmed_duplicate', 'confirmed_valid', 'ignored'] as const

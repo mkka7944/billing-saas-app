@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft, Crosshair, Flag } from 'lucide-react'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
+import { useFlaggedPsids } from '@/hooks/use-flagged-psids'
 import { useSettings } from '@/hooks/use-settings'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
@@ -52,6 +53,9 @@ export default function UnitDeliverySheet({
 
   const [allowNoPhoto, setAllowNoPhoto] = useState(false)
   const [manualSync, setManualSync] = useState(false)
+  const [showFlagDialog, setShowFlagDialog] = useState(false)
+  const [flagDialogReason, setFlagDialogReason] = useState('unsent')
+  const [flaggedReason, setFlaggedReason] = useState<string | null>(null)
   const [inputCooldown, setInputCooldown] = useState(false)
   const [processingStep, setProcessingStep] = useState<string | null>(null)
   const [selectedImageIdx, setSelectedImageIdx] = useState(0)
@@ -69,6 +73,9 @@ export default function UnitDeliverySheet({
     setAllowNoPhoto(appSettings?.allow_no_photo === true)
     setManualSync(appSettings?.unsent_mode?.enabled === true)
   }, [appSettings])
+
+  const { data: flagData } = useFlaggedPsids(unit?.survey_id || null, unit?.psid || null)
+  const isFlagged = !!flagData?.entries?.length
 
   const userId = useAuthStore((s) => s.user?.id)
   const userEmail = useAuthStore((s) => s.user?.email) || ''
@@ -109,6 +116,9 @@ export default function UnitDeliverySheet({
     setDeliveryGpsLng(null)
     setSelectedImageIdx(0)
     setGalleryOpen(false)
+    setFlaggedReason(null)
+    setShowFlagDialog(false)
+    setFlagDialogReason('unsent')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unit?.psid])
 
@@ -149,11 +159,15 @@ export default function UnitDeliverySheet({
   }, [galleryOpen, slides.length])
 
   const openCamera = useCallback(() => {
+    if (liveDistance != null && liveDistance > gpsThreshold) {
+      setShowFlagDialog(true)
+      return
+    }
     if (!inputRef.current) return
     inputRef.current.accept = 'image/*'
     inputRef.current.capture = 'environment'
     inputRef.current.click()
-  }, [])
+  }, [liveDistance, gpsThreshold])
 
   const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -380,6 +394,36 @@ export default function UnitDeliverySheet({
     }
   }, [unit?.psid, unit?.survey_id, confirm, toast])
 
+  const handleFlagAndContinue = useCallback(async () => {
+    if (!unit?.psid) return
+    try {
+      const res = await fetch('/api/admin/flagged-psids', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          psid: unit.psid,
+          survey_id: unit.survey_id || null,
+          reason: flagDialogReason,
+          notes: '',
+        }),
+      })
+      if (res.ok) {
+        setFlaggedReason(flagDialogReason)
+        setShowFlagDialog(false)
+        if (inputRef.current) {
+          inputRef.current.accept = 'image/*'
+          inputRef.current.capture = 'environment'
+          inputRef.current.click()
+        }
+      } else {
+        const j = await res.json().catch(() => ({}))
+        toast(j.error || 'Failed to flag', 'error')
+      }
+    } catch {
+      toast('Network error', 'error')
+    }
+  }, [unit?.psid, unit?.survey_id, flagDialogReason, toast])
+
   if (!unit) return null
 
   return (
@@ -571,8 +615,8 @@ export default function UnitDeliverySheet({
                 {(assignmentItemId || isAdmin) && (
                   <button
                     onClick={handleFlag}
-                    className={`h-11 w-11 flex items-center justify-center rounded-xl ${t.flagBg} ${t.flagText} hover:bg-white/25 hover:text-white shrink-0 backdrop-blur-sm cursor-pointer transition-colors`}
-                    title="Flag for review"
+                    className={`h-11 w-11 flex items-center justify-center rounded-xl shrink-0 backdrop-blur-sm cursor-pointer transition-colors ${isFlagged || flaggedReason ? 'bg-red-500/80 text-white hover:bg-red-600' : `${t.flagBg} ${t.flagText} hover:bg-white/25 hover:text-white`}`}
+                    title={isFlagged || flaggedReason ? `Flagged: ${flaggedReason || flagData?.entries?.[0]?.reason || 'Flagged'}` : 'Flag for review'}
                   >
                     <Flag className="h-4 w-4" />
                   </button>
@@ -611,6 +655,46 @@ export default function UnitDeliverySheet({
           </div>
         )}
       </div>
+
+      {/* GPS OOR Flag Dialog */}
+      {showFlagDialog && (
+        <div
+          className="fixed inset-0 z-[3000] bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setShowFlagDialog(false)}
+        >
+          <div className="bg-background rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-1">GPS Out of Range</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              You are <span className="font-semibold">{liveDistance}m</span> from the target (threshold: {gpsThreshold}m).
+              Flag this unit and continue?
+            </p>
+            <label className="text-sm font-medium mb-1.5 block">Reason:</label>
+            <select
+              value={flagDialogReason}
+              onChange={(e) => setFlagDialogReason(e.target.value)}
+              className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm mb-4 appearance-none"
+            >
+              <option value="unsent">UnSent — Bill not deliverable here</option>
+              <option value="duplicate_psid">Duplicate PSID — Same PSID mapped twice</option>
+              <option value="duplicate_sid">Duplicate SID — Same Survey ID mapped twice</option>
+            </select>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowFlagDialog(false)}
+                className="flex-1 h-11 text-sm font-medium rounded-xl bg-muted text-muted-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFlagAndContinue}
+                className="flex-1 h-11 text-sm font-bold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer"
+              >
+                Flag & Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
 

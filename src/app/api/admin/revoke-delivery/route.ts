@@ -111,6 +111,20 @@ export async function GET(req: NextRequest) {
     const unitMap = new Map((units || []).map((u: any) => [u.psid, u]))
 
     const itemIds = itemsData.map((r: any) => r.id)
+
+    // Batch-fetch flagged_psids (unresolved only)
+    const { data: flaggedEntries } = await sup
+      .from('flagged_psids')
+      .select('psid, reason')
+      .in('psid', psids)
+      .is('resolved_at', null)
+    const flaggedMap = new Map<string, string>()
+    for (const f of (flaggedEntries || []) as any[]) {
+      if (!flaggedMap.has(f.psid)) {
+        flaggedMap.set(f.psid, f.reason)
+      }
+    }
+
     const { data: photos } = await sup
       .from('delivery_photos')
       .select('id, assignment_item_id, photo_url, captured_at')
@@ -148,6 +162,7 @@ export async function GET(req: NextRequest) {
         uc_name: r.daily_assignments.uc_name,
         staff_name: r.daily_assignments.staff?.full_name || 'Unknown',
         staff_id: r.daily_assignments.staff_id,
+        flagged_reason: flaggedMap.get(r.psid) || null,
       }
     })
 

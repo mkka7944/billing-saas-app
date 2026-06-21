@@ -30,6 +30,7 @@ interface DeliveryItem {
   uc_name: string
   staff_name: string
   staff_id: string
+  flagged_reason: string | null
 }
 
 interface DeliveryTableData {
@@ -171,13 +172,23 @@ export function DeliveryTable() {
       if (!res.ok) throw new Error('Failed')
       toast(`Revoked — ${item.consumer_name || item.psid}`, 'success')
       setSelected((prev) => { const next = new Set(prev); next.delete(item.id); return next })
-      await fetchData()
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          items: prev.items.map((i) =>
+            i.id === item.id
+              ? { ...i, status: 'pending', started_at: null, delivered_at: null, gps_lat: null, gps_lng: null, photo_url: null }
+              : i
+          ),
+        }
+      })
     } catch {
       toast('Failed to revoke', 'error')
     } finally {
       setRevoking((prev) => { const next = new Set(prev); next.delete(item.id); return next })
     }
-  }, [confirm, toast, fetchData])
+  }, [confirm, toast])
 
   const handleBulkRevoke = useCallback(async () => {
     if (selected.size === 0) return
@@ -200,14 +211,25 @@ export function DeliveryTable() {
       })
       if (!res.ok) throw new Error('Failed')
       toast(`Revoked ${selected.size} items`, 'success')
+      const revokedIds = new Set(itemIds)
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          items: prev.items.map((i) =>
+            revokedIds.has(i.id)
+              ? { ...i, status: 'pending', started_at: null, delivered_at: null, gps_lat: null, gps_lng: null, photo_url: null }
+              : i
+          ),
+        }
+      })
       setSelected(new Set())
-      await fetchData()
     } catch {
       toast('Failed to revoke selected items', 'error')
     } finally {
       setRevoking(new Set())
     }
-  }, [selected, displayItems, confirm, toast, fetchData])
+  }, [selected, displayItems, confirm, toast])
 
   const handleAccept = useCallback(async (item: DeliveryItem) => {
     const ok = await confirm({
@@ -230,13 +252,21 @@ export function DeliveryTable() {
         throw new Error(j.error || 'Failed')
       }
       toast(`Accepted — ${item.consumer_name || item.psid}`, 'success')
-      await fetchData()
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          items: prev.items.map((i) =>
+            i.id === item.id ? { ...i, status: 'delivered' } : i
+          ),
+        }
+      })
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Failed to accept', 'error')
     } finally {
       setAccepting((prev) => { const next = new Set(prev); next.delete(item.id); return next })
     }
-  }, [confirm, toast, fetchData])
+  }, [confirm, toast])
 
   const allSelected = displayItems.length > 0 && selected.size === displayItems.length
   const someSelected = selected.size > 0 && selected.size < displayItems.length
@@ -357,6 +387,7 @@ export function DeliveryTable() {
                     UC <SortIcon col="uc_name" />
                   </TableHead>
                   <TableHead className="cursor-pointer select-none whitespace-nowrap">Status</TableHead>
+                  <TableHead className="w-10">Flag</TableHead>
                   <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -417,6 +448,16 @@ export function DeliveryTable() {
                         </Badge>
                       </TableCell>
                       <TableCell>
+                        {item.flagged_reason ? (
+                          <span className="inline-flex items-center gap-1 text-[9px] font-medium text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-full whitespace-nowrap" title={item.flagged_reason.replace(/_/g, ' ')}>
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />
+                            {item.flagged_reason}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {item.status === 'processing' && (
                           <Button
                             size="sm"
@@ -456,6 +497,12 @@ export function DeliveryTable() {
                         <Badge variant={item.status === 'delivered' ? 'default' : 'secondary'} className="text-[9px] shrink-0">
                           {item.status}
                         </Badge>
+                        {item.flagged_reason && (
+                          <span className="inline-flex items-center gap-1 text-[9px] font-medium text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-full shrink-0" title={item.flagged_reason.replace(/_/g, ' ')}>
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />
+                            {item.flagged_reason}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[10px] text-muted-foreground truncate">{item.address || '—'}</p>
                     </div>
