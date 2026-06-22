@@ -389,16 +389,16 @@ export function DesktopFilterBar() {
   }, [globalSearch.showResults, globalSearch.results])
 
   const handleSearchResultMap = useCallback((result: SearchResultUnit) => {
-    const unit = { psid: result.psid, survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] }
+    const unit = { psid: result.psid || '', survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] }
     setSearchResult(result)
-    setDeliverTarget(result.psid, unit)
+    setDeliverTarget(result.psid || '', unit)
     globalSearch.clearResults()
   }, [setSearchResult, setDeliverTarget, globalSearch])
 
   const handleSearchResultDetails = useCallback((result: SearchResultUnit) => {
-    const surveyUnit = { survey_id: result.survey_id || '', consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, psid: result.psid, uc_name: result.uc_name, arrears: null, current_bill_month: null, route_name: null, route_seq: null, image_urls: null, city_district: null, tehsil: null, surveyor_name: null, survey_date: null, survey_time: null, monthly_fee: 0, billing_category: '', status: '' }
+    const surveyUnit = { survey_id: result.survey_id || '', consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, psid: result.psid || '', uc_name: result.uc_name, arrears: null, current_bill_month: null, route_name: null, route_seq: null, image_urls: null, city_district: null, tehsil: null, surveyor_name: null, survey_date: null, survey_time: null, monthly_fee: 0, billing_category: '', status: '' }
     setSearchResult(null)
-    setDeliverTarget(result.psid, { psid: result.psid, survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] })
+    setDeliverTarget(result.psid || '', { psid: result.psid || '', survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] })
     selectHouse(result.survey_id, [surveyUnit])
     globalSearch.clearResults()
   }, [setSearchResult, setDeliverTarget, selectHouse, globalSearch])
