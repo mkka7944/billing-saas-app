@@ -15,6 +15,7 @@ interface TableInfo {
 
 interface UsageData {
   plan: string
+  billingCycle: { start: string; end: string }
   bandwidth: { usedMb: number | null; limitMb: number; estimated: boolean }
   apiRequests: { total: number; hourly: { timestamp: string; rest: number; auth: number; realtime: number; storage: number }[] }
   database: { totalMb: number; tables: TableInfo[] }
@@ -160,16 +161,15 @@ export function UsageTab() {
             <CardDescription className="text-xs">Project infrastructure metrics</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <GaugeBar
-              label="Bandwidth"
-              used={data.bandwidth.usedMb ?? 800}
-              total={data.bandwidth.limitMb}
-              unit="MB"
-              color="bg-blue-500"
-            />
-            {data.bandwidth.estimated && (
-              <p className="text-[10px] text-muted-foreground">* Estimated from app-level tracking. Exact egress available on Supabase dashboard.</p>
-            )}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-muted-foreground">Bandwidth</span>
+                <span className="font-semibold tabular-nums">— / {data.bandwidth.limitMb} MB</span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden" />
+              <p className="text-[10px] text-muted-foreground">Exact egress available on <a href="https://supabase.com/dashboard/org/egcdeijulodqozlinrum/usage" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">Supabase dashboard</a></p>
+              <p className="text-[10px] text-muted-foreground">Cycle: {data.billingCycle.start} → {data.billingCycle.end}</p>
+            </div>
 
             <GaugeBar label="Database" used={data.database.totalMb} total={500} unit="MB" />
             <GaugeBar label="Storage" used={data.storage.totalMb} total={1024} unit="MB" />

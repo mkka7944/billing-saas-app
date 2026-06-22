@@ -13,6 +13,7 @@ interface TableInfo {
 
 interface UsageData {
   plan: string
+  billingCycle: { start: string; end: string }
   bandwidth: { usedMb: number | null; limitMb: number; estimated: boolean }
   apiRequests: { total: number; hourly: { timestamp: string; rest: number; auth: number; realtime: number; storage: number }[] }
   database: { totalMb: number; tables: { name: string; sizeMb: number; rows: number }[] }
@@ -100,8 +101,20 @@ export async function GET() {
 
     const kpi = kpiRows[0] || { deliveries_today: 0, photos_this_month: 0, photos_total: 0, active_staff: 0, assignments_this_month: 0, units_active: 0, units_total: 0, collection_this_month: 0 }
 
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth()
+    const billStart = new Date(year, month, 22)
+    if (now < billStart) billStart.setMonth(month - 1)
+    const billEnd = new Date(billStart)
+    billEnd.setMonth(billEnd.getMonth() + 1)
+
     const usage: UsageData = {
       plan: actualPlan,
+      billingCycle: {
+        start: billStart.toISOString().slice(0, 10),
+        end: billEnd.toISOString().slice(0, 10),
+      },
       bandwidth: {
         usedMb: null,
         limitMb: bandwidthLimitMb,
