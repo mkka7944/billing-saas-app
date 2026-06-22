@@ -31,6 +31,6 @@
     "T1 Session 2 — selectedHouseId persistence, default UC for staff browse, filter persistence across nav",
     "Pipeline: update bill-extractor-v4.py for city/tehsil, add updated_at to payment_history"
   ],
-  "gitCheckpoint": "814e38f Fix: null-safety for psid in floating-actions search handlers (Vercel TS)",
-  "gitCurrentHead": "814e38f + current staged changes"
+  "gitCheckpoint": "3f2c9a2 — Fix deliver page search: correct column name, assignment_items query, scroll-to-item + survey_id in results",
+  "gitCurrentHead": "3f2c9a2"
 }
