@@ -25,6 +25,7 @@ import { ErrorLogSection } from '@/components/settings/error-log-section'
 import { FailedUploadsTab } from '@/components/settings/failed-uploads-tab'
 import { DeliveryQualityTab } from '@/components/settings/delivery-quality-tab'
 import { DeliveryTable } from '@/components/settings/delivery-table'
+import { UsageTab } from '@/components/settings/usage-tab'
 import { UdsThemeSelector } from '@/components/settings/uds-theme-selector'
 
 const THEMES = [
@@ -40,6 +41,7 @@ const tabs = [
   { id: 'delivery-quality', label: 'Delivery Quality', adminOnly: true },
   { id: 'failed-uploads', label: 'Failed Uploads', adminOnly: true },
   { id: 'users', label: 'Users', adminOnly: true },
+  { id: 'usage', label: 'Usage & Limits', adminOnly: true },
 ] as const
 
 type TabId = (typeof tabs)[number]['id']
@@ -845,6 +847,9 @@ export default function SettingsPage() {
 
         {/* Failed Uploads tab (admin-only) */}
         {activeTab === 'failed-uploads' && <FailedUploadsTab />}
+
+        {/* Usage & Limits tab (admin-only) */}
+        {activeTab === 'usage' && <UsageTab />}
 
         {/* Users tab */}
         {activeTab === 'users' && (

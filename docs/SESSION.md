@@ -6,7 +6,32 @@
 
 ---
 
-## 2026-06-22 — Doc Audit & Alignment (Full Documentation Overhaul)
+## 2026-06-22 — Usage Dashboard (Settings Tab + API Route)
+
+### Phase: Usage Dashboard (new)
+
+### What
+Built a Usage & Limits tab in Settings showing Supabase infrastructure metrics and app KPIs side-by-side.
+
+**Files created:**
+- `src/app/api/admin/usage/route.ts` — Fetches from three sources: Management API (plan info, request counts), DB system tables (database size, table sizes, row counts), and app tables (deliveries, photos, staff, collection). Cached 5 min.
+- `src/components/settings/usage-tab.tsx` — Responsive two-column layout with Supabase card (bandwidth estimate bar, DB gauge, storage gauge, API requests, expandable table sizes) and App KPIs card (8 stat cards in 2x4 grid).
+
+**Files modified:**
+- `src/app/settings/page.tsx` — Added Usage & Limits as 8th tab (admin-only).
+- `.env.local` — Updated SUPABASE_ACCESS_TOKEN to never-expiring token.
+
+### Key Findings
+- Management API does not expose exact egress in GB or total storage size — these are Supabase dashboard-only values.
+- Can estimate storage exactly via `SUM((metadata->>'contentLength')::bigint) FROM storage.objects`.
+- Can estimate egress from app-level tracking (response sizes at API routes).
+- Management API gives API request counts with per-hour breakdown by service type (REST, Auth, Realtime, Storage).
+- `POST /v1/projects/{ref}/database/query` endpoint can run arbitrary SQL against the project DB using the PAT token — no need for raw DB connection.
+
+### Next
+- Settings now has 8 tabs. Continue with remaining phases (M3, G.2, etc.)
+
+---
 
 ### Phase: Documentation
 
