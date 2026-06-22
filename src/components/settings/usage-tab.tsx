@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -103,30 +104,17 @@ function CollapsibleTable({ title, tables }: { title: string; tables: TableInfo[
 }
 
 export function UsageTab() {
-  const [data, setData] = useState<UsageData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { data, isLoading, error } = useQuery<UsageData>({
+    queryKey: ['admin-usage'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/usage')
+      if (!res.ok) throw new Error('Failed to load usage data')
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000,
+  })
 
-  useEffect(() => {
-    let mounted = true
-    async function load() {
-      try {
-        setLoading(true)
-        const res = await fetch('/api/admin/usage')
-        if (!res.ok) throw new Error('Failed to load usage data')
-        const json = await res.json()
-        if (mounted) setData(json)
-      } catch (e: any) {
-        if (mounted) setError(e.message || 'Failed to load')
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-    load()
-    return () => { mounted = false }
-  }, [])
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -142,7 +130,7 @@ export function UsageTab() {
     return (
       <Card>
         <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          {error || 'No data available'}
+          {error instanceof Error ? error.message : 'No data available'}
         </CardContent>
       </Card>
     )
