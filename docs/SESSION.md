@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-06-22 — Usage Dashboard Polish + PWA Plan
+
+### Phase: Usage Dashboard & PWA Planning
+
+### What
+Three changes to the usage dashboard + created PWA implementation plan.
+
+**Changes to usage dashboard:**
+- Fixed billing cycle to 22nd→22nd (not 1st→end of month)
+- Removed fake 800 MB bandwidth number — now shows a link to Supabase dashboard instead
+- Migrated UsageTab from `useState`/`useEffect`/`fetch` to React Query `useQuery` so the refresh button works
+- Query key: `['admin-usage']` — invalidated by `refreshCurrentPage()` when on `/settings` route
+
+**Created:**
+- `docs/PWA-PLAN.md` — Full PWA implementation plan adapted from routing-station reference
+
+**Key analysis:**
+- Full assignment of all 165K active units = ~58 MB in assignment_items table
+- Safe within 500 MB DB limit, but will need archival after 8-12 months
+- Management API confirmed working (PAT: sbp_57df... saved in .env.local)
+
+### Next
+- Implement PWA: manifest.ts, sw.js, pwa-register, icons, next.config headers
+
+---
+
 ## 2026-06-22 — Usage Dashboard (Settings Tab + API Route)
 
 ### Phase: Usage Dashboard (new)

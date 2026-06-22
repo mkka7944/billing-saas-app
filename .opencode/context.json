@@ -1,28 +1,24 @@
 {
-  "lastSession": "2026-06-22 — Usage Dashboard (Settings tab + API route)",
-  "currentPhase": "Usage Dashboard",
-  "currentStep": "Built GET /api/admin/usage route (fetches from Management API, DB system tables, storage.objects) and Usage & Limits tab in Settings. PAT token verified and updated. Tab shows Supabase infrastructure metrics (bandwidth estimate, DB size, storage, API requests) + App KPIs (deliveries, photos, staff, collection) in responsive two-column layout.",
+  "lastSession": "2026-06-22 — Usage dashboard tweaks + PWA plan saved",
+  "currentPhase": "Usage Dashboard & PWA Planning",
+  "currentStep": "Fixed billing cycle (22nd-22nd), removed fake bandwidth number, switched Usage tab to useQuery for refresh button support, created PWA implementation plan. All docs updated. Assignment table size analyzed: ~58 MB for full 165K active units, well within 500 MB limit.",
   "filesModified": [
-    ".env.local",
-    "src/app/settings/page.tsx"
-  ],
-  "filesCreated": [
     "src/app/api/admin/usage/route.ts",
     "src/components/settings/usage-tab.tsx"
   ],
+  "filesCreated": [
+    "docs/PWA-PLAN.md"
+  ],
   "keyDecisions": [
-    "Management API does not expose exact egress (GB) or total storage size — these are dashboard-only. Storage estimated from storage.objects SUM, egress estimated app-side.",
-    "Management API does expose API request counts (total + per-hour breakdown by service type).",
-    "Database/query endpoint can run any SQL for table sizes, row counts, and app KPIs.",
-    "Usage tab is admin-only (8th tab) with responsive two-column layout: Supabase card left, App KPIs right.",
-    "Bandwidth shows as estimated with a note linking to Supabase dashboard for exact numbers.",
-    "PAT token updated in .env.local — never expires.",
-    "Delivery trail polling staleTime documented as 60s (was 5s) in AUDIT docs.",
-    "Notifications polling staleTime documented as 120s (was 30s).",
-    "Data Usage card confirmed in Settings→General tab (3-column grid, admin-only edit).",
-    "Settings now has 8 tabs: General, Photo Queue, Error Log, Delivery, Delivery Quality, Failed Uploads, Usage & Limits, Users."
+    "Billing cycle is 22nd-22nd, reflected in usage dashboard.",
+    "Bandwidth card no longer shows fake 800MB — links to Supabase dashboard instead.",
+    "Usage tab migrated to useQuery for refresh button support (queryKey: ['admin-usage']).",
+    "Assignment table at full capacity (~165K items) = ~58 MB, safe within 500 MB DB limit.",
+    "Need archival strategy for assignment_items after 8-12 months or upgrade to Pro.",
+    "PWA plan created as docs/PWA-PLAN.md — manual service worker approach (not @serwist/turbopack) due to custom caching rules (bypass Supabase/Google/map tiles per routing-station reference)."
   ],
   "nextActions": [
+    "Implement PWA: manifest.ts, sw.js, pwa-register component, icons, next.config headers",
     "Fix H1 residual: add max page guard to fetchAll() or replace with chunk-based approach",
     "Phase M3 — Implementation (bucket setup + chunk generation scripts on office PC)",
     "Phase G.2 — Staff Positions (live GPS blue dots on admin map)",
@@ -34,6 +30,6 @@
     "T1 Session 2 — selectedHouseId persistence, default UC for staff browse, filter persistence across nav",
     "Pipeline: update bill-extractor-v4.py for city/tehsil, add updated_at to payment_history"
   ],
-  "gitCheckpoint": "5c096dd",
-  "gitCurrentHead": "5c096dd + usage dashboard (route + tab)"
+  "gitCheckpoint": "d8dae0a",
+  "gitCurrentHead": "d8dae0a + doc updates + PWA plan"
 }
