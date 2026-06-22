@@ -120,7 +120,7 @@ export async function GET(req: NextRequest) {
       .or(`psid.ilike.%${q}%,survey_id.ilike.%${q}%`)
       .limit(30)
 
-    const sorted = prioritySort(units, q, isPsid20)
+    const sorted = prioritySort(units || [], q, isPsid20)
     const results = sorted.map((u: any) => mapResult(u))
     return NextResponse.json({ results })
   } catch (e) {
