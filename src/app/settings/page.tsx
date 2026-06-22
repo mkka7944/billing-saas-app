@@ -554,13 +554,13 @@ export default function SettingsPage() {
 
         {/* General tab */}
         {activeTab === 'general' && (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base font-bold">Appearance</CardTitle>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-bold">Appearance</CardTitle>
                 <CardDescription className="text-xs">Customize how the app looks on your device.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 <CollapsibleSection title="Theme">
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {THEMES.map(t => {
@@ -596,11 +596,11 @@ export default function SettingsPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base font-bold">Account</CardTitle>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-bold">Account</CardTitle>
                 <CardDescription className="text-xs">Your account information.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                     <Building2 className="h-5 w-5 text-primary" />
@@ -618,11 +618,11 @@ export default function SettingsPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base font-bold">Data Usage</CardTitle>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-bold">Data Usage</CardTitle>
                 <CardDescription className="text-xs">Control how often the app polls the server. Higher intervals use less data.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 {isAdmin ? (
                   <>
                     <div className="space-y-2">

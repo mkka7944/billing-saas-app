@@ -31,6 +31,7 @@ export async function GET(request: Request) {
       .select('id, staff_id, issued_at, total_items')
       .gte('issued_at', fromDate)
       .lte('issued_at', toDate)
+      .limit(200)
     if (staffId) aq = aq.eq('staff_id', staffId)
 
     const { data: assignments } = await aq
