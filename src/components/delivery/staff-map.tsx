@@ -24,16 +24,28 @@ function UserMarker({ location: propLocation }: { location?: UserLocation | null
   if (!loc) return null
 
   return (
-    <CircleMarker
-      center={[loc.lat, loc.lng]}
-      radius={7}
-      pathOptions={{
-        color: '#ffffff',
-        fillColor: '#3b82f6',
-        fillOpacity: 1,
-        weight: 3,
-      }}
-    />
+    <>
+      <CircleMarker
+        center={[loc.lat, loc.lng]}
+        radius={14}
+        pathOptions={{
+          color: '#22d3ee',
+          fillColor: '#22d3ee',
+          fillOpacity: 0.15,
+          weight: 2,
+        }}
+      />
+      <CircleMarker
+        center={[loc.lat, loc.lng]}
+        radius={8}
+        pathOptions={{
+          color: '#ffffff',
+          fillColor: '#22d3ee',
+          fillOpacity: 1,
+          weight: 3,
+        }}
+      />
+    </>
   )
 }
 

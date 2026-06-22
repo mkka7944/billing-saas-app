@@ -4474,3 +4474,27 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 
 ### Next
 Review `nextActions` in `.opencode/context.json` for planned work items.
+
+## 2026-06-22 — UDS Quick Fixes + Distinctive Staff GPS Marker
+
+### What
+Three UDS fixes + staff GPS marker enhancement.
+
+**UDS fixes:**
+- Responsive button text: mobile shows "Take Picture", desktop shows "Take Picture & Deliver"
+- Flag dialog: replaced native `<select>` with shadcn `<Select>` component for consistent styling
+- Flag reason labels simplified: "UnSent" / "Duplicate PSID" / "Duplicate S-ID" (removed descriptive suffixes)
+
+**Staff GPS marker:**
+- Enhanced staff position marker from a plain 7px blue dot to distinctive concentric cyan (#22d3ee) circles
+- Outer ring: 14px radius, 15% opacity cyan glow
+- Inner dot: 8px radius, solid cyan, white 3px border
+
+### Files
+- Modified: `src/components/delivery/unit-delivery-sheet.tsx`, `src/components/delivery/staff-map.tsx`
+
+### Build Verification
+- `npx tsc --noEmit` — clean, no errors
+
+### Next
+Review `nextActions` in `.opencode/context.json` for planned work items.

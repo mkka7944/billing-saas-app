@@ -13,6 +13,7 @@ import { compressImage } from '@/lib/image/compress'
 import { uploadToGAS } from '@/lib/drive-upload'
 import { useToast } from '@/hooks/use-toast'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useUserLocation } from '@/hooks/use-user-location'
 import { haversine } from '@/lib/geo'
@@ -587,7 +588,7 @@ export default function UnitDeliverySheet({
                       className="flex-1 h-11 text-sm font-bold rounded-xl bg-white text-gray-900 flex items-center justify-center gap-2 hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 shadow-md"
                     >
                       {(isDelivering || inputCooldown) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                      {(isDelivering || inputCooldown) ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : 'Take Picture & Deliver'}
+                      {(isDelivering || inputCooldown) ? 'Processing...' : itemStatus === 'delivered' || itemStatus === 'processing' ? 'Redeliver' : <>Take Picture<span className="hidden sm:inline"> & Deliver</span></>}
                     </button>
                   )
                 ) : null}
@@ -669,15 +670,19 @@ export default function UnitDeliverySheet({
               Flag this unit and continue?
             </p>
             <label className="text-sm font-medium mb-1.5 block">Reason:</label>
-            <select
+            <Select
               value={flagDialogReason}
-              onChange={(e) => setFlagDialogReason(e.target.value)}
-              className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm mb-4 appearance-none"
+              onValueChange={(val) => setFlagDialogReason(val || 'unsent')}
             >
-              <option value="unsent">UnSent — Bill not deliverable here</option>
-              <option value="duplicate_psid">Duplicate PSID — Same PSID mapped twice</option>
-              <option value="duplicate_sid">Duplicate SID — Same Survey ID mapped twice</option>
-            </select>
+              <SelectTrigger className="w-full h-10 mb-4">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unsent">UnSent</SelectItem>
+                <SelectItem value="duplicate_psid">Duplicate PSID</SelectItem>
+                <SelectItem value="duplicate_sid">Duplicate S-ID</SelectItem>
+              </SelectContent>
+            </Select>
             <div className="flex gap-2">
               <button
                 onClick={() => setShowFlagDialog(false)}
