@@ -9,6 +9,10 @@ export interface AppSettings {
   map_zoom?: number
   unsent_mode?: { enabled: boolean }
   gps_enforcement?: { enforce: boolean; threshold: number }
+  live_polling_enabled?: boolean
+  live_poll_interval?: number
+  notifications_polling_enabled?: boolean
+  notifications_poll_interval?: number
 }
 
 export function useSettings() {

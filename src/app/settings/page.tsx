@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTheme } from 'next-themes'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
@@ -32,8 +33,7 @@ const THEMES = [
 ]
 
 const tabs = [
-  { id: 'appearance', label: 'Appearance' },
-  { id: 'account', label: 'Account' },
+  { id: 'general', label: 'General' },
   { id: 'unsent', label: 'Photo Queue' },
   { id: 'errors', label: 'Error Log' },
   { id: 'delivery', label: 'Delivery', adminOnly: true },
@@ -128,7 +128,8 @@ export default function SettingsPage() {
   const user = useAuthStore((s) => s.user)
   const roleName = useAuthStore((s) => s.roleName)
   const { setPageIdentity } = useBillingUIStore()
-  const [activeTab, setActiveTab] = useState<TabId>('appearance')
+  const [activeTab, setActiveTab] = useState<TabId>('general')
+  const queryClient = useQueryClient()
 
   const [users, setUsers] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -167,6 +168,16 @@ export default function SettingsPage() {
   const [unsentModeEnabled, setUnsentModeEnabled] = useState(false)
   const [savedUnsentModeEnabled, setSavedUnsentModeEnabled] = useState(false)
 
+  // Polling settings
+  const [livePollingEnabled, setLivePollingEnabled] = useState(true)
+  const [savedLivePollingEnabled, setSavedLivePollingEnabled] = useState(true)
+  const [livePollInterval, setLivePollInterval] = useState(60)
+  const [savedLivePollInterval, setSavedLivePollInterval] = useState(60)
+  const [notificationsPollingEnabled, setNotificationsPollingEnabled] = useState(true)
+  const [savedNotificationsPollingEnabled, setSavedNotificationsPollingEnabled] = useState(true)
+  const [notificationsPollInterval, setNotificationsPollInterval] = useState(120)
+  const [savedNotificationsPollInterval, setSavedNotificationsPollInterval] = useState(120)
+
   // Staff notification form
   const [notifyUserId, setNotifyUserId] = useState('')
   const [notifySubject, setNotifySubject] = useState('')
@@ -183,7 +194,7 @@ export default function SettingsPage() {
   const { toast } = useToast()
 
   useEffect(() => {
-    setPageIdentity('Settings', 'Appearance and account')
+    setPageIdentity('Settings', 'Appearance, account, and data usage')
   }, [setPageIdentity])
 
   const fetchUsers = useCallback(async () => {
@@ -219,6 +230,14 @@ export default function SettingsPage() {
           const z = data?.map_zoom
           setMapZoom(typeof z === 'number' ? z : 18)
           setSavedMapZoom(typeof z === 'number' ? z : 18)
+          setLivePollingEnabled(data?.live_polling_enabled !== false)
+          setSavedLivePollingEnabled(data?.live_polling_enabled !== false)
+          setLivePollInterval(data?.live_poll_interval || 60)
+          setSavedLivePollInterval(data?.live_poll_interval || 60)
+          setNotificationsPollingEnabled(data?.notifications_polling_enabled !== false)
+          setSavedNotificationsPollingEnabled(data?.notifications_polling_enabled !== false)
+          setNotificationsPollInterval(data?.notifications_poll_interval || 120)
+          setSavedNotificationsPollInterval(data?.notifications_poll_interval || 120)
         })
         .catch(() => toast('Failed to load settings', 'error'))
     }
@@ -267,17 +286,41 @@ export default function SettingsPage() {
           value: { enabled: unsentModeEnabled, max_limit: 50 },
         }),
       })
-      if (res1.ok && res2.ok && res3.ok && res4.ok && res5.ok) {
+      const res6 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'live_polling_enabled', value: livePollingEnabled }),
+      })
+      const res7 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'live_poll_interval', value: livePollInterval }),
+      })
+      const res8 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'notifications_polling_enabled', value: notificationsPollingEnabled }),
+      })
+      const res9 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'notifications_poll_interval', value: notificationsPollInterval }),
+      })
+      const allOk = [res1, res2, res3, res4, res5, res6, res7, res8, res9].every(r => r.ok)
+      if (allOk) {
         setDeliverySettings({ enforce: deliveryEnforce, threshold: deliveryThreshold })
         setSavedAllowNoPhoto(allowNoPhoto)
         setSavedTestMode(testModeEnabled)
         setSavedMapZoom(mapZoom)
         setSavedUnsentModeEnabled(unsentModeEnabled)
+        setSavedLivePollingEnabled(livePollingEnabled)
+        setSavedLivePollInterval(livePollInterval)
+        setSavedNotificationsPollingEnabled(notificationsPollingEnabled)
+        setSavedNotificationsPollInterval(notificationsPollInterval)
+        queryClient.invalidateQueries({ queryKey: ['app-settings'] })
         toast('Delivery settings saved', 'success')
       } else {
-        const failures = [res1, res2, res3, res4, res5].find(r => !r.ok)!
-        const j = await failures.json()
-        toast(j.error || 'Failed to save', 'error')
+        toast('Failed to save some settings', 'error')
       }
     } catch {
       toast('Network error', 'error')
@@ -416,7 +459,11 @@ export default function SettingsPage() {
       allowNoPhoto !== savedAllowNoPhoto ||
       testModeEnabled !== savedTestMode ||
       mapZoom !== savedMapZoom ||
-      unsentModeEnabled !== savedUnsentModeEnabled
+      unsentModeEnabled !== savedUnsentModeEnabled ||
+      livePollingEnabled !== savedLivePollingEnabled ||
+      livePollInterval !== savedLivePollInterval ||
+      notificationsPollingEnabled !== savedNotificationsPollingEnabled ||
+      notificationsPollInterval !== savedNotificationsPollInterval
     )
 
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
@@ -457,72 +504,71 @@ export default function SettingsPage() {
           ))}
         </div>
 
-        {/* Appearance tab */}
-        {activeTab === 'appearance' && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-bold">Appearance</CardTitle>
-              <CardDescription className="text-xs">Customize how the app looks on your device.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <CollapsibleSection title="Theme">
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                  {THEMES.map(t => {
-                    const isActive = theme === t.id
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => setTheme(t.id)}
-                        className={cn(
-                          'flex flex-col items-center gap-1.5 p-3 rounded-lg border text-xs transition-all cursor-pointer min-h-[48px]',
-                          isActive
-                            ? 'border-primary bg-primary/5 text-primary shadow-sm'
-                            : 'border-border hover:border-primary/50 hover:bg-muted/50 text-muted-foreground'
-                        )}
-                      >
-                        <t.icon className={cn('h-5 w-5', isActive && 'text-primary')} />
-                        <span className="font-semibold">{t.label}</span>
-                        <span className="text-[10px] text-muted-foreground">{t.desc}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </CollapsibleSection>
+        {/* General tab */}
+        {activeTab === 'general' && (
+          <div className="space-y-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base font-bold">Appearance</CardTitle>
+                <CardDescription className="text-xs">Customize how the app looks on your device.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <CollapsibleSection title="Theme">
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {THEMES.map(t => {
+                      const isActive = theme === t.id
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => setTheme(t.id)}
+                          className={cn(
+                            'flex flex-col items-center gap-1.5 p-3 rounded-lg border text-xs transition-all cursor-pointer min-h-[48px]',
+                            isActive
+                              ? 'border-primary bg-primary/5 text-primary shadow-sm'
+                              : 'border-border hover:border-primary/50 hover:bg-muted/50 text-muted-foreground'
+                          )}
+                        >
+                          <t.icon className={cn('h-5 w-5', isActive && 'text-primary')} />
+                          <span className="font-semibold">{t.label}</span>
+                          <span className="text-[10px] text-muted-foreground">{t.desc}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </CollapsibleSection>
 
-              <CollapsibleSection title="Delivery Sheet">
-                <UdsThemeSelector />
-              </CollapsibleSection>
+                <CollapsibleSection title="Delivery Sheet">
+                  <UdsThemeSelector />
+                </CollapsibleSection>
 
-              <CollapsibleSection title="Map">
-                <MapZoomReadOnly />
-              </CollapsibleSection>
-            </CardContent>
-          </Card>
-        )}
+                <CollapsibleSection title="Map">
+                  <MapZoomReadOnly />
+                </CollapsibleSection>
+              </CardContent>
+            </Card>
 
-        {/* Account tab */}
-        {activeTab === 'account' && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base font-bold">Account</CardTitle>
-              <CardDescription className="text-xs">Your account information.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Building2 className="h-5 w-5 text-primary" />
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base font-bold">Account</CardTitle>
+                <CardDescription className="text-xs">Your account information.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Building2 className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">{user?.email?.split('@')[0] || 'Operator'}</p>
+                    <p className="text-xs text-muted-foreground">{user?.email}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold">{user?.email?.split('@')[0] || 'Operator'}</p>
-                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                <Separator />
+                <div className="text-xs text-muted-foreground">
+                  User ID: <span className="font-mono text-foreground">{user?.id}</span>
                 </div>
-              </div>
-              <Separator />
-              <div className="text-xs text-muted-foreground">
-                User ID: <span className="font-mono text-foreground">{user?.id}</span>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {/* Unsent Images tab */}
@@ -672,8 +718,48 @@ export default function SettingsPage() {
                       <p>Test Mode: {savedTestMode ? 'On' : 'Off'}</p>
                       <p>Map Zoom: {savedMapZoom}</p>
                       <p>Manual Sync: {savedUnsentModeEnabled ? 'On' : 'Off'}</p>
+                      <p>Live Poll: {savedLivePollingEnabled ? `${savedLivePollInterval}s` : 'Off'}</p>
+                      <p>Notif. Poll: {savedNotificationsPollingEnabled ? `${savedNotificationsPollInterval}s` : 'Off'}</p>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+
+              {/* Data Usage card */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-bold">Data Usage</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Live Polling */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">Live Polling</span>
+                      <Switch checked={livePollingEnabled} onCheckedChange={setLivePollingEnabled} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-muted-foreground">Interval (seconds)</label>
+                      <Input type="number" min={10} max={300} value={livePollInterval}
+                        onChange={(e) => setLivePollInterval(Number(e.target.value))}
+                        disabled={!livePollingEnabled} className="h-8 text-xs" />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Notifications Polling */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">Notifications Polling</span>
+                      <Switch checked={notificationsPollingEnabled} onCheckedChange={setNotificationsPollingEnabled} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-muted-foreground">Interval (seconds)</label>
+                      <Input type="number" min={30} max={600} value={notificationsPollInterval}
+                        onChange={(e) => setNotificationsPollInterval(Number(e.target.value))}
+                        disabled={!notificationsPollingEnabled} className="h-8 text-xs" />
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 

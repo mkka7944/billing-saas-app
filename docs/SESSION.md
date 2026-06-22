@@ -4364,3 +4364,25 @@ Performed 8 targeted hardening steps for the staff delivery experience, identifi
 6. T1 Session 1 — Persist mapZoom, HDS/List flyTo zoom 20
 7. T1 Session 2 — selectedHouseId persistence, default UC for staff browse, filter persistence across nav
 
+---
+
+## 2026-06-22 — Polling, Refresh, Settings Restructure
+
+### Phase: Performance & UI Polish
+
+### What
+- **Bugfixes**: Filter panel dropdown z-index fix, sort icon position corrected, spinner layout shift eliminated, unused code cleaned.
+- **Polling reduction**: Delivery trail polling 5s→60s (`use-delivery-trail.ts`), notifications polling 30s→120s (`use-notifications.ts`).
+- **Admin-controllable polling**: Added live polling and notifications polling toggles + interval inputs in Settings→Delivery tab. Stored in `delivery_settings` row. Saved/loaded via `/api/settings`.
+- **Context-aware refresh**: Created `src/lib/queries/refresh.ts` — `refreshCurrentPage(pathname, queryClient)` invalidates only the query keys relevant to the current page. Wired into AppHeader refresh button (was blanket `invalidateQueries()`) and FloatingActions hexagon menu (new Refresh button).
+- **Settings restructure**: Renamed "Appearance" tab → "General". Merged Account section into General as a sub-card. Removed separate Account tab.
+
+### Files
+- Modified: `settings/page.tsx`, `filter-panel.tsx`, `AppHeader.tsx`, `floating-actions.tsx`, `use-delivery-trail.ts`, `use-notifications.ts`, `use-settings.ts`
+- Created: `src/lib/queries/refresh.ts`
+
+### Build Verification
+- `npx next build` — compiled successfully, no errors
+
+### Next
+Review `nextActions` in `.opencode/context.json` for planned work items.

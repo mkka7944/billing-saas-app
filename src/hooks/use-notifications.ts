@@ -9,7 +9,13 @@ interface NotificationsResponse {
   summary: { pending: number; processing: number } | null
 }
 
+import { useSettings } from '@/hooks/use-settings'
+
 export function useNotifications() {
+  const { data: settings } = useSettings()
+  const enabled = settings?.notifications_polling_enabled !== false
+  const interval = Math.max(30000, (settings?.notifications_poll_interval || 120) * 1000)
+
   return useQuery<NotificationsResponse>({
     queryKey: ['notifications'],
     queryFn: async () => {
@@ -17,8 +23,8 @@ export function useNotifications() {
       if (!res.ok) throw new Error('Failed to fetch notifications')
       return res.json()
     },
-    refetchInterval: 30_000,
-    staleTime: 10_000,
+    refetchInterval: enabled ? interval : false,
+    staleTime: Math.max(interval - 10000, 10000),
   })
 }
 

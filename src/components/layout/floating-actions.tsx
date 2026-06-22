@@ -4,12 +4,14 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { Search, SlidersHorizontal, Layers, Image, X, Crosshair, Map, PanelRightClose } from 'lucide-react'
+import { Search, SlidersHorizontal, Layers, Image, X, Crosshair, Map, PanelRightClose, RefreshCw } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { MobileFilterSheet } from '@/components/filter-panel'
 import { UnsentModal } from '@/components/delivery/unsent-badge'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
 import { useLiveStore } from '@/stores/live-store'
 import { useGlobalSearch } from '@/hooks/use-global-search'
+import { refreshCurrentPage } from '@/lib/queries/refresh'
 import SearchResultsPopover from '@/components/search-results-popover'
 import type { SearchResultUnit } from '@/types/search'
 import type { SearchMode } from '@/types'
@@ -21,6 +23,7 @@ export function FloatingActions() {
   const [unsentOpen, setUnsentOpen] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const activeView = useBillingStore((s) => s.activeView)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const mapType = useBillingStore((s) => s.mapType)
@@ -98,6 +101,11 @@ export function FloatingActions() {
     setUnsentOpen(true)
   }, [])
 
+  const handleRefresh = useCallback(() => {
+    setOpen(false)
+    refreshCurrentPage(pathname, queryClient)
+  }, [pathname, queryClient])
+
   if (selectedHouseId) return null
   if (!isMap && !isDeliver) return null
 
@@ -109,7 +117,10 @@ export function FloatingActions() {
         {open ? (
           <div className="flex flex-col items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200">
             <div className="flex flex-col gap-1 p-2 rounded-xl bg-background/95 backdrop-blur-md border border-border shadow-2xl">
-              <ActionButton icon={Search} label="Search" onClick={handleSearch} disabled={isLive} />
+              <div className="lg:hidden">
+                <ActionButton icon={Search} label="Search" onClick={handleSearch} disabled={isLive} />
+              </div>
+              <ActionButton icon={RefreshCw} label="Refresh" onClick={handleRefresh} disabled={isLive} />
               {isMap && (
                 <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} disabled={isLive} />
               )}

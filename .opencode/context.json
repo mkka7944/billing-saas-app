@@ -1,24 +1,25 @@
 {
-  "lastSession": "2026-06-22 — Deliver Page Search Bugfixes",
-  "currentPhase": "Search Deliver Page Fixes — Delivered",
-  "currentStep": "Deliver page search now working end-to-end. Key fixes: (1) Search API now queries assignment_items directly (searching the same column the user sees) instead of survey_units — fixed the 'no results' bug. (2) Column name fix: assignment_id not daily_assignment_id. (3) Deliver page 'View Details' now switches to 'All' tab, jumps to correct page, scrolls + highlights item. (4) 'View on Map' on deliver page now navigates to map. (5) Mobile search results show survey_id. (6) Scroll-into-view via listRef + data-item-id.",
+  "lastSession": "2026-06-22 — Polling, Refresh, Settings Restructure",
+  "currentPhase": "Performance & UI Polish — Delivered",
+  "currentStep": "Five phases completed: (1) Bugfixes — dropdown z-index, sort icon, spinner shift, unused code. (2) Polling reduction — delivery trail 5s→60s, notifications 30s→120s. (2b) Admin-controllable polling settings in Settings→Delivery tab. (3) Context-aware refresh system — refreshCurrentPage() in lib/queries/refresh.ts, wired into AppHeader + FloatingActions. (4) Settings restructure — Appearance→General merged with Account.",
   "filesModified": [
-    "src/app/api/search/route.ts",
-    "src/app/deliver/page.tsx",
-    "src/components/layout/floating-actions.tsx",
-    "src/components/search-results-popover.tsx",
-    "src/stores/billing-store.ts",
+    "src/app/settings/page.tsx",
     "src/components/filter-panel.tsx",
-    "src/components/layout/AppShell.tsx",
-    "src/types/index.ts",
-    "src/hooks/use-global-search.ts"
+    "src/components/layout/AppHeader.tsx",
+    "src/components/layout/floating-actions.tsx",
+    "src/hooks/use-delivery-trail.ts",
+    "src/hooks/use-notifications.ts",
+    "src/hooks/use-settings.ts"
+  ],
+  "filesCreated": [
+    "src/lib/queries/refresh.ts"
   ],
   "keyDecisions": [
-    "Assignment-scoped search queries assignment_items not survey_units — searches the same column the user sees in the deliver list.",
-    "Deliver page 'View Details' forces All tab + clears UC filter + finds item in full list + scrolls to + highlights.",
-    "Deliver page 'View on Map' navigates to /map without triggering deliver list scroll effect.",
-    "Survey ID shown in mobile search results next to consumer name.",
-    "Scroll-into-view via ref + querySelector on data-item-id attribute instead of fragile index calculation."
+    "Context-aware refresh: refreshCurrentPage(pathname, queryClient) invalidates only the query keys relevant to the current page instead of blanket invalidation.",
+    "Polling settings stored in delivery_settings row (live_polling_enabled, live_poll_interval, notifications_polling_enabled, notifications_poll_interval).",
+    "Appearance and Account merged into single General tab — fewer tabs, less clutter.",
+    "FloatingActions hexagon gets a Refresh button for quick data reload.",
+    "Data Usage card (polling controls) placed in Settings→Delivery left sidebar, admin-only."
   ],
   "nextActions": [
     "Phase M3 — Implementation (bucket setup + chunk generation scripts on office PC)",
@@ -32,5 +33,5 @@
     "Pipeline: update bill-extractor-v4.py for city/tehsil, add updated_at to payment_history"
   ],
   "gitCheckpoint": "3f2c9a2 — Fix deliver page search: correct column name, assignment_items query, scroll-to-item + survey_id in results",
-  "gitCurrentHead": "3f2c9a2"
+  "gitCurrentHead": "3308095 + (7 dirty files)"
 }

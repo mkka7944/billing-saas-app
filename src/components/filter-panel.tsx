@@ -378,6 +378,12 @@ export function DesktopFilterBar() {
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const [searchPopoverPos, setSearchPopoverPos] = useState({ top: 0, left: 0, width: 0 })
+  const [modeOpen, setModeOpen] = useState(false)
+  const SEARCH_MODES = [
+    { value: 'both' as const, label: 'Both' },
+    { value: 'psid' as const, label: 'PSID' },
+    { value: 'sid' as const, label: 'SID' },
+  ]
 
   const globalSearch = useGlobalSearch({ scope: 'global' })
 
@@ -518,16 +524,44 @@ export function DesktopFilterBar() {
             </button>
           </>
         )}
+        <div className="w-px h-5 bg-border/60 mx-0.5 shrink-0" />
+        <SortSelector />
       </div>
 
       {/* Center: search */}
       <div className="flex-1 flex justify-center px-4">
-        <div className="flex flex-col items-center gap-1 w-full max-w-[400px]">
-          <div ref={searchRef} className={cn(
-            'relative flex items-center rounded-lg border transition-colors w-full',
-            searchFocused ? 'border-primary ring-1 ring-primary/20 shadow-sm' : 'border-border hover:border-muted-foreground/30'
-          )}>
-            <Search className="absolute left-3 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <div ref={searchRef} className={cn(
+          'relative flex items-center rounded-lg border transition-colors w-full max-w-[400px]',
+          searchFocused ? 'border-primary ring-1 ring-primary/20 shadow-sm' : 'border-border hover:border-muted-foreground/30'
+        )}>
+          {/* Mode selector dropdown */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setModeOpen(!modeOpen)}
+              className="h-6 px-1.5 ml-1.5 text-[10px] font-bold uppercase text-muted-foreground hover:text-foreground rounded border border-border cursor-pointer flex items-center gap-0.5 hover:bg-muted transition-colors"
+            >
+              {SEARCH_MODES.find((m) => m.value === (pendingFilters.searchMode || 'sid'))?.label || 'SID'}
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {modeOpen && (
+              <div className="absolute top-full left-0 mt-0.5 bg-popover border border-border rounded-lg shadow-lg z-[9999] min-w-[80px] overflow-hidden">
+                {SEARCH_MODES.map((m) => (
+                  <button
+                    key={m.value}
+                    onClick={() => { setFilters({ searchMode: m.value }); setModeOpen(false) }}
+                    className={`block w-full text-left px-3 py-1.5 text-xs cursor-pointer transition-colors ${
+                      pendingFilters.searchMode === m.value
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'hover:bg-muted text-foreground'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <Search className="shrink-0 ml-1.5 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search PSID or SID..."
             value={pendingFilters.search}
@@ -539,41 +573,20 @@ export function DesktopFilterBar() {
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
             inputMode={pendingFilters.searchMode === 'both' ? 'text' : 'numeric'}
-            className="pl-9 h-9 text-sm border-0 ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="flex-1 h-9 text-sm border-0 ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 min-w-0"
           />
-            {pendingFilters.search && (
-              <button
-                onClick={() => {
-                  setFilters({ search: '' })
-                  setSearchResult(null)
-                  globalSearch.clearResults()
-                }}
-                className="absolute right-1.5 h-7 w-7 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
-              >
-                <X className="h-4 w-4 text-muted-foreground" />
-              </button>
-            )}
-          </div>
-          {/* Search mode segmented control */}
-          <div className="inline-flex border border-border rounded-lg overflow-hidden">
-            {[
-              { value: 'both' as const, label: 'Both' },
-              { value: 'psid' as const, label: 'PSID' },
-              { value: 'sid' as const, label: 'SID' },
-            ].map((m) => (
-              <button
-                key={m.value}
-                onClick={() => setFilters({ searchMode: m.value })}
-                className={`px-2.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${
-                  pendingFilters.searchMode === m.value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                } ${m.value === 'both' ? '' : 'border-l border-border'}`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          {pendingFilters.search && (
+            <button
+              onClick={() => {
+                setFilters({ search: '' })
+                setSearchResult(null)
+                globalSearch.clearResults()
+              }}
+              className="shrink-0 mr-1.5 h-7 w-7 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
+            >
+              <X className="h-4 w-4 text-muted-foreground" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -595,7 +608,6 @@ export function DesktopFilterBar() {
 
       {/* Right group: actions */}
       <div className="flex items-center gap-1.5 shrink-0">
-        <SortSelector />
         <ActionButtons />
       </div>
     </div>
@@ -613,6 +625,7 @@ function ActionButtons() {
 
   const queryDuration = useBillingStore((s) => s.queryDuration)
   const isFetching = useIsFetching() > 0
+  const [manualRefreshing, setManualRefreshing] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const successTimer = useRef<number>(0)
 
@@ -621,19 +634,27 @@ function ActionButtons() {
     [filters, pendingFilters]
   )
 
-  const isRefreshing = isFetching
+  const isRefreshing = manualRefreshing
 
-  // Show "✓ duration" after fetch completes
+  // Reset manualRefreshing when all fetches complete
   useEffect(() => {
-    if (!isFetching && queryDuration != null) {
+    if (manualRefreshing && !isFetching) {
+      setManualRefreshing(false)
+    }
+  }, [isFetching, manualRefreshing])
+
+  // Show "✓ duration" after manual refresh completes
+  useEffect(() => {
+    if (!manualRefreshing && queryDuration != null && !isFetching && showSuccess === false) {
       setShowSuccess(true)
       window.clearTimeout(successTimer.current)
       successTimer.current = window.setTimeout(() => setShowSuccess(false), 2000)
     }
     return () => { window.clearTimeout(successTimer.current) }
-  }, [isFetching, queryDuration])
+  }, [manualRefreshing, isFetching, queryDuration])
 
   const handleUpdate = useCallback(() => {
+    setManualRefreshing(true)
     queryClient.invalidateQueries()
   }, [queryClient])
 
@@ -669,13 +690,14 @@ function ActionButtons() {
         )}
       </div>
 
-      {isRefreshing && (
-        <span className="text-[10px] text-muted-foreground font-medium tabular-nums">...</span>
-      )}
-
-      {showSuccess && !isRefreshing && (
-        <span className="text-[10px] text-green-600 dark:text-green-300 font-medium tabular-nums animate-in fade-in duration-150">✓ {(queryDuration! / 1000).toFixed(1)}s</span>
-      )}
+      <div className="relative w-10 h-4 shrink-0 flex items-center justify-center">
+        {isRefreshing && (
+          <span className="absolute text-[10px] text-muted-foreground font-medium tabular-nums">...</span>
+        )}
+        {showSuccess && !isRefreshing && (
+          <span className="absolute text-[10px] text-green-600 dark:text-green-300 font-medium tabular-nums animate-in fade-in duration-150">✓ {(queryDuration! / 1000).toFixed(1)}s</span>
+        )}
+      </div>
 
       {hasUnapplied && (
         <>

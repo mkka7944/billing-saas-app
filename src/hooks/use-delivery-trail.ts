@@ -27,7 +27,13 @@ interface DeliveryTrailResponse {
   activities: ActivityEvent[]
 }
 
+import { useSettings } from '@/hooks/use-settings'
+
 export function useDeliveryTrail(city: string) {
+  const { data: settings } = useSettings()
+  const enabled = settings?.live_polling_enabled !== false && !!city
+  const interval = Math.max(10000, (settings?.live_poll_interval || 60) * 1000)
+
   return useQuery<DeliveryTrailResponse>({
     queryKey: ['delivery-trail', city],
     queryFn: async () => {
@@ -36,7 +42,8 @@ export function useDeliveryTrail(city: string) {
       if (!res.ok) return { markers: [], activities: [] }
       return res.json()
     },
-    refetchInterval: 5000,
-    staleTime: 4000,
+    refetchInterval: enabled ? interval : false,
+    staleTime: Math.max(interval - 5000, 5000),
+    enabled: !!city,
   })
 }

@@ -1,13 +1,15 @@
 'use client'
 
 import { useCallback, useState, useEffect, useRef } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { usePathname } from 'next/navigation'
+import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { NotificationsBell } from '@/components/notifications/notifications-bell'
 import { Building2, Menu, RefreshCw, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { refreshCurrentPage } from '@/lib/queries/refresh'
 
 interface AppHeaderProps {
   title?: string
@@ -19,26 +21,37 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
   const displayName = useAuthStore((s) => s.displayName)
   const toggleSidebar = useBillingUIStore((s) => s.toggleSidebar)
   const pageTitle = useBillingUIStore((s) => s.pageTitle)
+  const pathname = usePathname()
   const queryClient = useQueryClient()
   const queryDuration = useBillingStore((s) => s.queryDuration)
-  const storeIsFetching = useBillingStore((s) => s.isFetching)
-  const isRefreshing = storeIsFetching
+  const isFetching = useIsFetching() > 0
+  const [manualRefreshing, setManualRefreshing] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const successTimer = useRef<number>(0)
 
-  // Show "✓ duration" after fetch completes
+  const isRefreshing = manualRefreshing
+
+  // Reset manualRefreshing when all fetches complete
   useEffect(() => {
-    if (!storeIsFetching && queryDuration != null) {
+    if (manualRefreshing && !isFetching) {
+      setManualRefreshing(false)
+    }
+  }, [isFetching, manualRefreshing])
+
+  // Show "✓ duration" after manual refresh completes
+  useEffect(() => {
+    if (!manualRefreshing && queryDuration != null && !isFetching && showSuccess === false) {
       setShowSuccess(true)
       window.clearTimeout(successTimer.current)
       successTimer.current = window.setTimeout(() => setShowSuccess(false), 2000)
     }
     return () => { window.clearTimeout(successTimer.current) }
-  }, [isRefreshing, queryDuration])
+  }, [manualRefreshing, isFetching, queryDuration])
 
   const handleRefresh = useCallback(() => {
-    queryClient.invalidateQueries()
-  }, [queryClient])
+    setManualRefreshing(true)
+    refreshCurrentPage(pathname, queryClient)
+  }, [pathname, queryClient])
 
   const displayTitle = title || pageTitle || 'TMT'
 
@@ -61,12 +74,14 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
 
         {actions ?? (
           <div className="flex items-center gap-1 shrink-0">
-            {isRefreshing && (
-              <span className="text-[10px] text-muted-foreground font-medium tabular-nums whitespace-nowrap">...</span>
-            )}
-            {showSuccess && !isRefreshing && (
-              <span className="text-[10px] text-green-600 dark:text-green-300 font-medium tabular-nums whitespace-nowrap">✓ {(queryDuration! / 1000).toFixed(1)}s</span>
-            )}
+            <div className="relative w-10 h-4 shrink-0 flex items-center justify-center">
+              {isRefreshing && (
+                <span className="absolute text-[10px] text-muted-foreground font-medium tabular-nums">...</span>
+              )}
+              {showSuccess && !isRefreshing && (
+                <span className="absolute text-[10px] text-green-600 dark:text-green-300 font-medium tabular-nums">✓ {(queryDuration! / 1000).toFixed(1)}s</span>
+              )}
+            </div>
             <div className="relative">
               <button
                 onClick={handleRefresh}
