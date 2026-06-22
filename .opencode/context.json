@@ -31,5 +31,5 @@
     "Pipeline: update bill-extractor-v4.py for city/tehsil, add updated_at to payment_history"
   ],
   "gitCheckpoint": "d8dae0a",
-  "gitCurrentHead": "d8dae0a + doc updates + PWA plan"
+  "gitCurrentHead": "4ee559c"
 }
