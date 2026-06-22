@@ -522,11 +522,12 @@ export function DesktopFilterBar() {
 
       {/* Center: search */}
       <div className="flex-1 flex justify-center px-4">
-        <div ref={searchRef} className={cn(
-          'relative flex items-center rounded-lg border transition-colors w-full max-w-[400px]',
-          searchFocused ? 'border-primary ring-1 ring-primary/20 shadow-sm' : 'border-border hover:border-muted-foreground/30'
-        )}>
-          <Search className="absolute left-3 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <div className="flex flex-col items-center gap-1 w-full max-w-[400px]">
+          <div ref={searchRef} className={cn(
+            'relative flex items-center rounded-lg border transition-colors w-full',
+            searchFocused ? 'border-primary ring-1 ring-primary/20 shadow-sm' : 'border-border hover:border-muted-foreground/30'
+          )}>
+            <Search className="absolute left-3 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search PSID or SID..."
             value={pendingFilters.search}
@@ -537,20 +538,42 @@ export function DesktopFilterBar() {
             }}
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+            inputMode={pendingFilters.searchMode === 'both' ? 'text' : 'numeric'}
             className="pl-9 h-9 text-sm border-0 ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
           />
-          {pendingFilters.search && (
-            <button
-              onClick={() => {
-                setFilters({ search: '' })
-                setSearchResult(null)
-                globalSearch.clearResults()
-              }}
-              className="absolute right-1.5 h-7 w-7 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
-            >
-              <X className="h-4 w-4 text-muted-foreground" />
-            </button>
-          )}
+            {pendingFilters.search && (
+              <button
+                onClick={() => {
+                  setFilters({ search: '' })
+                  setSearchResult(null)
+                  globalSearch.clearResults()
+                }}
+                className="absolute right-1.5 h-7 w-7 flex items-center justify-center rounded hover:bg-muted cursor-pointer"
+              >
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
+          </div>
+          {/* Search mode segmented control */}
+          <div className="inline-flex border border-border rounded-lg overflow-hidden">
+            {[
+              { value: 'both' as const, label: 'Both' },
+              { value: 'psid' as const, label: 'PSID' },
+              { value: 'sid' as const, label: 'SID' },
+            ].map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setFilters({ searchMode: m.value })}
+                className={`px-2.5 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer ${
+                  pendingFilters.searchMode === m.value
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                } ${m.value === 'both' ? '' : 'border-l border-border'}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

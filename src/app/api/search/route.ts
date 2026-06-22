@@ -35,11 +35,22 @@ function prioritySort(units: any[], q: string, isPsid20: boolean) {
     .slice(0, 20)
 }
 
+function applySearchFilter(query: any, q: string, mode: string) {
+  if (mode === 'psid') {
+    return query.ilike('psid', `%${q}%`)
+  }
+  if (mode === 'sid') {
+    return query.ilike('survey_id', `%${q}%`)
+  }
+  return query.or(`psid.ilike.%${q}%,survey_id.ilike.%${q}%`)
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q')?.trim()
     const scope = searchParams.get('scope') || 'global'
+    const mode = searchParams.get('mode') || 'both'
 
     if (!q) {
       return NextResponse.json({ results: [] })
@@ -54,71 +65,60 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { data: profile } = await sup
-        .from('profiles')
-        .select('staff_id')
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (!profile?.staff_id) {
-        return NextResponse.json({ results: [] })
-      }
-
-      const today = new Date().toISOString().slice(0, 10)
-
-      const { data: assignment } = await sup
+      const { data: assignments } = await sup
         .from('daily_assignments')
         .select('id')
-        .eq('staff_id', profile.staff_id)
-        .gte('created_at', today)
-        .lte('created_at', today + 'T23:59:59.999Z')
-        .maybeSingle()
+        .eq('staff_id', user.id)
 
-      if (!assignment) {
+      if (!assignments?.length) {
         return NextResponse.json({ results: [] })
       }
 
-      const { data: itemPsids } = await sup
+      const assignmentIds = (assignments as any[]).map((a) => a.id)
+
+      let itemQuery = sup
         .from('assignment_items')
-        .select('id, psid')
-        .eq('daily_assignment_id', assignment.id)
+        .select('id, psid, survey_id')
+        .in('assignment_id', assignmentIds)
         .not('psid', 'is', null)
 
-      if (!itemPsids?.length) {
+      itemQuery = applySearchFilter(itemQuery, q, mode)
+      const { data: matchingItems } = await itemQuery.limit(30)
+
+      if (!matchingItems?.length) {
         return NextResponse.json({ results: [] })
       }
 
-      const staffPsids = (itemPsids as any[]).map((r) => r.psid)
-      const staffPsidSet = new Set(staffPsids)
+      const matchPsids = [...new Set(matchingItems.map((i: any) => i.psid))] as string[]
       const itemIdByPsid = new Map<string, string>()
-      for (const r of itemPsids as any[]) {
-        if (r.psid && !itemIdByPsid.has(r.psid)) {
-          itemIdByPsid.set(r.psid, r.id)
-        }
+      for (const i of matchingItems as any[]) {
+        if (!itemIdByPsid.has(i.psid)) itemIdByPsid.set(i.psid, i.id)
       }
 
-      const { data: units } = await sup
-        .from('survey_units')
-        .select(COLS)
-        .in('psid', staffPsids)
-        .or(`psid.ilike.%${q}%,survey_id.ilike.%${q}%`)
-        .limit(30)
+      const { data: units } = await sup.from('survey_units').select(COLS).in('psid', matchPsids)
+      const unitByPsid = new Map((units || []).map((u: any) => [u.psid, u]))
 
-      const sorted = prioritySort(
-        (units || []).filter((u: any) => staffPsidSet.has(u.psid)),
-        q,
-        isPsid20
-      )
+      const results = matchingItems.map((i: any) => {
+        const u = unitByPsid.get(i.psid)
+        return {
+          psid: i.psid,
+          survey_id: i.survey_id,
+          consumer_name: u?.consumer_name || null,
+          address: u?.address || null,
+          lat: u?.lat || null,
+          lng: u?.lng || null,
+          uc_name: u?.uc_name || null,
+          assignment_item_id: i.id,
+        }
+      })
 
-      const results = sorted.map((u: any) => mapResult(u, itemIdByPsid.get(u.psid) || null))
-      return NextResponse.json({ results })
+      const sorted = prioritySort(results, q, isPsid20)
+      return NextResponse.json({ results: sorted })
     }
 
-    const { data: units } = await sup
-      .from('survey_units')
-      .select(COLS)
-      .or(`psid.ilike.%${q}%,survey_id.ilike.%${q}%`)
-      .limit(30)
+    let query = sup.from('survey_units').select(COLS)
+    query = applySearchFilter(query, q, mode)
+    const { data: units } = await query.limit(30)
 
     const sorted = prioritySort(units || [], q, isPsid20)
     const results = sorted.map((u: any) => mapResult(u))

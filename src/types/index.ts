@@ -44,6 +44,8 @@ export interface RouteWaypoint {
   name: string
 }
 
+export type SearchMode = 'both' | 'psid' | 'sid'
+
 export interface FilterState {
   districts: string[]
   tehsils: string[]
@@ -51,6 +53,7 @@ export interface FilterState {
   surveyor: string | null
   paymentStatus: 'all' | 'paid' | 'unpaid'
   search: string
+  searchMode: SearchMode
   billMonth: string | null
   sort: SortConfig
 }

@@ -30,7 +30,9 @@ export default function SearchResultsPopover({
     )
   }
 
-  if (results.length === 0) return null
+  if (results.length === 0) {
+    return <div className="p-3 text-xs text-muted-foreground text-center">No results found</div>
+  }
 
   return (
     <div className="divide-y divide-border max-h-[300px] overflow-y-auto">
@@ -75,6 +77,9 @@ function SearchResultCard({
       <div className="flex items-center justify-between gap-2 lg:hidden">
         <div className="min-w-0 flex-1 flex items-center gap-2">
           <span className="text-xs font-semibold truncate">{result.consumer_name || 'Unknown'}</span>
+          {result.survey_id && (
+            <span className="text-[10px] font-mono text-muted-foreground shrink-0">{result.survey_id}</span>
+          )}
           {result.psid && (
             <span className="text-[10px] font-mono text-muted-foreground shrink-0">{result.psid.slice(-8)}</span>
           )}

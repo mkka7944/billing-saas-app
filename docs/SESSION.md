@@ -933,6 +933,87 @@ scripts/data/ (gitignored ΓÇö 1.10 GB total, 110 files):
 
 ---
 
+---
+
+## 2026-06-22 — Global Search Implementation + UI Refinements
+
+### Phase: Search & UX Refinements
+
+### What
+- **Global Search SSR API** (`/api/search`) — PostgREST `ilike` on `consumer_name`, `psid`, `survey_id`, `full_address`. Smart detection: 20-digit input = PSID exact match; shorter input = SID priority.
+- **`useGlobalSearch` hook** — 300ms debounce, AbortController cancellation, `{units, staff}` response.
+- **`SearchResultsPopover`** — Desktop: full info (name, address, PSID/SID, assignment scope, buttons). Mobile: compact one-line with icon-only buttons.
+- **`SearchResultMarker`** — Blue CircleMarker on map, flyTo zoom 18, auto-clears on new query or X button. Stored in billing-store `searchResult`.
+- **DesktopFilterBar redesigned** — Layout: `[Filters left] | [Search centered 400px] | [Actions right]`. Search inputs moved from inside filter to centered position. Search de-linked from Cancel/Apply — uses `setFilters()` (syncs both `filters`+`pendingFilters` immediately).
+- **FloatingActions moved to AppShell** — Previously in `map/page.tsx`, only on admin map. Now in AppShell, route-aware via `usePathname()`. `/deliver` page gets Search + Photos buttons on mobile.
+- **3 follow-up TS fixes** — Null-safety guards for `psid` in search result handlers and floating-actions (Vercel TS checks).
+
+### Key Decisions
+- Search uses SSR API route (PostgREST ilike) instead of client-side chunks — simpler, no chunk scripts needed, works immediately.
+- Smart PSID/SID detection: 20-digit = PSID exact priority; shorter = SID priority.
+- Search de-linked from Cancel/Apply by using `setFilters()` instead of `setPendingFilter()`.
+- DesktopFilterBar: `[Filters left] | [Search centered 400px] | [Actions right]`.
+- FloatingActions moved from `map/page.tsx` to `AppShell.tsx` — route-aware via `usePathname()`.
+- Mobile deliver page gets search (Search + Photos buttons only).
+- Search result marker clears when user types new query or clicks X.
+- Mobile results: compact one-line with icon-only buttons.
+
+### Files Modified (17 files in f84fff9 + 3 fix commits)
+- `src/app/api/search/route.ts` — New SSR search endpoint
+- `src/hooks/use-global-search.ts` — New search hook
+- `src/components/search-results-popover.tsx` — New popover component
+- `src/components/search-result-marker.tsx` — New marker component
+- `src/types/search.ts` — SearchResult type
+- `src/stores/billing-store.ts` — searchResult state
+- `src/components/filter-panel.tsx` — DesktopFilterBar redesigned layout
+- `src/components/layout/floating-actions.tsx` — Moved from map page to AppShell, route-aware
+- `src/components/layout/AppShell.tsx` — FloatingActions rendered here
+- `src/app/deliver/page.tsx` — Deliver page gets search
+- `src/app/map/page.tsx` — Removed FloatingActions from here
+- `src/components/map-view.tsx` — SearchResultMarker integration
+- `src/components/delivery/staff-map.tsx` — SearchResultMarker integration
+- `src/components/delivery/qr-scanner-button.tsx` — Null-safety fix (b4344a4)
+- `docs/MASTER.md` — Section 33 + TOC
+- `.opencode/context.json` — State updated
+- `docs/SESSION.md` — This entry
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors across all changes (base + 3 fixes)
+- Vercel TS checks pass on all 4 commits
+
+### Commits
+```
+814e38f Fix: null-safety for psid in floating-actions search handlers (Vercel TS)
+ed077dd Fix: null-safety for psid in search result handlers (Vercel TS check)
+b4344a4 Fix: add null guard for global scope search result (units can be null)
+f84fff9 Global search implementation + DesktopFilterBar redesign + FloatingActions in AppShell
+```
+
+---
+
+## 2026-06-22 — Deliver Page Search Bugfixes
+
+### What
+- **Assignment-scoped search now works** — Rewrote search API to query `assignment_items` directly (searching `assignment_items.survey_id` — the same column the user sees in the deliver list) instead of `survey_units.survey_id`. This fixed the "no results" bug where a survey_id visible in the deliver list wasn't found by search.
+- **Column name fix** — Changed `.in('daily_assignment_id', ...)` to `.in('assignment_id', ...)` — the column in `assignment_items` is `assignment_id` (the FK to `daily_assignments.id`), not `daily_assignment_id`. The wrong column name silently returned empty results.
+- **"View Details" on deliver page** — Now switches to 'All' tab, clears UC filter, finds item in full sorted items list by `assignment_item_id`, jumps to correct page, scrolls item into view, highlights for 3 seconds. Uses `data-item-id` attribute + `querySelector` + `scrollIntoView`.
+- **"View on Map" on deliver page** — Now navigates to `/map?target=PSID` without triggering the deliver list scroll effect (no `setSearchResult` when on deliver page).
+- **Mobile search results show survey_id** — Added `survey_id` span next to consumer name in mobile layout of `SearchResultsPopover`.
+
+### Files Modified
+- `src/app/api/search/route.ts` — Assignment-scoped path rewritten: query assignment_items directly, search by assignment_items.survey_id, map survey_units display data
+- `src/app/deliver/page.tsx` — Search effect uses full items list, forces All tab + clear UC, scroll-into-view via listRef + data-item-id
+- `src/components/layout/floating-actions.tsx` — Map button navigates on deliver, Details sets searchResult on deliver, added useRouter
+- `src/components/search-results-popover.tsx` — survey_id in mobile view
+
+### Key Decisions
+- Assignment-scoped search queries assignment_items not survey_units — searches the same column the user sees.
+- Deliver page "View Details" forces All tab + clears UC filter.
+- Deliver page "View on Map" navigates to /map without interfering with list.
+- Scroll-into-view via ref + querySelector on data-item-id attribute.
+
+---
+
 ## 14. Changelog
 | Date | Version | Change |
 |------|---------|--------|

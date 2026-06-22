@@ -118,6 +118,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setShowScanner(false)
         setScanError(null)
         setDeliverTarget(matched.psid, matched.unit)
+        if (pathname !== '/map') {
+          router.push(`/map?target=${encodeURIComponent(matched.psid)}`)
+        }
       }
     }
 
@@ -190,7 +193,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     handleCloseScanner()
     setDeliverTarget(matched.psid, matched.unit)
-  }, [manualInput, handleCloseScanner, setDeliverTarget])
+    if (pathname !== '/map') {
+      router.push(`/map?target=${encodeURIComponent(matched.psid)}`)
+    }
+  }, [manualInput, handleCloseScanner, setDeliverTarget, pathname, router])
 
   // Bottom tabs — keep only core views; everything else goes in sidebar
   const tabs = [

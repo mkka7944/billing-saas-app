@@ -49,6 +49,7 @@ export default function DeliverPage() {
   const [ucDropdownOpen, setUcDropdownOpen] = useState(false)
   const [dbUnsyncedCount, setDbUnsyncedCount] = useState(0)
   const [highlightItemId, setHighlightItemId] = useState<string | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const tabInitialized = useRef(false)
 
@@ -189,15 +190,27 @@ export default function DeliverPage() {
   // Navigate to search result in the deliver list
   useEffect(() => {
     if (!searchResult?.assignment_item_id) return
-    const idx = sorted.findIndex((i) => i.id === searchResult.assignment_item_id)
+    setFilterTab('all')
+    setSelectedUc('all')
+    const allSorted = [...items].sort((a, b) => (a.route_seq || 0) - (b.route_seq || 0))
+    const idx = allSorted.findIndex((i) => i.id === searchResult.assignment_item_id)
     if (idx >= 0) {
-      const targetPage = Math.floor(idx / PAGE_SIZE)
-      setPage(targetPage)
+      setPage(Math.floor(idx / PAGE_SIZE))
       setHighlightItemId(searchResult.assignment_item_id)
-      setTimeout(() => setHighlightItemId(null), 3000)
     }
     setSearchResult(null)
-  }, [searchResult, sorted, setSearchResult])
+  }, [searchResult, items, setSearchResult])
+
+  // Scroll to highlighted item
+  useEffect(() => {
+    if (!highlightItemId || !listRef.current) return
+    const el = listRef.current.querySelector(`[data-item-id="${highlightItemId}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    const timer = setTimeout(() => setHighlightItemId(null), 3000)
+    return () => clearTimeout(timer)
+  }, [highlightItemId])
 
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
   const pageItems = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -461,7 +474,7 @@ export default function DeliverPage() {
             </div>
 
             {/* List — flat paginated */}
-            <div className="flex-1 overflow-y-auto">
+            <div ref={listRef} className="flex-1 overflow-y-auto">
               {pageItems.map((item) => {
                 const isOther = item.deliveredByOther
                 const cfg = STATUS_CONFIG[isOther ? 'delivered' : item.status] || STATUS_CONFIG.pending
@@ -470,6 +483,7 @@ export default function DeliverPage() {
                 return (
                   <button
                     key={item.id}
+                    data-item-id={item.id}
                     onClick={() => handleSelect(item.id)}
                     disabled={isOther}
                     className={cn(

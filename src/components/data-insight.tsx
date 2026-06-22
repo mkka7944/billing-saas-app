@@ -288,6 +288,7 @@ export function DataInsight() {
       surveyor: null,
       paymentStatus: 'all' as const,
       search: '',
+      searchMode: 'both' as const,
       billMonth: sharedFilters.billMonth,
       sort: sharedFilters.sort,
     }

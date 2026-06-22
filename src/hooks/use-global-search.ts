@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { SearchResultUnit } from '@/types/search'
+import { useBillingStore } from '@/stores/billing-store'
 
 interface UseGlobalSearchOptions {
   scope?: 'global' | 'assignment'
@@ -26,8 +27,9 @@ export function useGlobalSearch({ scope = 'global', minQueryLength = 2 }: UseGlo
     setIsSearching(true)
     const controller = new AbortController()
     abortRef.current = controller
+    const searchMode = useBillingStore.getState().filters.searchMode || 'both'
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&scope=${scope}`, {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&scope=${scope}&mode=${searchMode}`, {
         signal: controller.signal,
       })
       if (!res.ok) throw new Error('Search failed')

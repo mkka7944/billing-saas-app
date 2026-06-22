@@ -64,6 +64,7 @@ const defaultFilters: FilterState = {
   surveyor: null,
   paymentStatus: 'all',
   search: '',
+  searchMode: 'sid',
   billMonth: currentMonth(),
   sort: { field: 'survey_id', direction: 'desc' },
 }

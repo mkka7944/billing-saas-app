@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useBillingStore } from '@/stores/billing-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { Search, SlidersHorizontal, Layers, Image, X, Crosshair, Map, PanelRightClose } from 'lucide-react'
@@ -12,6 +12,7 @@ import { useLiveStore } from '@/stores/live-store'
 import { useGlobalSearch } from '@/hooks/use-global-search'
 import SearchResultsPopover from '@/components/search-results-popover'
 import type { SearchResultUnit } from '@/types/search'
+import type { SearchMode } from '@/types'
 
 export function FloatingActions() {
   const [open, setOpen] = useState(false)
@@ -19,6 +20,7 @@ export function FloatingActions() {
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
   const [unsentOpen, setUnsentOpen] = useState(false)
   const pathname = usePathname()
+  const router = useRouter()
   const activeView = useBillingStore((s) => s.activeView)
   const selectedHouseId = useBillingStore((s) => s.selectedHouseId)
   const mapType = useBillingStore((s) => s.mapType)
@@ -42,20 +44,31 @@ export function FloatingActions() {
 
   const handleSearchResultMap = useCallback((result: SearchResultUnit) => {
     const unit = { psid: result.psid || '', survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] }
-    setSearchResult(result)
+    if (!isDeliver) {
+      setSearchResult(result)
+    }
     setDeliverTarget(result.psid || '', unit)
     globalSearch.clearResults()
     setSearchVisible(false)
-  }, [setSearchResult, setDeliverTarget, globalSearch])
+    if (isDeliver) {
+      router.push(`/map?target=${encodeURIComponent(result.psid || '')}`)
+    }
+  }, [setSearchResult, setDeliverTarget, globalSearch, isDeliver, router])
 
   const handleSearchResultDetails = useCallback((result: SearchResultUnit) => {
     const surveyUnit = { survey_id: result.survey_id || '', consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, psid: result.psid || '', uc_name: result.uc_name, arrears: null, current_bill_month: null, route_name: null, route_seq: null, image_urls: null, city_district: null, tehsil: null, surveyor_name: null, survey_date: null, survey_time: null, monthly_fee: 0, billing_category: '', status: '' }
-    setSearchResult(null)
-    setDeliverTarget(result.psid || '', { psid: result.psid || '', survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] })
-    selectHouse(result.survey_id, [surveyUnit])
-    globalSearch.clearResults()
-    setSearchVisible(false)
-  }, [setSearchResult, setDeliverTarget, selectHouse, globalSearch])
+    if (isDeliver) {
+      setSearchResult(result)
+      globalSearch.clearResults()
+      setSearchVisible(false)
+    } else {
+      setSearchResult(null)
+      setDeliverTarget(result.psid || '', { psid: result.psid || '', survey_id: result.survey_id, consumer_name: result.consumer_name, address: result.address, lat: result.lat, lng: result.lng, uc_name: result.uc_name, monthly_fee: null, arrears: null, route_name: null, route_seq: null, image_urls: [] })
+      selectHouse(result.survey_id, [surveyUnit])
+      globalSearch.clearResults()
+      setSearchVisible(false)
+    }
+  }, [setSearchResult, setDeliverTarget, selectHouse, globalSearch, isDeliver])
 
   useEffect(() => {
     if (selectedHouseId) {
@@ -214,6 +227,12 @@ function ActionButton({
   )
 }
 
+const SEARCH_MODES: { value: SearchMode; label: string }[] = [
+  { value: 'both', label: 'Both' },
+  { value: 'psid', label: 'PSID' },
+  { value: 'sid', label: 'SID' },
+]
+
 function SlideDownSearch({
   value,
   onChange,
@@ -232,6 +251,8 @@ function SlideDownSearch({
   onViewDetails: (result: SearchResultUnit) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const searchMode = useBillingStore((s) => s.filters.searchMode || 'both')
+  const setFilters = useBillingStore((s) => s.setFilters)
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
@@ -240,7 +261,7 @@ function SlideDownSearch({
   const showDetailsButton = results.some(r => r.survey_id != null)
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[800] pt-[48px] lg:hidden animate-in slide-in-from-top-2 duration-200">
+    <div className="fixed top-0 left-0 right-0 z-[9999] pt-[48px] lg:hidden animate-in slide-in-from-top-2 duration-200">
       <div className="flex flex-col bg-background border-b shadow-sm">
         <div className="flex items-center gap-2 px-3 py-2">
           <div className="flex-1 relative">
@@ -250,6 +271,7 @@ function SlideDownSearch({
               placeholder="Search name or PSID..."
               value={value}
               onChange={(e) => onChange(e.target.value)}
+              inputMode={searchMode === 'both' ? 'text' : 'numeric'}
               className="w-full h-10 pl-8 pr-8 text-sm rounded-lg border border-border bg-muted/30 outline-none focus:ring-1 focus:ring-ring"
             />
             {value && (
@@ -270,7 +292,26 @@ function SlideDownSearch({
           </button>
         </div>
 
-        {(results.length > 0 || isSearching) && (
+        {/* Search mode segmented control */}
+        <div className="flex items-center justify-center px-3 pb-2">
+          <div className="inline-flex border border-border rounded-lg overflow-hidden">
+            {SEARCH_MODES.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setFilters({ searchMode: m.value })}
+                className={`px-3 py-1 text-[10px] font-semibold transition-colors cursor-pointer ${
+                  searchMode === m.value
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                } ${m.value === 'both' ? '' : 'border-l border-border'}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {(value.length > 0) && (
           <div className="max-h-[50vh] overflow-y-auto border-t border-border">
             <SearchResultsPopover
               results={results}

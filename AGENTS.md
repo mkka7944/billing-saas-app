@@ -14,6 +14,14 @@ All plans, data model, workflow, and edge case decisions live in `docs/MASTER.md
 **Section 9** contains edge case decisions (must review before making migration or schema changes).
 **Section 11** contains the sequential workflow rule (must follow for all implementation).
 
+## Pre-Commit Doc Update Rule
+**Before every commit (auto or manual), update the doc files first:**
+1. Update `.opencode/context.json` — set `gitCheckpoint` and `gitCurrentHead` to the actual commit hash. If committing from a dirty working tree, set `gitCurrentHead` to `"{lastCommit} + {change description}"`.
+2. Append the session entry to `docs/SESSION.md` if not already done.
+3. Ensure `AGENTS.md` reflects any new permanent rules or conventions introduced in this session.
+4. `MASTER.md` is read-only reference — update only when schemas, data model, or architecture decisions change.
+**Violation:** Stale doc files cause confusion across office/home PC handoffs. Treat this as mandatory as writing tests.
+
 ## Architecture
 - Next.js 16 App Router with `src/` directory
 - Standalone app — separate Supabase project (`qrxbsoqepfaryolwcedk`), separate Vercel deploy
