@@ -28,13 +28,21 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const successTimer = useRef<number>(0)
+  const refreshTriggeredRef = useRef(false)
+  const wasFetchingRef = useRef(false)
 
   const isRefreshing = manualRefreshing
 
-  // Reset manualRefreshing when all fetches complete
+  // Reset manualRefreshing after a real fetch cycle completes
   useEffect(() => {
-    if (manualRefreshing && !isFetching) {
-      setManualRefreshing(false)
+    if (manualRefreshing && refreshTriggeredRef.current) {
+      if (isFetching) {
+        wasFetchingRef.current = true
+      } else if (wasFetchingRef.current) {
+        setManualRefreshing(false)
+        wasFetchingRef.current = false
+        refreshTriggeredRef.current = false
+      }
     }
   }, [isFetching, manualRefreshing])
 
@@ -49,6 +57,7 @@ export function AppHeader({ title, actions }: AppHeaderProps) {
   }, [manualRefreshing, isFetching, queryDuration])
 
   const handleRefresh = useCallback(() => {
+    refreshTriggeredRef.current = true
     setManualRefreshing(true)
     refreshCurrentPage(pathname, queryClient)
   }, [pathname, queryClient])

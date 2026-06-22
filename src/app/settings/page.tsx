@@ -213,7 +213,7 @@ export default function SettingsPage() {
   }, [activeTab, fetchUsers])
 
   useEffect(() => {
-    if (activeTab === 'delivery') {
+    if (activeTab === 'delivery' || activeTab === 'general') {
       fetch('/api/settings')
         .then(r => r.json())
         .then(data => {
@@ -326,6 +326,48 @@ export default function SettingsPage() {
       toast('Network error', 'error')
     } finally {
       setDeliverySaving(false)
+    }
+  }
+
+  const [dataUsageSaving, setDataUsageSaving] = useState(false)
+
+  async function handleSaveDataUsage() {
+    setDataUsageSaving(true)
+    try {
+      const res1 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'live_polling_enabled', value: livePollingEnabled }),
+      })
+      const res2 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'live_poll_interval', value: livePollInterval }),
+      })
+      const res3 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'notifications_polling_enabled', value: notificationsPollingEnabled }),
+      })
+      const res4 = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'notifications_poll_interval', value: notificationsPollInterval }),
+      })
+      if ([res1, res2, res3, res4].every(r => r.ok)) {
+        setSavedLivePollingEnabled(livePollingEnabled)
+        setSavedLivePollInterval(livePollInterval)
+        setSavedNotificationsPollingEnabled(notificationsPollingEnabled)
+        setSavedNotificationsPollInterval(notificationsPollInterval)
+        queryClient.invalidateQueries({ queryKey: ['app-settings'] })
+        toast('Data usage settings saved', 'success')
+      } else {
+        toast('Failed to save some settings', 'error')
+      }
+    } catch {
+      toast('Network error', 'error')
+    } finally {
+      setDataUsageSaving(false)
     }
   }
 
@@ -466,6 +508,12 @@ export default function SettingsPage() {
       notificationsPollInterval !== savedNotificationsPollInterval
     )
 
+  const hasDataUsageChanges =
+    livePollingEnabled !== savedLivePollingEnabled ||
+    livePollInterval !== savedLivePollInterval ||
+    notificationsPollingEnabled !== savedNotificationsPollingEnabled ||
+    notificationsPollInterval !== savedNotificationsPollInterval
+
   const isAdmin = roleName === 'admin' || roleName === 'super_admin'
   const visibleTabs = tabs.filter(t => !('adminOnly' in t && t.adminOnly) || isAdmin)
 
@@ -568,9 +616,61 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base font-bold">Data Usage</CardTitle>
+                <CardDescription className="text-xs">Control how often the app polls the server. Higher intervals use less data.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isAdmin ? (
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">Live Polling</span>
+                        <Switch checked={livePollingEnabled} onCheckedChange={setLivePollingEnabled} />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-muted-foreground">Interval (seconds)</label>
+                        <Input type="number" min={10} max={300} value={livePollInterval}
+                          onChange={(e) => setLivePollInterval(Number(e.target.value))}
+                          disabled={!livePollingEnabled} className="h-8 text-xs" />
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">Notifications Polling</span>
+                        <Switch checked={notificationsPollingEnabled} onCheckedChange={setNotificationsPollingEnabled} />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-muted-foreground">Interval (seconds)</label>
+                        <Input type="number" min={30} max={600} value={notificationsPollInterval}
+                          onChange={(e) => setNotificationsPollInterval(Number(e.target.value))}
+                          disabled={!notificationsPollingEnabled} className="h-8 text-xs" />
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <Button onClick={handleSaveDataUsage} disabled={!hasDataUsageChanges || dataUsageSaving} size="sm" className="w-full h-8 text-xs">
+                      {dataUsageSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      Save
+                    </Button>
+                  </>
+                ) : (
+                  <div className="text-[12px] text-muted-foreground space-y-1">
+                    <p>Live Polling: {savedLivePollingEnabled ? `${savedLivePollInterval}s` : 'Off'}</p>
+                    <p>Notifications: {savedNotificationsPollingEnabled ? `${savedNotificationsPollInterval}s` : 'Off'}</p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-1">Ask an admin to adjust data usage settings.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
-
         {/* Unsent Images tab */}
         {activeTab === 'unsent' && (
           <div className="space-y-3">
@@ -718,48 +818,8 @@ export default function SettingsPage() {
                       <p>Test Mode: {savedTestMode ? 'On' : 'Off'}</p>
                       <p>Map Zoom: {savedMapZoom}</p>
                       <p>Manual Sync: {savedUnsentModeEnabled ? 'On' : 'Off'}</p>
-                      <p>Live Poll: {savedLivePollingEnabled ? `${savedLivePollInterval}s` : 'Off'}</p>
-                      <p>Notif. Poll: {savedNotificationsPollingEnabled ? `${savedNotificationsPollInterval}s` : 'Off'}</p>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-
-              {/* Data Usage card */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-bold">Data Usage</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Live Polling */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium">Live Polling</span>
-                      <Switch checked={livePollingEnabled} onCheckedChange={setLivePollingEnabled} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-medium text-muted-foreground">Interval (seconds)</label>
-                      <Input type="number" min={10} max={300} value={livePollInterval}
-                        onChange={(e) => setLivePollInterval(Number(e.target.value))}
-                        disabled={!livePollingEnabled} className="h-8 text-xs" />
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  {/* Notifications Polling */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium">Notifications Polling</span>
-                      <Switch checked={notificationsPollingEnabled} onCheckedChange={setNotificationsPollingEnabled} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-medium text-muted-foreground">Interval (seconds)</label>
-                      <Input type="number" min={30} max={600} value={notificationsPollInterval}
-                        onChange={(e) => setNotificationsPollInterval(Number(e.target.value))}
-                        disabled={!notificationsPollingEnabled} className="h-8 text-xs" />
-                    </div>
-                  </div>
                 </CardContent>
               </Card>
 

@@ -32,6 +32,6 @@
     "T1 Session 2 — selectedHouseId persistence, default UC for staff browse, filter persistence across nav",
     "Pipeline: update bill-extractor-v4.py for city/tehsil, add updated_at to payment_history"
   ],
-  "gitCheckpoint": "3f2c9a2 — Fix deliver page search: correct column name, assignment_items query, scroll-to-item + survey_id in results",
-  "gitCurrentHead": "3308095 + (7 dirty files)"
+  "gitCheckpoint": "b3a1e66 — Phase 1-4: Polling reduction, context-aware refresh, settings restructure",
+  "gitCurrentHead": "b3a1e66"
 }

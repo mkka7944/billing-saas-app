@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { useBillingStore } from '@/stores/billing-store'
@@ -16,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SortSelector } from '@/components/sort-selector'
 import { useGlobalSearch } from '@/hooks/use-global-search'
+import { refreshCurrentPage } from '@/lib/queries/refresh'
 import SearchResultsPopover from '@/components/search-results-popover'
 import type { SearchResultUnit } from '@/types/search'
 
@@ -625,9 +627,12 @@ function ActionButtons() {
 
   const queryDuration = useBillingStore((s) => s.queryDuration)
   const isFetching = useIsFetching() > 0
+  const pathname = usePathname()
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const successTimer = useRef<number>(0)
+  const refreshTriggeredRef = useRef(false)
+  const wasFetchingRef = useRef(false)
 
   const hasUnapplied = useMemo(
     () => JSON.stringify(filters) !== JSON.stringify(pendingFilters),
@@ -636,10 +641,16 @@ function ActionButtons() {
 
   const isRefreshing = manualRefreshing
 
-  // Reset manualRefreshing when all fetches complete
+  // Reset manualRefreshing after a real fetch cycle completes
   useEffect(() => {
-    if (manualRefreshing && !isFetching) {
-      setManualRefreshing(false)
+    if (manualRefreshing && refreshTriggeredRef.current) {
+      if (isFetching) {
+        wasFetchingRef.current = true
+      } else if (wasFetchingRef.current) {
+        setManualRefreshing(false)
+        wasFetchingRef.current = false
+        refreshTriggeredRef.current = false
+      }
     }
   }, [isFetching, manualRefreshing])
 
@@ -654,16 +665,17 @@ function ActionButtons() {
   }, [manualRefreshing, isFetching, queryDuration])
 
   const handleUpdate = useCallback(() => {
+    refreshTriggeredRef.current = true
     setManualRefreshing(true)
-    queryClient.invalidateQueries()
-  }, [queryClient])
+    refreshCurrentPage(pathname, queryClient)
+  }, [pathname, queryClient])
 
   return (
     <div className="flex items-center gap-1.5 shrink-0 ml-auto">
       <NotificationsBell />
       <button
         onClick={() => setMapType(mapType === 'streets' ? 'satellite' : 'streets')}
-        className="h-8 w-8 flex items-center justify-center rounded-lg border border-border hover:bg-muted cursor-pointer shrink-0"
+        className="h-9 w-9 flex items-center justify-center rounded-lg border border-border hover:bg-muted cursor-pointer shrink-0"
         title={mapType === 'streets' ? 'Satellite' : 'Street'}
       >
         <Layers className="h-3.5 w-3.5" />
@@ -673,13 +685,13 @@ function ActionButtons() {
         <button
           onClick={handleUpdate}
           disabled={isRefreshing}
-          className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-muted cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-9 w-9 flex items-center justify-center rounded-lg border border-border hover:bg-muted cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
           title={isRefreshing ? 'Updating...' : showSuccess ? 'Updated' : 'Refresh data'}
         >
           <RefreshCw
             className={cn(
               'h-3.5 w-3.5 transition-none',
-              isRefreshing && 'animate-spin'
+              isRefreshing && 'animate-spin text-primary'
             )}
           />
         </button>
