@@ -778,16 +778,26 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 
 ---
 ## 8. Performance Rules (Must Follow)
-1. Never `select('*')` â€” name explicit columns (egress cost)
-2. Push filters to the server â€” `.eq()`, `.in()`, `.gte()`, not JS `.filter()`
-3. No N+1 sequential queries â€” use `Promise.all` for independent queries
-4. No RPCs for client-facing features â€” admin-only aggregate queries (Data Insight, dashboards) may use RPCs from `scripts/sql/007-data-insight-rpcs.sql`
-5. **Reference tables for filter dropdowns** â€” never query 212K tables for filter options. Use `hierarchy`, `surveyors`, `bill_months` tables (all <1000 rows).
-6. `staleTime > 0` â€” 5min for billing data (daily updates), 30min for hierarchy (rarely changes)
-7. `gcTime > staleTime` â€” keep cached data for back-navigation
-8. Index every filtered column â€” especially `survey_units.status` (all queries filter by ACTIVE)
+1. Never `select('*')` — name explicit columns (egress cost)
+2. Push filters to the server — `.eq()`, `.in()`, `.gte()`, not JS `.filter()`
+3. No N+1 sequential queries — use `Promise.all` for independent queries
+4. No RPCs for client-facing features — admin-only aggregate queries (Data Insight, dashboards) may use RPCs from `scripts/sql/007-data-insight-rpcs.sql`
+5. **Reference tables for filter dropdowns** — never query 212K tables for filter options. Use `hierarchy`, `surveyors`, `bill_months` tables (all <1000 rows).
+6. **Use `STALE_TIMES` constants** from `src/lib/queries/constants.ts`:
+   - `STALE_TIMES.REFERENCE` (30min) — hierarchy, bill_months, staff list
+   - `STALE_TIMES.BILLING` (5min) — surveys, data-insight, charts, stats
+   - `STALE_TIMES.DELIVERY` (30s) — assignments, delivery photos
+   - `STALE_TIMES.PERFORMANCE` (2min) — staff stats/performance
+   Never leave `staleTime` at default 0 — every hook must have explicit staleTime.
+7. `gcTime > staleTime` — keep cached data for back-navigation
+8. Index every filtered column — especially `survey_units.status` (all queries filter by ACTIVE)
 9. No client-side `.filter()` / `.find()` / `.sort()` on large datasets (use server-side)
 10. `useMemo` on all derived data in render components
+11. **Polling is admin-controllable** via `app_settings` table. Hooks read `useSettings()`:
+    - Delivery trail: default 60s (min 10s, respects `live_polling_enabled`)
+    - Notifications: default 120s (min 30s, respects `notifications_polling_enabled`)
+    Both can be toggled on/off and interval adjusted in Settings → General → Data Usage (admin only).
+12. **Context-aware refresh** — use `refreshCurrentPage(pathname, queryClient)` from `src/lib/queries/refresh.ts` instead of blanket `queryClient.invalidateQueries()`. It targets only query keys relevant to the current page (`/deliver`, `/map`, `/assignments`, or all).
 
 ---
 ## 9. Edge Case Decisions
@@ -1164,7 +1174,7 @@ With local fallback to `scripts/data/` when Office PC folder is unavailable.
 | 15 | **M3** JSON Marker Chunks | 1.5 hrs | Post-enrichment per-UC JSON export, static file serving | ðŸ”² |
 | 16 | **0d** Reference Tables & Filter Fix | 1.5 hrs | Create hierarchy/surveyors/bill_months tables, update APIs, delete dead services | ðŸ”² |
 | 17 | **0e** Stabilize & Clean | 2 hrs | Fix payment filter pagination, billing-stats empty arrays, route API, deduplicate currentMonth | ðŸ”² |
-| 18 | **0f** Egress & Stability | 6 hrs | Fix PSID pagination loop, unbounded fetches, staff stats fallback | ðŸ”² |
+| 18 | **0f** Egress & Stability | 6 hrs | H1 (PSID loop -> is_paid column, fetchAll residual), H2 (resolved), H3 (.limit(200) added) | 🔜 Partial ðŸ”² |
 | 19 | **C** Admin Dashboard | 3 hrs | /stats, staff performance, delivery KPIs | ðŸ”² |
 | 20 | **E** Flag Management UI | 4 hrs | /flagged-units, resolve/confirm/note actions | ðŸ”² |
 | 21 | **F** Auto-Route Generation | 3 hrs | Delivery sequence â†’ consensus route â†’ survey_units â†’ printer | ðŸ”² |

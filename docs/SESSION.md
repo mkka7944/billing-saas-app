@@ -6,6 +6,41 @@
 
 ---
 
+## 2026-06-22 — Doc Audit & Alignment (Full Documentation Overhaul)
+
+### Phase: Documentation
+
+### What
+Audited all documentation against current codebase state and brought every doc into agreement with reality:
+
+**Docs updated (6 files):**
+
+1. **MASTER.md** — Updated Section 8 (Performance Rules): added `STALE_TIMES` constants, polling settings (admin-controllable via `app_settings`), context-aware refresh system. Updated Section 10 execution order row 18 (Phase 0f → Audit P1 with H1/H2/H3 status).
+
+2. **PHASES.md** — Updated Audit P1 (H2/H3 ✅ Done, H1 🔜 Partial). Added 3 new session entries (Performance & UI Polish, Steps 1-3, H3 fix). Updated Quick Stats (48 phases, 33 completed). Updated Execution Priority Order (Audit P1 now 🔜 Partial, G split into Phases 1+2, 0f marked done as superseded).
+
+3. **AUDIT-2026-06-04.md** — Updated Top-3 egress offenders (H2 ✅ FIXED, H3 ✅ FIXED, H1 🔜 Partial with is_paid column). Updated realistic egress estimates with polling reductions. Updated Appendix A (Known Issue Tracker): 5 fixed (H2, H3, H6, M3, H1 partial), 19 open/partial. Added polling reduction and admin-controllable polling to recommended mitigations.
+
+4. **SCHEMA.md** — Updated `app_settings` with documented settings keys (live_polling_enabled, live_poll_interval, etc.). Added `survey_id`, `started_at`, `status='processing'` to `assignment_items`. Added `verified_by`/`verified_at` to `delivery_photos`. Added `is_paid` to `survey_units`. Expanded migration history table with migrations 029-048.
+
+5. **SESSION.md** — Added current session log entry. Added changelog entries v35.0 and v36.0 for recent work.
+
+6. **.opencode/context.json** — Fixed stale "Data Usage in Delivery sidebar" → "Data Usage in General tab". Updated key decisions with current state.
+
+### Key Findings
+- H2 and H3 are fully fixed. H1 is partially fixed (PSID loop replaced with `is_paid` column, but `fetchAll()` still runs for map markers).
+- The `app_settings` table stores polling configuration — not `delivery_settings` as previously documented.
+- Data Usage controls are in General tab (3-column grid), not Delivery tab.
+- Settings has 7 tabs: General, Photo Queue, Error Log, Delivery, Delivery Quality, Failed Uploads, Users.
+- Desktop buttons are `h-9 w-9` with `border border-border` (consistent styling).
+- Refresh system is context-aware via `refreshCurrentPage()`.
+
+### Next
+- H1 residual: add max page guard or replace fetchAll with chunk-based approach
+- Continue planned phases (M3, G.2, M2, M1, etc.)
+
+---
+
 ## 2026-06-14 â€” Context Handoff System + Proxy Rename
 
 ### Phase: Infrastructure â€” Handoff System + Proxy Migration
@@ -1062,6 +1097,8 @@ f84fff9 Global search implementation + DesktopFilterBar redesign + FloatingActio
 | 2026-06-11 | 32.0 | **Direct browser-to-GAS photo upload implemented.** Created `src/lib/drive-upload.ts` (client-side GAS upload matching Routing Station pattern). Rewrote `usePhotoQueue` with direct upload (no promote), added progress tracking (index/total, KB/s, file size). Rewrote `unit-delivery-sheet.tsx` ΓÇö mark-first flow, toast chain with `updateToast`, `processingStep` overlay, 2s button cooldown. Simplified `sync-photo/route.ts` to DB-update only. Added progress display to UnsentModal, deliver page Sync banner, and UnsentImagesSection (progress bar + KB/s). Deleted `mark-processing`, `promote`, `use-unsynced-photos`. Fixed HDS 500 error ΓÇö added `NEXT_PUBLIC_DRIVE_WEBHOOK_URL` to Vercel env and `.env.local`. Upload tags with `survey_id` (not psid) for HDS gallery compatibility. Build verified: zero errors. Full rewrite of Section 27 with actual architecture. |
 | 2026-06-11 | 33.0 | **Failed upload tracking system + sidebar cleanup + queue resilience fixes.** Migration 040 added `verified_by`/`verified_at` to `delivery_photos`. Created `GET /api/deliveries/failed-uploads` (staff sees own, admin sees all), `POST /api/deliveries/verify-photo` (admin stamps verified). Staff stats page shows "Failed Uploads" card with PSID list. Admin Settings has "Failed Uploads" tab with per-row Verify button. Dashboard view made admin-only in sidebar (staff no longer sees billing charts). Fixed: failed-uploads query was silently returning 0 due to 3-level `!inner` join ΓÇö rewrote to use separate queries. Fixed: `mark/route.ts` now always writes GPS to `assignment_items` (not conditional). Fixed: deliver page shows red banner when DB has unsynced photos lost from IndexedDB queue. Toast messages shortened for mobile. Error log source pills stabilized (accumulate across loads). Error log shows `#ID` per row with copy button; admin can filter by user_id. `uploadToGAS()` accepts Blob directly (internal base64 conversion). MASTER.md doc fix: `sharedLocation.accuracy` ΓåÆ `gpsAccuracy`. |
 | 2026-06-19 | 34.0 | **Supabase Query Patterns documented + Phase 2a-3 testing + My Position tab + multi-staff picker.** Added Section 29 to MASTER.md (definitive query reference: fetchAllRows, chunked PSID fetches, parallel batches, 1MB limit, URL length trap, status filter trap, anti-patterns). Updated AGENTS.md Performance Rules with 15-point quick reference. My Position tab implemented (deliver page auto-scrolls to continuation point, green "Continue here" badge). QR scanner fixed (falls back to unit.survey_id). Multi-staff checkbox picker replaces single-select dropdown. Auto-name fix (batch name only for checkbox-based). 1000-row bugs fixed in getUcTotals and getUnassignedBills. Toolbar redesigned (single compact row). Assign Full MC button. MC list performance improved (parallel batched fetch 42s→12s). Status null filter restored. New delivery model proposed (multi-staff same-MC, QR-first). |
+| 2026-06-22 | 35.0 | **Performance & UI Polish (5 phases):** Phase 1 — bugfixes (z-index, sort icon, spinner shift, unused code). Phase 2 — polling reduction (delivery trail 5s→60s, notifications 30s→120s). Phase 2b — admin-controllable polling settings (app_settings table, live/notifications toggles + intervals). Phase 3 — context-aware refresh system (refreshCurrentPage in lib/queries/refresh.ts). Phase 4 — Settings restructure (Appearance→General merge, Account removed as separate tab). |
+| 2026-06-22 | 36.0 | **Steps 1-3: Button consistency, spinner fix, Data Usage + H3 fix.** Desktop buttons h-9 w-9 with border. Refresh spinner timing fix (useRef-based tracking). Data Usage card moved from Delivery→General tab (3-column grid). H3: .limit(200) added to staff/stats fallback. Egress recalculated: ~9.8 GB/month → ~3.8 GB/month with H1+H2 fixed. |
 
 ---
 

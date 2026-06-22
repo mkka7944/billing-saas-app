@@ -1,8 +1,9 @@
 # Billing SaaS App — Database Schema Reference
 
-> **Last verified:** 2026-06-01 (live Supabase query)
+> **Last verified:** 2026-06-22 (code review + session log reconstruction)
 > **Project ref:** `qrxbsoqepfaryolwcedk`
-> **How to query:** Read `SUPABASE_ACCESS_TOKEN` from `.env.local`, POST to Management API
+> **How to query:** Prefer Supabase CLI: `npx supabase db query --linked --file scripts/sql/XXX.sql`
+> **Alt:** Read `SUPABASE_ACCESS_TOKEN` from `.env.local`, POST to Management API
 
 ## Quick Access
 
@@ -20,7 +21,7 @@ Invoke-RestMethod -Uri "https://api.supabase.com/v1/projects/qrxbsoqepfaryolwced
 ## 1. Tables
 
 ### 1.1 `app_settings`
-Key-value store for application configuration.
+Key-value store for application configuration. Used for admin-controllable polling settings and other app-wide config.
 
 | Column | Type | Constraints |
 |--------|------|-------------|
@@ -28,6 +29,14 @@ Key-value store for application configuration.
 | `value` | `text` | |
 | `description` | `text` | |
 | `updated_at` | `timestamptz` | |
+
+**Known settings keys:**
+| Key | Purpose | Default |
+|-----|---------|---------|
+| `live_polling_enabled` | Delivery trail polling toggle | `true` |
+| `live_poll_interval` | Delivery trail polling interval in seconds | `60` |
+| `notifications_polling_enabled` | Notifications polling toggle | `true` |
+| `notifications_poll_interval` | Notifications polling interval in seconds | `120` |
 
 **Indexes:** `app_settings_pkey` UNIQUE BTREE (key)
 
@@ -41,8 +50,10 @@ Individual PSID delivery tracking within a daily assignment chunk.
 | `id` | `uuid` | PK (default `gen_random_uuid()`) |
 | `assignment_id` | `uuid` | FK → `daily_assignments(id)` CASCADE |
 | `psid` | `text` | |
+| `survey_id` | `text` | FK → `survey_units(survey_id)` — enables QR scan matching |
 | `route_seq` | `int4` | |
-| `status` | `text` | pending → delivered/missed/skipped |
+| `status` | `text` | pending → delivered/missed/skipped/processing |
+| `started_at` | `timestamptz` | set when staff opens item for delivery (migration 040) |
 | `delivered_at` | `timestamptz` | set server-side on PATCH |
 | `gps_lat` | `numeric` | captured at delivery |
 | `gps_lng` | `numeric` | captured at delivery |
@@ -79,7 +90,7 @@ A batch can span multiple UCs and represents a staff's work for a billing cycle.
 | `assigned_date` | `date` | |
 | `uc_name` | `text` | Primary UC (backward compat) |
 | `uc_names` | `text[]` | All UCs this batch covers |
-| `name` | `text` | Batch name (e.g. "Sargodha-B1") |
+| `name` | `text` | Batch name (e.g. "Sargodha-B1") — auto-generated for checkbox-based assignments |
 | `target_per_day` | `int4` | Daily minimum delivery target (default 500) |
 | `total_items` | `int4` | |
 | `bill_month` | `text` | Current billing cycle |
@@ -87,7 +98,7 @@ A batch can span multiple UCs and represents a staff's work for a billing cycle.
 | `created_at` | `timestamptz` | default `now()` |
 
 **Indexes:** `daily_assignments_pkey` UNIQUE BTREE (id), `idx_daily_assignments_name`
-**Migration:** 048 added `name`, `target_per_day`, `uc_names`
+**Migrations:** 048 added `name`, `target_per_day`, `uc_names`. `uc_names` was later corrected to `text[]` type.
 
 ---
 
@@ -104,6 +115,8 @@ One row per photo captured during delivery.
 | `gps_lng` | `numeric` | |
 | `captured_at` | `timestamptz` | |
 | `synced_to_drive` | `bool` | default false |
+| `verified_by` | `uuid` | Admin who verified this photo (migration 040) |
+| `verified_at` | `timestamptz` | When photo was verified (migration 040) |
 
 **Indexes:** `delivery_photos_pkey` UNIQUE BTREE (id)
 
@@ -313,6 +326,7 @@ Core table — household identity, GPS, billing enrichment. ~212K rows.
 | `route_seq` | `int4` | |
 | `current_bill_month` | `text` | last enriched month |
 | `start_month` | `text` | first billed month (e.g. SEP2025) — added by migration 028 |
+| `is_paid` | `bool` | default false — sync'd by DB trigger on payment_history changes (replaces PSID loop for H1 fix) |
 | `image_urls` | `_text` | legacy, may be dropped |
 
 **Indexes:**
@@ -494,7 +508,24 @@ Audit trail for data pipeline runs.
 | 027 | `027-pipeline-tables.sql` | ✅ Applied (2026-06-01) | Creates `flagged_psids`, `bill_print_log`, `ingest_log` tables + indexes + RLS |
 | 028 | `028-start-month.sql` | ✅ Applied (2026-06-01) | Adds `start_month text` to `survey_units` for precise billing cycle range |
 
-**Missing:** Migration 018 was skipped/never created.
+| 029 | `029-route-tree-rpc.sql` | ✅ Applied (some date) | Creates `get_route_tree(p_city text)` |
+| 030 | `030-delivery-photos.sql` | ✅ Applied (2026-06-09) | delivery_photos table, indexes, triggers, cleanup RPC |
+| 031 | `031-rename-assigned-date.sql` | ✅ Applied (2026-06-10) | `assigned_date` → `issued_at` on `daily_assignments` |
+| 032 | `032-pending-filters.sql` | (status unknown) | Pending filter support |
+| 033 | `033-is_paid-trigger.sql` | ✅ Applied | `is_paid` column + trigger on `survey_units` |
+| 034 | `034-started-at.sql` | ✅ Applied | `started_at` column on `assignment_items` |
+| 035 | `035-check-constraint-processing.sql` | ✅ Applied | Adds `'processing'` to status check constraint |
+| 036 | `036-index-created-at.sql` | ✅ Applied (separate from 036-test-mc-data.sql) | Index on `daily_assignments.created_at` |
+| 037 | `037-notifications.sql` | ⏳ Not Applied | Notifications schema |
+| 038 | `038-unsent-mode-setting.sql` | ⏳ Not Applied | "Always Unsent" mode setting |
+| 039 | `039-notifications-applied.sql` | ✅ Applied (2026-06-08) | Applied notifications schema |
+| 040 | `040-verified-columns.sql` | ✅ Applied (2026-06-11) | `verified_by`/`verified_at` on `delivery_photos`, `started_at` on `assignment_items` |
+| 041 | `041-bill-month-assignments.sql` | ✅ Applied (2026-06-09) | Adds `bill_month` to `daily_assignments` |
+| 042 | `042-delivery-quality-rpc.sql` | ✅ Applied (2026-06-12) | Delivery quality RPC + Settings tab |
+| 043 | `043-supersede-photos.sql` | ✅ Applied (2026-06-12) | Supersede old delivery_photos on redelivery |
+| 044+ | Ongoing migrations | Check `scripts/sql/` for latest |
+
+**Missing:** Migration 018 was skipped/never created. Migration 048 added `name`, `target_per_day`, `uc_names` to `daily_assignments`.
 
 ---
 

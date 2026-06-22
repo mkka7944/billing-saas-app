@@ -178,7 +178,9 @@ Map container stays visible (same as stats/data-insight which use absolute overl
 - Format: `time` `icon` `staff_name` `→/✗/⏳` `PSID`
 - Icons: ✅ delivered, ❌ missed, ⏳ processing
 - Auto-scrolls to top when new event arrives
-- Polls every 5 seconds for new events since last check
+- Polls at default 60 seconds (admin-configurable via polling settings) for new events since last check
+- Reads `useSettings()` for `live_polling_enabled` and `live_poll_interval` (range 10-300s)
+- Only polls while `activeView === 'live'`
 
 ---
 
@@ -199,9 +201,9 @@ Returns today's delivery items with lat/lng + status. The endpoint:
 3. Returns: `{ psid, status, delivered_at, lat, lng, staff_name, staff_id }`
 
 ### Hook
-`useDeliveryTrail(city?)` — polls every 5 seconds, returns array of delivery events.
+`useDeliveryTrail(city?)` — polls at admin-configurable interval (default 60s), returns array of delivery events.
 
-Uses `refetchInterval: 5000` in React Query. Only fetches while `activeView === 'live'`.
+Uses admin-controllable polling settings from `useSettings()` (default `refetchInterval: 60000`, min 10s). Only fetches while `activeView === 'live'`.
 
 ### Marker rendering
 - Radius 4, no tooltip (too many dots)
@@ -379,7 +381,7 @@ All KPIs come from the same live endpoint or can be computed client-side from th
 |------|--------|-------|
 | Step 1: Store + Sidebar | ✅ Done | `'live'` in `activeView`, sidebar item, `live-store.ts` |
 | Step 2: API endpoint — Delivery Trail | ✅ Done | `GET /api/live/delivery-trail?city=X` — queries by `delivered_at` in PKT range |
-| Step 3: Hook — useDeliveryTrail | ✅ Done | React Query with `refetchInterval: 5000` |
+| Step 3: Hook — useDeliveryTrail | ✅ Done | React Query with admin-controllable polling (default 60s, range 10-300s) |
 | Step 4: Map page — Live view render | ✅ Done | `activeView === 'live'` block in `map/page.tsx` |
 | Step 5: Delivery Trail markers | ✅ Done | Green/red/amber CircleMarkers with tooltip + popup |
 | Step 6: Floating actions — Live mode | ✅ Done | Greyed-out search/filters/mode/photos in live mode |
@@ -442,7 +444,7 @@ React-Leaflet references `window` at module import time. Static import causes SS
 | Staff has no GPS for >5 min | Dot turns gray, tooltip says "Last seen 6 min ago", panel shows gray dot |
 | Poll returns error | Keep last known data, show stale indicator in panel header (small amber dot) |
 | Panel collapsed | Thin strip on right edge with "LIVE" badge, tap to re-open |
-| Exit live during poll | Stop polling via `refetchInterval: false` when `activeView !== 'live'` |
+| Exit live during poll | Stop polling via `refetchInterval: false` when `activeView !== 'live'`. Polling rate is admin-configurable (default 60s). |
 | 70 staff all GPS toggled ON | Blue dots + name tooltips may overlap at city zoom level. Acceptable — admin zooms in or toggles per-staff. Future: clustering. |
 | Mobile view | Panel becomes full-screen bottom sheet (like HDS on mobile). Map visible behind with delivery dots. |
 | Staff with no today assignment | Not shown in staff list. GPS reporting still works but they appear as "no assignment today". |

@@ -341,13 +341,13 @@
 ### Audit P1 — Egress & Stability
 | | |
 |---|---|
-| **Status** | ⏳ Not Started |
+| **Status** | 🔜 Partial |
 | **Estimate** | 6 hrs |
-| **Description** | Fix PSID pagination loop (H1 — unbounded fetch). Fix unbounded `assignment_items` fetch (H2 — no row limit). Fix `staff/stats` fallback (H3 — crashes when staff row missing). |
+| **Description** | Fix PSID pagination loop (H1), unbounded `assignment_items` fetch (H2), `staff/stats` fallback (H3). |
 | **Sub-items** | |
-| | H1: PSID pagination loop in payment filter — add max page guard |
-| | H2: `assignment_items` fetch — add LIMIT clause for safety |
-| | H3: `staff/stats` — graceful fallback when staff profile row missing |
+| | H1: PSID pagination loop in payment filter — REPLACED with `is_paid` column on `survey_units`. No more per-session PSID fetch. Residual: `fetchAll()` in `survey-repository.ts` still runs for map markers when `showAll` or `pageSize > 1000`. Needs max-page guard or chunk-based approach. **Status: 🔜 Partial** |
+| | H2: `assignment_items` fetch — resolved. `data-insight-repository.ts` no longer has an unbounded query. Uses paginated range queries. **Status: ✅ Done** |
+| | H3: `staff/stats` fallback — `.limit(200)` added to `daily_assignments` fallback query. Graceful fallback when staff profile row missing (returns zero-filled data). **Status: ✅ Done** |
 
 ### Audit P2 — Authorization Hardening
 | | |
@@ -446,6 +446,24 @@
 |---|---|
 | **Status** | ✅ Done |
 | **Description** | Renamed `src/middleware.ts` → `src/proxy.ts` (Next.js 16 convention). Narrowed proxy matcher to exclude `/api/*` (80% fewer invocations). Created `.opencode/context.json` (machine-readable handoff state). Created `docs/SESSION.md` (replaces session logs in MASTER.md). Restructured MASTER.md (session logs extracted). Corrected PHASES.md phase status discrepancies. |
+
+### 2026-06-22 (Evening) — Performance & UI Polish (5 Phases)
+| | |
+|---|---|
+| **Status** | ✅ Done |
+| **Description** | **Phase 1 — Bugfixes**: dropdown z-index (filter-panel.tsx:631), sort icon right position, spinner layout shift, unused code cleanup. **Phase 2 — Polling reduction**: delivery trail 5s→60s, notifications 30s→120s. **Phase 2b — Admin-controllable polling settings**: live polling toggle + interval (10-300s), notifications polling toggle + interval (30-600s). Saved/loaded via `/api/settings` ↔ `app_settings` table. **Phase 3 — Context-aware refresh system**: created `src/lib/queries/refresh.ts` with `refreshCurrentPage(pathname, queryClient)`. Wired into AppHeader refresh button, FloatingActions hexagon Refresh button, and DesktopFilterBar `handleUpdate`. **Phase 4 — Settings restructure**: "Appearance" → "General" tab, Account merged into General as sub-card, separate Account tab removed. |
+
+### 2026-06-22 (Late) — Steps 1-3: Button Consistency, Spinner Fix, Data Usage
+| | |
+|---|---|
+| **Status** | ✅ Done |
+| **Description** | **Step 1 — Desktop button consistency**: satellite toggle `h-8 w-8` → `h-9 w-9`, refresh `h-8 w-8` → `h-9 w-9` + added `border border-border`. **Step 2 — Refresh spinner timing bug fixed**: added `refreshTriggeredRef` + `wasFetchingRef` in AppHeader.tsx and filter-panel.tsx to track real fetch cycle completion. **Step 3 — Data Usage card moved**: from Delivery tab → General tab (3rd card, 3-column grid). Separate `handleSaveDataUsage()`, `hasDataUsageChanges`, own Save button. Loading `useEffect` fires for both `'delivery'` and `'general'`. Non-admins see read-only summary. |
+
+### 2026-06-22 (Late) — H3 fix: Staff Stats Fallback Limit
+| | |
+|---|---|
+| **Status** | ✅ Done |
+| **Description** | Added `.limit(200)` to fallback `daily_assignments` query in `src/app/api/staff/stats/route.ts:36` — prevents silent truncation, URL length crash, and blocked stats when `staff_daily_stats` trigger table is empty. |
 
 ---
 
@@ -672,14 +690,15 @@
 | 5 | **M1** (Map Unification) | 30 min | Quick win — staff sees overlay data | ⏳ |
 | 6 | **Phase E** (Flag Management) | ~3 hrs | Flag button done; `/flagged-units` page remaining | 🔜 |
 | 7 | **M3** (JSON Marker Chunks) | 1.5 hrs | Egress optimization for map data | ⏳ |
-| 8 | **0f** (Schema Restructuring) | 6 hrs | Foundation for delivery+house tables | ⏳ |
+| 8 | **0f** (Schema Restructuring — superseded) | 6 hrs | Most steps done via prior migrations | ✅ done (prior work) |
 | 9 | **Phase C** (Admin Dashboard) | ~1 hr remaining | Quality tab + stats done; perf notes/ratings remaining | 🔜 |
 | 10 | **Phase D** (Visual Rehaul) | ~1 hr remaining | Canvas, supersede, Zustand, CircleMarker done; route guard + sidebar persistence + theme remaining | 🔜 |
 | 11 | **Phase F** (Auto-Route) | 3 hrs | Route optimization | ⏳ |
-| 12 | **Phase G** (Live Monitoring) | 3 hrs | Real-time admin view | ⏳ |
+| 12 | **Phase G.1** (Live Monitoring — Delivery Trail) | ~3 hrs | Phase 1 done (delivery trail dots, panel, UC cards, staff list, activity feed). Phase 2 (staff positions) pending. | 🔜 Partial |
 | 13 | **Phase RBAC** (Approval Chain) | 3 hrs | Access control | ⏳ |
 | 14 | **Phase Z** (App Audit Cleanup) | 4 hrs | Deep cleanup | ⏸️ |
-| 15 | **Audit P1-P6** | 21 hrs | Production hardening | ⏸️ |
+| 15 | **Audit P1** (Egress & Stability) | 6 hrs | H2/H3 fixed, H1 residual (is_paid column, fetchAll still used) | 🔜 Partial |
+| 16 | **Audit P2-P6** | 19 hrs | Production hardening | ⏸️ |
 
 ### Appendix Gaps — Quick Fixes (from Appendix above)
 
@@ -703,13 +722,13 @@
 
 | Metric | Count |
 |--------|-------|
-| **Total phases** | 45 |
-| **✅ Completed** | 30 |
-| **🔜 In Progress (partial)** | 4 (C, D, E, M2) |
-| **⏳ Not Started** | 10 (T1, 0d, 0e, 0f, M1, M3, F, G, RBAC) |
+| **Total phases** | 48 |
+| **✅ Completed** | 33 |
+| **🔜 In Progress (partial)** | 5 (C, D, E, M2, Audit P1) |
+| **⏳ Not Started** | 9 (T1, 0d, 0e, M1, M3, F, G, RBAC) |
 | **⏸️ Deferred** | 3 (Z, Audit P5, C3 GPS) |
-| **Completed work estimate** | ~44 hrs |
-| **Remaining work estimate (Section 10 phases only)** | ~41 hrs |
+| **Completed work estimate** | ~48 hrs |
+| **Remaining work estimate (Section 10 phases only)** | ~37 hrs |
 | **Appendix Gaps (A-D): ⏳ Not Started** | 9 items |
 | **Appendix Gaps (A-D): ⏸️ Deferred** | 2 items |
 | **Appendix Gaps (A-D): ⚠️ Unplanned Gap** | 6 items |
