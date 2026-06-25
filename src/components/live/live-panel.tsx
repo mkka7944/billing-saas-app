@@ -47,9 +47,10 @@ export function LivePanel() {
   const { data: settings } = useSettings()
   const isPastDate = selectedDate !== pktToday()
   const pollInterval = (settings?.live_poll_interval || 60) * 1000
-  const { data: trailData, dataUpdatedAt, isFetching } = useDeliveryTrail(selectedCity, isPastDate ? selectedDate : null)
+  const { data: trailData, dataUpdatedAt, isFetching, isError, isLoading } = useDeliveryTrail(selectedCity, isPastDate ? selectedDate : null)
   const [countdown, setCountdown] = useState(Math.round(pollInterval / 1000))
   const hasFlown = useRef(false)
+  const isStale = !isPastDate && dataUpdatedAt > 0 && !isFetching && (Date.now() - dataUpdatedAt) > pollInterval * 2
 
   // Countdown timer for next poll refresh
   useEffect(() => {
@@ -188,8 +189,8 @@ export function LivePanel() {
         isMobile ? 'left-0 right-0 bottom-0 rounded-t-xl rounded-b-none' : 'rounded-xl'
       }`}
       style={isMobile ? {
-        height: panelHeight ?? '40vh',
-        maxHeight: '85vh',
+        height: panelHeight ?? '85vh',
+        maxHeight: '95vh',
       } : {
         width: panelWidth,
         right: 8 - (panelPos.x || 0),
@@ -205,6 +206,9 @@ export function LivePanel() {
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
           <span className="text-xs font-bold">LIVE</span>
+          {(isError || isStale) && (
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title={isError ? 'Poll failed' : 'Data may be stale'} />
+          )}
           {!isPastDate && dataUpdatedAt > 0 && (
             <span className="text-[10px] text-muted-foreground tabular-nums">
               {isFetching ? '...' : `${countdown}s`}
@@ -231,6 +235,16 @@ export function LivePanel() {
 
       {/* Content — flex column so activity feed fills remaining space */}
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden space-y-2 p-3">
+        {/* Loading skeleton for first load */}
+        {isLoading && !dataUpdatedAt && (
+          <div className="space-y-3 animate-pulse">
+            <div className="h-8 bg-muted rounded-lg" />
+            <div className="h-8 bg-muted rounded-lg" />
+            <div className="h-20 bg-muted rounded-lg" />
+            <div className="h-32 bg-muted rounded-lg" />
+          </div>
+        )}
+
         {/* Summary KPI */}
         <div className="shrink-0"><LiveSummaryBar /></div>
 

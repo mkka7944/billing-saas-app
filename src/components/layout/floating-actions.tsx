@@ -120,7 +120,7 @@ export function FloatingActions() {
               <div className="lg:hidden">
                 <ActionButton icon={Search} label="Search" onClick={handleSearch} disabled={isLive} />
               </div>
-              <ActionButton icon={RefreshCw} label="Refresh" onClick={handleRefresh} disabled={isLive} />
+              <ActionButton icon={RefreshCw} label="Refresh" onClick={handleRefresh} />
               {isMap && (
                 <ActionButton icon={SlidersHorizontal} label="Filters" onClick={handleFilter} disabled={isLive} />
               )}

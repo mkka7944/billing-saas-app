@@ -20,6 +20,10 @@ const LiveDeliveryTrail = dynamic(
   () => import('@/components/live/live-delivery-trail').then((m) => m.LiveDeliveryTrail),
   { ssr: false }
 )
+const StaffPositionLayers = dynamic(
+  () => import('@/components/live/staff-position-layers').then((m) => m.StaffPositionLayers),
+  { ssr: false }
+)
 import { useBillingUIStore } from '@/stores/billing-ui-store'
 import { cn } from '@/lib/utils'
 import { Loader2 } from 'lucide-react'
@@ -161,6 +165,7 @@ function MapPageContent() {
             ) : (
               <MapView visible={activeView === 'map'}>
                 {activeView === 'live' && <LiveDeliveryTrail />}
+                {activeView === 'live' && <StaffPositionLayers />}
               </MapView>
             )}
           </div>

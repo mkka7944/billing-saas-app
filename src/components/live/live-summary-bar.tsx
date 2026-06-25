@@ -16,7 +16,8 @@ export function LiveSummaryBar() {
     const processing = markers.filter((m) => m.status === 'processing').length
     const total = delivered + processing
     const rate = total > 0 ? Math.round((delivered / total) * 100) : 0
-    return { delivered, processing, total, rate }
+    const activeStaff = new Set(markers.map((m) => m.staff_name)).size
+    return { delivered, processing, total, rate, activeStaff }
   }, [data])
 
   return (
@@ -26,6 +27,7 @@ export function LiveSummaryBar() {
         {stats.processing > 0 && (
           <span className="text-amber-500">{stats.processing} processing</span>
         )}
+        <span className="text-muted-foreground">{stats.activeStaff} staff</span>
       </div>
       <div className="text-xs font-bold">
         {stats.rate}%

@@ -56,7 +56,7 @@ export function LiveUcCards({ onUcClick }: { onUcClick?: (ucName: string) => voi
       </button>
       {expanded && (
         <div className="space-y-1">
-          {ucStats.slice(0, 10).map((uc) => (
+          {ucStats.map((uc) => (
             <div
               key={uc.uc_name}
               onClick={() => onUcClick?.(uc.uc_name)}
@@ -69,11 +69,6 @@ export function LiveUcCards({ onUcClick }: { onUcClick?: (ucName: string) => voi
               </span>
             </div>
           ))}
-          {ucStats.length > 10 && (
-            <p className="text-[10px] text-muted-foreground text-center pt-1">
-              +{ucStats.length - 10} more
-            </p>
-          )}
         </div>
       )}
     </div>

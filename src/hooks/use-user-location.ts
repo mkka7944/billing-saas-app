@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSettings } from '@/hooks/use-settings'
 
 export interface UserLocation {
   lat: number
@@ -23,6 +24,30 @@ let highAccuracy = true
 let watcherCount = 0
 let mounted = true
 const listeners = new Set<Listener>()
+
+// GPS position reporting (staff phones → server)
+const MOVEMENT_THRESHOLD = 50  // 50 meters
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+async function reportLocation(lat: number, lng: number, accuracy: number | null) {
+  try {
+    await fetch('/api/live/report-location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng, accuracy }),
+    })
+  } catch {
+    // Silently fail — offline or network error
+  }
+}
 
 function notifyListeners() {
   listeners.forEach((fn) => fn())
@@ -94,6 +119,9 @@ function stopWatch() {
 
 export function useUserLocation() {
   const [, forceUpdate] = useState(0)
+  const { data: settings } = useSettings()
+  const reportInterval = Math.max(30000, (settings?.live_poll_interval || 60) * 1000)
+  const lastReport = useRef({ lat: 0, lng: 0, time: 0 })
 
   const notify = useCallback(() => forceUpdate((n) => n + 1), [])
 
@@ -121,6 +149,29 @@ export function useUserLocation() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Periodically report GPS position to server (interval controlled by admin setting)
+  useEffect(() => {
+    if (!reportInterval || !sharedLocation) return
+
+    const id = setInterval(() => {
+      const loc = sharedLocation
+      if (!loc) return
+
+      const now = Date.now()
+      const sinceLast = now - lastReport.current.time
+      const distance = lastReport.current.time
+        ? haversineMeters(lastReport.current.lat, lastReport.current.lng, loc.lat, loc.lng)
+        : 999
+
+      if (sinceLast >= reportInterval && (distance >= MOVEMENT_THRESHOLD || sinceLast >= 300000)) {
+        lastReport.current = { lat: loc.lat, lng: loc.lng, time: now }
+        reportLocation(loc.lat, loc.lng, loc.accuracy)
+      }
+    }, reportInterval)
+
+    return () => clearInterval(id)
+  }, [reportInterval])
 
   return { location: sharedLocation, isTracking: sharedIsTracking, error: sharedError }
 }
