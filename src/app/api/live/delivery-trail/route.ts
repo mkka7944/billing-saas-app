@@ -3,6 +3,15 @@ import { createClient } from '@/lib/supabase/server'
 import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 import { pktDayRange } from '@/lib/pkt'
 
+function dayRange(dateStr?: string | null): { start: string; end: string } {
+  const d = dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : null
+  if (!d) return pktDayRange()
+  return {
+    start: `${d}T00:00:00+05:00`,
+    end: `${d}T23:59:59+05:00`,
+  }
+}
+
 export async function GET(request: Request) {
   const sup = await createClient()
 
@@ -13,18 +22,34 @@ export async function GET(request: Request) {
 
   const sp = new URL(request.url).searchParams
   const city = sp.get('city') || ''
+  const date = sp.get('date')
   const cfg = CITY_TEHSIL_MAP[city]
 
   if (!cfg) {
     return NextResponse.json({ error: 'Invalid city' }, { status: 400 })
   }
 
-  const { start, end } = pktDayRange()
+  const { start, end } = dayRange(date)
 
+  // 1. Query survey_units first — scoped to city, returns only matching PSIDs + coords
+  const { data: units } = await sup
+    .from('survey_units')
+    .select('psid, consumer_name, lat, lng')
+    .eq('city_district', cfg.district)
+    .eq('tehsil', cfg.tehsil)
+    .not('psid', 'is', null)
+
+  if (!units?.length) {
+    return NextResponse.json({ markers: [], activities: [] })
+  }
+
+  // 2. Query assignment_items by PSIDs + date range
+  const psids = units.map((u: any) => u.psid)
   const { data: items } = await sup
     .from('assignment_items')
-    .select('assignment_id, psid, status, delivered_at, gps_lat, gps_lng')
+    .select('assignment_id, psid, status, delivered_at')
     .in('status', ['delivered', 'missed', 'processing'])
+    .in('psid', psids)
     .gte('delivered_at', start)
     .lte('delivered_at', end)
 
@@ -32,8 +57,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ markers: [], activities: [] })
   }
 
+  // 3. Query daily_assignments for staff names + UC
   const assignmentIds = [...new Set(items.map((i: any) => i.assignment_id))]
-
   const { data: assignments } = await sup
     .from('daily_assignments')
     .select('id, staff_id, staff:staff_id(full_name), uc_name')
@@ -46,29 +71,17 @@ export async function GET(request: Request) {
     (assignments || []).map((a: any) => [a.id, a.uc_name || ''])
   )
 
-  const psids = [...new Set(items.map((i: any) => i.psid))]
-
-  const { data: units } = await sup
-    .from('survey_units')
-    .select('psid, consumer_name, lat, lng, city_district, tehsil')
-    .in('psid', psids)
-
-  const unitMap = new Map((units || []).map((u: any) => [u.psid, u]))
+  // 4. Build maps for fast lookup
+  const unitByPsid = new Map(units.map((u: any) => [u.psid, u]))
 
   const markers: any[] = []
   const activities: any[] = []
 
   for (const item of items) {
-    const unit = unitMap.get(item.psid)
+    const unit = unitByPsid.get(item.psid)
     if (!unit) continue
 
-    if (unit.city_district !== cfg.district) continue
-    if (unit.tehsil !== cfg.tehsil) continue
-
     const staffInfo = staffMap.get(item.assignment_id) || { name: 'Unknown', id: null }
-    const staffName = staffInfo.name
-    const staffId = staffInfo.id
-    const ucName = ucMap.get(item.assignment_id) || ''
 
     if (unit.lat && unit.lng) {
       markers.push({
@@ -77,16 +90,16 @@ export async function GET(request: Request) {
         delivered_at: item.delivered_at,
         lat: unit.lat,
         lng: unit.lng,
-        uc_name: ucName,
+        uc_name: ucMap.get(item.assignment_id) || '',
         consumer_name: unit.consumer_name,
-        staff_name: staffName,
-        staff_id: staffId,
+        staff_name: staffInfo.name,
+        staff_id: staffInfo.id,
       })
     }
 
     if (item.delivered_at) {
       activities.push({
-        staff_name: staffName,
+        staff_name: staffInfo.name,
         psid: item.psid,
         status: item.status,
         delivered_at: item.delivered_at,

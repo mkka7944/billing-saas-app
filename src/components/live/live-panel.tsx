@@ -1,16 +1,17 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBillingStore } from '@/stores/billing-store'
 import { useLiveStore } from '@/stores/live-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useDeliveryTrail } from '@/hooks/use-delivery-trail'
+import { pktToday } from '@/lib/pkt'
 import { CITY_CONFIG } from '@/stores/billing-store'
 import { LiveSummaryBar } from '@/components/live/live-summary-bar'
 import { LiveUcCards } from '@/components/live/live-uc-cards'
 import { LiveStaffList } from '@/components/live/live-staff-list'
 import { LiveActivityFeed } from '@/components/live/live-activity-feed'
-import { X, PanelRightClose, MapPin, Grip } from 'lucide-react'
+import { X, PanelRightClose, MapPin, Grip, Calendar } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -37,7 +38,9 @@ export function LivePanel() {
   const setPanelHeight = useLiveStore((s) => s.setPanelHeight)
 
   const isMobile = useMediaQuery('(max-width: 767px)')
-  const { data: trailData } = useDeliveryTrail(selectedCity)
+  const [selectedDate, setSelectedDate] = useState(pktToday())
+  const dateLabel = selectedDate === pktToday() ? 'Today' : selectedDate
+  const { data: trailData } = useDeliveryTrail(selectedCity, selectedDate !== pktToday() ? selectedDate : null)
   const hasFlown = useRef(false)
 
   // Fly to default city on first mount
@@ -203,19 +206,31 @@ export function LivePanel() {
         {/* Summary KPI */}
         <LiveSummaryBar />
 
-        {/* City dropdown */}
-        <div className="relative">
-          <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none z-10" />
-          <Select value={selectedCity} onValueChange={(value) => value && handleCityChange(value)}>
-            <SelectTrigger className="w-full h-8 pl-7 pr-3 text-xs font-medium rounded-lg [&>svg]:text-muted-foreground">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="z-[9999]">
-              {CITIES.map((c) => (
-                <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* Date + City row */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none z-10" />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              max={pktToday()}
+              className="w-full h-8 pl-7 pr-2 text-xs font-medium rounded-lg border border-input bg-background [color-scheme:light_dark] focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <div className="relative w-[140px] shrink-0">
+            <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none z-10" />
+            <Select value={selectedCity} onValueChange={(value) => value && handleCityChange(value)}>
+              <SelectTrigger className="w-full h-8 pl-7 pr-3 text-xs font-medium rounded-lg [&>svg]:text-muted-foreground">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="z-[9999]">
+                {CITIES.map((c) => (
+                  <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* UC Cards */}
