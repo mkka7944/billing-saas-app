@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useToast } from '@/hooks/use-toast'
 import { useAuthStore } from '@/stores/auth-store'
@@ -54,6 +54,8 @@ export function BillingSidebar() {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const effectiveCollapsed = isDesktop && sidebarCollapsed
   const [pulsingItem, setPulsingItem] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   const navGroups: { category: string; items: NavItem[] }[] = [
     {
@@ -245,9 +247,11 @@ export function BillingSidebar() {
         {/* Version info */}
         {!effectiveCollapsed && (
           <div className="px-4 py-1.5 border-t border-border/30">
-            <p suppressHydrationWarning className="text-[10px] font-mono text-sidebar-foreground/50 text-center">
-              {APP_VERSION}
-            </p>
+            {mounted && (
+              <p className="text-[10px] font-mono text-sidebar-foreground/50 text-center">
+                {APP_VERSION}
+              </p>
+            )}
           </div>
         )}
 
