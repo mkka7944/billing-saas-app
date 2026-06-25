@@ -43,6 +43,6 @@
     "Phase X — Auto-deploy notification: GitHub Action + broadcast endpoint + Settings tab badge",
     "Pipeline: update bill-extractor-v4.py with city/tehsil, add updated_at to payment_history"
   ],
-  "gitCheckpoint": "6472aca",
-  "gitCurrentHead": "6472aca + GPS fix + notification fix"
+  "gitCheckpoint": "e40c43e",
+  "gitCurrentHead": "e40c43e"
 }
