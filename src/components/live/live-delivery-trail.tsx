@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { CircleMarker, Tooltip, Popup } from 'react-leaflet'
 import { useDeliveryTrail } from '@/hooks/use-delivery-trail'
 import { useLiveStore } from '@/stores/live-store'
+import { pktToday } from '@/lib/pkt'
 
 const STATUS_COLORS = {
   delivered: { color: '#22c55e', fill: '#bbf7d0' },
@@ -13,7 +14,8 @@ const STATUS_COLORS = {
 
 export function LiveDeliveryTrail() {
   const selectedCity = useLiveStore((s) => s.selectedCity)
-  const { data } = useDeliveryTrail(selectedCity)
+  const selectedDate = useLiveStore((s) => s.selectedDate)
+  const { data } = useDeliveryTrail(selectedCity, selectedDate !== pktToday() ? selectedDate : null)
 
   const markers = useMemo(() => data?.markers || [], [data])
 

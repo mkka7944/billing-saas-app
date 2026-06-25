@@ -25,21 +25,27 @@ export interface ActivityEvent {
 interface DeliveryTrailResponse {
   markers: DeliveryMarker[]
   activities: ActivityEvent[]
+  total?: number
 }
 
 import { useSettings } from '@/hooks/use-settings'
 
-export function useDeliveryTrail(city: string, date?: string | null) {
+export function useDeliveryTrail(city: string, date?: string | null, limit?: number, offset?: number) {
   const { data: settings } = useSettings()
   const enabled = settings?.live_polling_enabled !== false && !!city
   const interval = Math.max(10000, (settings?.live_poll_interval || 60) * 1000)
   const shouldPoll = !date
 
+  const queryLimit = limit || 50
+  const queryOffset = offset || 0
+
   return useQuery<DeliveryTrailResponse>({
-    queryKey: ['delivery-trail', city, date || 'today'],
+    queryKey: ['delivery-trail', city, date || 'today', queryLimit, queryOffset],
     queryFn: async () => {
       const params = new URLSearchParams({ city })
       if (date) params.set('date', date)
+      params.set('limit', String(queryLimit))
+      params.set('offset', String(queryOffset))
       const res = await fetch(`/api/live/delivery-trail?${params}`)
       if (!res.ok) return { markers: [], activities: [] }
       return res.json()

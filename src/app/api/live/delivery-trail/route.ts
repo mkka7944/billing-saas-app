@@ -23,6 +23,8 @@ export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams
   const city = sp.get('city') || ''
   const date = sp.get('date')
+  const limit = Math.min(parseInt(sp.get('limit') || '50', 10), 200)
+  const offset = parseInt(sp.get('offset') || '0', 10)
   const cfg = CITY_TEHSIL_MAP[city]
 
   if (!cfg) {
@@ -74,10 +76,30 @@ export async function GET(request: Request) {
   // 4. Build maps for fast lookup
   const unitByPsid = new Map(units.map((u: any) => [u.psid, u]))
 
+  // Deduplicate items by PSID for markers — keep highest-priority status, then latest timestamp
+  const statusRank: Record<string, number> = { delivered: 0, missed: 1, processing: 2 }
+  const bestItemByPsid = new Map<string, any>()
+  for (const item of items) {
+    const existing = bestItemByPsid.get(item.psid)
+    if (!existing) {
+      bestItemByPsid.set(item.psid, item)
+    } else {
+      const existingRank = statusRank[existing.status] ?? 3
+      const itemRank = statusRank[item.status] ?? 3
+      if (
+        itemRank < existingRank ||
+        (itemRank === existingRank && new Date(item.delivered_at || 0) > new Date(existing.delivered_at || 0))
+      ) {
+        bestItemByPsid.set(item.psid, item)
+      }
+    }
+  }
+
   const markers: any[] = []
   const activities: any[] = []
 
-  for (const item of items) {
+  // Use deduplicated items for markers, original items for activities
+  for (const item of bestItemByPsid.values()) {
     const unit = unitByPsid.get(item.psid)
     if (!unit) continue
 
@@ -96,7 +118,13 @@ export async function GET(request: Request) {
         staff_id: staffInfo.id,
       })
     }
+  }
 
+  // Activities keep all events (not deduplicated) so all staff actions are visible
+  for (const item of items) {
+    const unit = unitByPsid.get(item.psid)
+    if (!unit) continue
+    const staffInfo = staffMap.get(item.assignment_id) || { name: 'Unknown', id: null }
     if (item.delivered_at) {
       activities.push({
         staff_name: staffInfo.name,
@@ -109,5 +137,8 @@ export async function GET(request: Request) {
 
   activities.sort((a: any, b: any) => new Date(b.delivered_at).getTime() - new Date(a.delivered_at).getTime())
 
-  return NextResponse.json({ markers, activities })
+  const total = activities.length
+  const paginatedActivities = activities.slice(offset, offset + limit)
+
+  return NextResponse.json({ markers, activities: paginatedActivities, total })
 }

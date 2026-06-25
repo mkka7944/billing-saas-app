@@ -5,11 +5,11 @@ import { CircleMarker, Tooltip } from 'react-leaflet'
 import { useBillingStore } from '@/stores/billing-store'
 import PulsingRing from '@/components/ui/pulsing-ring'
 import { STATUS_COLORS } from '@/lib/delivery-status'
-import type { AssignmentItemUnit } from '@/types'
+import type { AssignmentItemWithUnit } from '@/types'
 import type { LeafletMouseEvent } from 'leaflet'
 
 interface StaffMapMarkersProps {
-  items: { id: string; status: string; psid: string; unit: AssignmentItemUnit | null }[]
+  items: AssignmentItemWithUnit[]
   selectedPsid: string | null
 }
 
@@ -17,7 +17,7 @@ export default function StaffMapMarkers({ items, selectedPsid }: StaffMapMarkers
   const setDeliverTarget = useBillingStore((s) => s.setDeliverTarget)
 
   const markers = useMemo(
-    () => items.filter((i) => i.unit?.lat != null && i.unit?.lng != null),
+    () => items.filter((i) => i.unit?.lat != null && i.unit?.lng != null && !i.deliveredByOther),
     [items]
   )
 
@@ -29,6 +29,7 @@ export default function StaffMapMarkers({ items, selectedPsid }: StaffMapMarkers
     if (!psid) return
     const item = markersRef.current.find((i) => i.psid === psid)
     if (!item?.unit) return
+
     const currentTarget = useBillingStore.getState().deliverTargetId
     if (currentTarget === psid) {
       setDeliverTarget(null)

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useDeliveryTrail } from '@/hooks/use-delivery-trail'
 import { useLiveStore } from '@/stores/live-store'
+import { pktToday } from '@/lib/pkt'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 interface UCStat {
@@ -14,24 +15,25 @@ interface UCStat {
 
 export function LiveUcCards({ onUcClick }: { onUcClick?: (ucName: string) => void }) {
   const selectedCity = useLiveStore((s) => s.selectedCity)
-  const { data } = useDeliveryTrail(selectedCity)
+  const selectedDate = useLiveStore((s) => s.selectedDate)
+  const { data } = useDeliveryTrail(selectedCity, selectedDate !== pktToday() ? selectedDate : null)
   const [expanded, setExpanded] = useState(false)
 
   const ucStats = useMemo(() => {
     const markers = data?.markers || []
-    const map = new Map<string, { delivered: number; missed: number; processing: number }>()
+    const map = new Map<string, { delivered: number; processing: number }>()
 
     for (const m of markers) {
+      if (m.status === 'missed') continue
       const uc = m.uc_name || 'Unknown'
-      const stat = map.get(uc) || { delivered: 0, missed: 0, processing: 0 }
+      const stat = map.get(uc) || { delivered: 0, processing: 0 }
       if (m.status === 'delivered') stat.delivered++
-      else if (m.status === 'missed') stat.missed++
       else stat.processing++
       map.set(uc, stat)
     }
 
     return Array.from(map.entries()).map(([uc_name, s]) => {
-      const total = s.delivered + s.missed + s.processing
+      const total = s.delivered + s.processing
       return {
         uc_name,
         delivered: s.delivered,

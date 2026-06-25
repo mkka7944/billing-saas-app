@@ -5,13 +5,16 @@ import { useBillingStore } from '@/stores/billing-store'
 import { useLiveStore } from '@/stores/live-store'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useDeliveryTrail } from '@/hooks/use-delivery-trail'
+import { useSettings } from '@/hooks/use-settings'
 import { pktToday } from '@/lib/pkt'
+import { format } from 'date-fns'
+import { DatePicker } from '@/components/ui/date-picker'
 import { CITY_CONFIG } from '@/stores/billing-store'
 import { LiveSummaryBar } from '@/components/live/live-summary-bar'
 import { LiveUcCards } from '@/components/live/live-uc-cards'
 import { LiveStaffList } from '@/components/live/live-staff-list'
 import { LiveActivityFeed } from '@/components/live/live-activity-feed'
-import { X, PanelRightClose, MapPin, Grip, Calendar } from 'lucide-react'
+import { X, PanelRightClose, MapPin, Grip, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -27,6 +30,8 @@ export function LivePanel() {
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
   const setMapZoom = useBillingStore((s) => s.setMapZoom)
   const selectedCity = useLiveStore((s) => s.selectedCity)
+  const selectedDate = useLiveStore((s) => s.selectedDate)
+  const setSelectedDate = useLiveStore((s) => s.setSelectedDate)
   const panelCollapsed = useLiveStore((s) => s.panelCollapsed)
   const panelPos = useLiveStore((s) => s.panelPos)
   const panelWidth = useLiveStore((s) => s.panelWidth)
@@ -38,10 +43,28 @@ export function LivePanel() {
   const setPanelHeight = useLiveStore((s) => s.setPanelHeight)
 
   const isMobile = useMediaQuery('(max-width: 767px)')
-  const [selectedDate, setSelectedDate] = useState(pktToday())
-  const dateLabel = selectedDate === pktToday() ? 'Today' : selectedDate
-  const { data: trailData } = useDeliveryTrail(selectedCity, selectedDate !== pktToday() ? selectedDate : null)
+  const [staffExpanded, setStaffExpanded] = useState(false)
+  const { data: settings } = useSettings()
+  const isPastDate = selectedDate !== pktToday()
+  const pollInterval = (settings?.live_poll_interval || 60) * 1000
+  const { data: trailData, dataUpdatedAt, isFetching } = useDeliveryTrail(selectedCity, isPastDate ? selectedDate : null)
+  const [countdown, setCountdown] = useState(Math.round(pollInterval / 1000))
   const hasFlown = useRef(false)
+
+  // Countdown timer for next poll refresh
+  useEffect(() => {
+    if (isPastDate || !dataUpdatedAt) {
+      setCountdown(0)
+      return
+    }
+    const update = () => {
+      const elapsed = Date.now() - dataUpdatedAt
+      setCountdown(Math.max(0, Math.round((pollInterval - elapsed) / 1000)))
+    }
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [dataUpdatedAt, pollInterval, isPastDate])
 
   // Fly to default city on first mount
   useEffect(() => {
@@ -182,6 +205,11 @@ export function LivePanel() {
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
           <span className="text-xs font-bold">LIVE</span>
+          {!isPastDate && dataUpdatedAt > 0 && (
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              {isFetching ? '...' : `${countdown}s`}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -201,21 +229,19 @@ export function LivePanel() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto space-y-3 p-3">
+      {/* Content — flex column so activity feed fills remaining space */}
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden space-y-2 p-3">
         {/* Summary KPI */}
-        <LiveSummaryBar />
+        <div className="shrink-0"><LiveSummaryBar /></div>
 
         {/* Date + City row */}
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none z-10" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              max={pktToday()}
-              className="w-full h-8 pl-7 pr-2 text-xs font-medium rounded-lg border border-input bg-background [color-scheme:light_dark] focus:outline-none focus:ring-1 focus:ring-ring"
+        <div className="flex gap-2 shrink-0">
+          <div className="flex-1">
+            <DatePicker
+              value={selectedDate ? new Date(selectedDate + 'T00:00:00+05:00') : undefined}
+              onChange={(date) => setSelectedDate(date ? format(date, 'yyyy-MM-dd') : pktToday())}
+              max={(() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d })()}
+              placeholder="Select date"
             />
           </div>
           <div className="relative w-[140px] shrink-0">
@@ -233,19 +259,27 @@ export function LivePanel() {
           </div>
         </div>
 
-        {/* UC Cards */}
-        <LiveUcCards onUcClick={handleUcClick} />
+        {/* UC Cards — collapsible */}
+        <div className="shrink-0"><LiveUcCards onUcClick={handleUcClick} /></div>
 
-        {/* Staff List */}
-        <div>
-          <h4 className="text-xs font-bold text-muted-foreground mb-1.5 px-1">Staff</h4>
-          <LiveStaffList />
+        {/* Staff List — collapsed by default */}
+        <div className="shrink-0">
+          <button
+            onClick={() => setStaffExpanded(!staffExpanded)}
+            className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground mb-1.5 hover:text-foreground transition-colors cursor-pointer px-1"
+          >
+            {staffExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            Staff
+          </button>
+          {staffExpanded && <LiveStaffList />}
         </div>
 
-        {/* Activity Feed */}
-        <div>
-          <h4 className="text-xs font-bold text-muted-foreground mb-1.5 px-1">Activity</h4>
-          <LiveActivityFeed />
+        {/* Activity Feed — fills remaining vertical space */}
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <h4 className="text-xs font-bold text-muted-foreground mb-1.5 px-1 shrink-0">Activity</h4>
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <LiveActivityFeed />
+          </div>
         </div>
       </div>
 

@@ -3,35 +3,51 @@
 import { useMemo } from 'react'
 import { useDeliveryTrail } from '@/hooks/use-delivery-trail'
 import { useLiveStore } from '@/stores/live-store'
+import { pktToday } from '@/lib/pkt'
 import { Circle } from 'lucide-react'
 
 export function LiveStaffList() {
   const selectedCity = useLiveStore((s) => s.selectedCity)
+  const selectedDate = useLiveStore((s) => s.selectedDate)
   const staffGpsVisible = useLiveStore((s) => s.staffGpsVisible)
   const toggleStaffGps = useLiveStore((s) => s.toggleStaffGps)
 
-  const { data: trail } = useDeliveryTrail(selectedCity)
+  const { data: trail } = useDeliveryTrail(selectedCity, selectedDate !== pktToday() ? selectedDate : null)
 
   const staffStats = useMemo(() => {
     const markers = trail?.markers || []
-    const map = new Map<string, { staffId: string | null; delivered: number; missed: number; processing: number }>()
+
+    // Count total units per UC and distinct staff per UC
+    const ucUnitCount = new Map<string, number>()
+    const ucStaffSet = new Map<string, Set<string>>()
+    const staffDelivered = new Map<string, number>()
+    const staffUc = new Map<string, string>()
 
     for (const m of markers) {
-      const stat = map.get(m.staff_name) || { staffId: m.staff_id, delivered: 0, missed: 0, processing: 0 }
-      if (m.status === 'delivered') stat.delivered++
-      else if (m.status === 'missed') stat.missed++
-      else stat.processing++
-      map.set(m.staff_name, stat)
+      const uc = m.uc_name || 'Unknown'
+      const name = m.staff_name
+
+      ucUnitCount.set(uc, (ucUnitCount.get(uc) || 0) + 1)
+      if (!ucStaffSet.has(uc)) ucStaffSet.set(uc, new Set())
+      ucStaffSet.get(uc)!.add(name)
+
+      if (m.status === 'delivered') {
+        staffDelivered.set(name, (staffDelivered.get(name) || 0) + 1)
+      }
+      if (!staffUc.has(name)) staffUc.set(name, uc)
     }
 
-    return Array.from(map.entries()).map(([staffName, s]) => {
-      const total = s.delivered + s.missed + s.processing
+    return Array.from(staffDelivered.entries()).map(([staffName, delivered]) => {
+      const uc = staffUc.get(staffName) || 'Unknown'
+      const totalUnits = ucUnitCount.get(uc) || 0
+      const staffCount = ucStaffSet.get(uc)?.size || 1
+      const target = Math.round(totalUnits / staffCount)
       return {
-        staff_id: s.staffId || staffName,
+        staff_id: markers.find((m) => m.staff_name === staffName)?.staff_id || staffName,
         staff_name: staffName,
-        delivered: s.delivered,
-        total_assigned: total,
-        rate: total > 0 ? Math.round((s.delivered / total) * 100) : 0,
+        delivered,
+        total_assigned: target,
+        rate: target > 0 ? Math.round((delivered / target) * 100) : 0,
       }
     }).sort((a, b) => b.rate - a.rate)
   }, [trail])
