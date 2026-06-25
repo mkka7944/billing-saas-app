@@ -495,6 +495,7 @@ python scripts/ingest-all.py --month May2026 --dry-run  # Preview only
 | `assignment_items` | id | Individual PSID delivery tracking with photo proof. Replaces old `verified_houses.is_delivered`. | ~2000/day |
 | `delivery_photos` | id | One row per photo captured during delivery. Linked to Google Drive via photo_url. Replaces `staff_sync_logs` photo tracking. | ~3K/day |
 | `staff_daily_stats` | id | Pre-computed daily perf (assigned, delivered, missed, start/end time). Updated via trigger. | ~70/day |
+| `staff_locations` | id | Live GPS positions reported by staff phones. 24hr auto-cleanup via `cleanup_staff_locations()`. Used by Live Monitoring Phase 2 — staff blue dots on admin map. | Varies (by poll interval) |
 | `app_settings` | key | Key-value config store | ~5 |
 | `hierarchy` | id | Reference: distinct (city_district, tehsil, uc_name) for ACTIVE units | ~500 |
 | `surveyors` | id | Reference: distinct surveyor names for ACTIVE units | ~70 |

@@ -1,31 +1,52 @@
 {
-  "lastSession": "2026-06-22 — UDS quick fixes + distinctive staff GPS marker",
-  "currentPhase": "UDS Polish & GPS Marker",
-  "currentStep": "Responsive UDS button text, shadcn Select flag dropdown, simplified flag reasons (UnSent/Duplicate PSID/Duplicate S-ID). Enhanced staff UserMarker to distinctive concentric cyan circles.",
+  "lastSession": "2026-06-25 — Live Monitoring Phase 2 (Staff GPS) + UDS Accuracy",
+  "currentPhase": "Phase G.2 Complete — All open issues fixed",
+  "currentStep": "Phase 2 staff positions (DB, API, hook, map layer, GPS reporter). Unified polling interval. UDS GPS accuracy display. 14+ file changes across live monitoring and delivery flow.",
   "filesModified": [
+    "src/stores/live-store.ts",
+    "src/hooks/use-delivery-trail.ts",
+    "src/hooks/use-user-location.ts",
+    "src/hooks/use-deliver-unit.ts",
+    "src/hooks/use-staff-positions.ts",
+    "src/app/api/live/delivery-trail/route.ts",
+    "src/app/api/live/report-location/route.ts",
+    "src/app/api/live/staff-positions/route.ts",
+    "src/app/api/deliveries/mark/route.ts",
+    "src/components/live/live-panel.tsx",
+    "src/components/live/live-summary-bar.tsx",
+    "src/components/live/live-uc-cards.tsx",
+    "src/components/live/live-staff-list.tsx",
+    "src/components/live/live-activity-feed.tsx",
+    "src/components/live/staff-position-layers.tsx",
+    "src/components/layout/floating-actions.tsx",
+    "src/app/map/page.tsx",
     "src/components/delivery/unit-delivery-sheet.tsx",
-    "src/components/delivery/staff-map.tsx"
+    "scripts/sql/050-staff-locations.sql"
   ],
-  "filesCreated": [],
+  "filesCreated": [
+    "scripts/sql/050-staff-locations.sql",
+    "src/app/api/live/report-location/route.ts",
+    "src/app/api/live/staff-positions/route.ts",
+    "src/hooks/use-staff-positions.ts",
+    "src/components/live/staff-position-layers.tsx"
+  ],
   "keyDecisions": [
-    "UDS primary button text: 'Take Picture' on mobile, 'Take Picture & Deliver' on desktop.",
-    "Flag dialog uses shadcn Select instead of native select for consistent styling.",
-    "Flag reasons simplified to UnSent / Duplicate PSID / Duplicate S-ID — removed field_deleted, portal_deleted, and psid_duplicate variants.",
-    "Staff GPS marker changed to concentric cyan (#22d3ee) circles — 14px translucent outer ring + 8px solid inner dot. No toggle needed since GPS is always active."
+    "GPS positions come from periodic phone POSTs to staff_locations table, not from assignment_items.",
+    "Staff phone reports GPS every live_poll_interval (default 60s), only when moved >50m or >5min heartbeat.",
+    "Admin polls for positions at the same live_poll_interval — one setting controls both directions.",
+    "Staff list uses activities (not markers) so staff without GPS coordinates still appear.",
+    "Missed items excluded from live panel UI (removed from summary, UC cards, staff list, activity feed).",
+    "GPS accuracy ±Xm shown in UDS live bar (before icon) and post-delivery confirmation."
   ],
   "nextActions": [
-    "Implement PWA: manifest.ts, sw.js, pwa-register component, icons, next.config headers",
-    "Fix H1 residual: add max page guard to fetchAll() or replace with chunk-based approach",
-    "Phase M3 — Implementation (bucket setup + chunk generation scripts on office PC)",
-    "Phase G.2 — Staff Positions (live GPS blue dots on admin map)",
-    "Phase M2 — Marker clustering + UC count badges",
-    "Phase M1 — Map Unification",
-    "Phase F — Auto-Route Generation",
-    "Phase E — /flagged-units page",
-    "T1 Session 1 — Persist mapZoom, HDS/List flyTo zoom 20",
-    "T1 Session 2 — selectedHouseId persistence, default UC for staff browse, filter persistence across nav",
-    "Pipeline: update bill-extractor-v4.py for city/tehsil, add updated_at to payment_history"
+    "PWA: manifest.ts, sw.js, pwa-register component, icons, next.config headers",
+    "Fix delivery trail query order — query assignment_items by date first, then survey_units",
+    "Marker clustering + UC count badges (Phase M2)",
+    "Settings confirm dialog before saving live_poll_interval",
+    "Add gps_accuracy column to delivery_photos + assignment_items",
+    "Auto-cleanup cron for staff_locations",
+    "Per-city breakdown rows in live panel"
   ],
-  "gitCheckpoint": "d8dae0a",
-  "gitCurrentHead": "21fe492 + UDS quick fixes + distinctive GPS marker"
+  "gitCheckpoint": "939db22",
+  "gitCurrentHead": "939db22 + 5 file changes (UDS accuracy flow)"
 }

@@ -16,38 +16,34 @@ export function LiveStaffList() {
 
   const staffStats = useMemo(() => {
     const markers = trail?.markers || []
+    const activities = trail?.activities || []
 
-    // Count total units per UC and distinct staff per UC
-    const ucUnitCount = new Map<string, number>()
-    const ucStaffSet = new Map<string, Set<string>>()
-    const staffDelivered = new Map<string, number>()
-    const staffUc = new Map<string, string>()
-
+    // Build marker-based data (staff_id, uc per staff)
+    const markerStaffId = new Map<string, string>()
+    const markerStaffUc = new Map<string, string>()
     for (const m of markers) {
-      const uc = m.uc_name || 'Unknown'
-      const name = m.staff_name
-
-      ucUnitCount.set(uc, (ucUnitCount.get(uc) || 0) + 1)
-      if (!ucStaffSet.has(uc)) ucStaffSet.set(uc, new Set())
-      ucStaffSet.get(uc)!.add(name)
-
-      if (m.status === 'delivered') {
-        staffDelivered.set(name, (staffDelivered.get(name) || 0) + 1)
-      }
-      if (!staffUc.has(name)) staffUc.set(name, uc)
+      if (!markerStaffId.has(m.staff_name)) markerStaffId.set(m.staff_name, m.staff_id || m.staff_name)
+      if (!markerStaffUc.has(m.staff_name)) markerStaffUc.set(m.staff_name, m.uc_name || 'Unknown')
     }
 
-    return Array.from(staffDelivered.entries()).map(([staffName, delivered]) => {
-      const uc = staffUc.get(staffName) || 'Unknown'
-      const totalUnits = ucUnitCount.get(uc) || 0
-      const staffCount = ucStaffSet.get(uc)?.size || 1
-      const target = Math.round(totalUnits / staffCount)
+    // Build stats from activities (covers all staff even without GPS coords)
+    const staffDelivered = new Map<string, number>()
+    const staffTotal = new Map<string, number>()
+    for (const a of activities) {
+      staffTotal.set(a.staff_name, (staffTotal.get(a.staff_name) || 0) + 1)
+      if (a.status === 'delivered') {
+        staffDelivered.set(a.staff_name, (staffDelivered.get(a.staff_name) || 0) + 1)
+      }
+    }
+
+    return Array.from(staffTotal.entries()).map(([staffName, total]) => {
+      const delivered = staffDelivered.get(staffName) || 0
       return {
-        staff_id: markers.find((m) => m.staff_name === staffName)?.staff_id || staffName,
+        staff_id: markerStaffId.get(staffName) || staffName,
         staff_name: staffName,
         delivered,
-        total_assigned: target,
-        rate: target > 0 ? Math.round((delivered / target) * 100) : 0,
+        total_assigned: total,
+        rate: total > 0 ? Math.round((delivered / total) * 100) : 0,
       }
     }).sort((a, b) => b.rate - a.rate)
   }, [trail])

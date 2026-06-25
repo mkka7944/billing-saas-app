@@ -7,11 +7,12 @@ const ALLOWED_STATUSES = ['pending', 'processing', 'delivered']
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { assignmentItemId, gpsLat, gpsLng, skipPhoto } = body as {
+    const { assignmentItemId, gpsLat, gpsLng, skipPhoto, gpsAccuracy } = body as {
       assignmentItemId: string
       gpsLat?: number | null
       gpsLng?: number | null
       skipPhoto?: boolean
+      gpsAccuracy?: number | null
     }
 
     if (!assignmentItemId) {
@@ -182,6 +183,7 @@ export async function POST(request: Request) {
       distance,
       gps_lat,
       gps_lng,
+      gps_accuracy: gpsAccuracy ?? null,
       delivery_photo_id: deliveryPhotoId,
     })
   } catch (e) {

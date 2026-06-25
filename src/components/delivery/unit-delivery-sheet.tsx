@@ -49,6 +49,7 @@ export default function UnitDeliverySheet({
   const [isDelivering, setIsDelivering] = useState(false)
   const [deliveryStatus, setDeliveryStatus] = useState<'idle' | 'delivered' | 'processing'>('idle')
   const [deliveryDistance, setDeliveryDistance] = useState<number | null>(null)
+  const [deliveryGpsAccuracy, setDeliveryGpsAccuracy] = useState<number | null>(null)
   const [deliveryGpsLat, setDeliveryGpsLat] = useState<number | null>(null)
   const [deliveryGpsLng, setDeliveryGpsLng] = useState<number | null>(null)
 
@@ -190,6 +191,7 @@ export default function UnitDeliverySheet({
         deliveryLat,
         deliveryLng,
         false,
+        gpsAccuracy,
       )
 
       if (!result) {
@@ -200,6 +202,7 @@ export default function UnitDeliverySheet({
 
       setDeliveryStatus(result.status)
       setDeliveryDistance(result.distance)
+      setDeliveryGpsAccuracy(result.gps_accuracy)
       setDeliveryGpsLat(result.gps_lat)
       setDeliveryGpsLng(result.gps_lng)
       setProcessingStep('Delivery saved')
@@ -307,7 +310,7 @@ export default function UnitDeliverySheet({
     } finally {
       if (inputRef.current) inputRef.current.value = ''
     }
-  }, [assignmentItemId, unit?.psid, unit?.survey_id, unit?.lat, unit?.lng, deliveryLat, deliveryLng, userEmail, mark, enqueuePhoto, queueCount, manualSync, toast, updateToast, queryClient, userId])
+  }, [assignmentItemId, unit?.psid, unit?.survey_id, unit?.lat, unit?.lng, deliveryLat, deliveryLng, gpsAccuracy, userEmail, mark, enqueuePhoto, queueCount, manualSync, toast, updateToast, queryClient, userId])
 
   const handleNoPhotoMark = useCallback(async () => {
     if (!assignmentItemId || !unit?.psid) return
@@ -319,6 +322,7 @@ export default function UnitDeliverySheet({
         deliveryLat,
         deliveryLng,
         true,
+        gpsAccuracy,
       )
 
       if (!result) {
@@ -329,6 +333,7 @@ export default function UnitDeliverySheet({
 
       setDeliveryStatus(result.status)
       setDeliveryDistance(result.distance)
+      setDeliveryGpsAccuracy(result.gps_accuracy)
       setDeliveryGpsLat(result.gps_lat)
       setDeliveryGpsLng(result.gps_lng)
 
@@ -363,7 +368,7 @@ export default function UnitDeliverySheet({
       toast(e instanceof Error ? e.message : 'Server error', 'error', TOAST_DURATION)
       setIsDelivering(false)
     }
-  }, [assignmentItemId, unit, deliveryLat, deliveryLng, mark, toast, queryClient, userId])
+  }, [assignmentItemId, unit, deliveryLat, deliveryLng, gpsAccuracy, mark, toast, queryClient, userId])
 
   const handleFlag = useCallback(async () => {
     const ok = await confirm({
@@ -477,11 +482,16 @@ export default function UnitDeliverySheet({
               liveGpsStatus === 'ready' && liveDistance != null && liveDistance > gpsThreshold && liveDistance <= 100 && 'text-amber-400',
               liveGpsStatus === 'ready' && liveDistance != null && liveDistance > 100 && 'text-red-400',
             )}>
+              {liveGpsStatus === 'ready' && gpsAccuracy != null && gpsAccuracy <= 50 && (
+                <span className="mr-1">±{Math.round(gpsAccuracy)}m</span>
+              )}
               <Crosshair className="h-3.5 w-3.5 shrink-0" />
               {liveGpsStatus === 'locating' && <span>Locating...</span>}
               {liveGpsStatus === 'unavailable' && <span>GPS unavailable</span>}
               {liveGpsStatus === 'ready' && liveDistance != null && (
-                <span>{liveDistance >= 1000 ? `${(liveDistance / 1000).toFixed(1)} km` : `${liveDistance} m`} away</span>
+                <span>
+                  {liveDistance >= 1000 ? `${(liveDistance / 1000).toFixed(1)} km` : `${liveDistance} m`} away
+                </span>
               )}
               {liveGpsStatus === 'ready' && gpsAccuracy != null && (
                 <span className="flex items-center gap-1 ml-1">
@@ -642,7 +652,10 @@ export default function UnitDeliverySheet({
                 <span className={`text-[10px] ${t.bodyTextMuted}`}>Out of range — Awaiting Review</span>
               )}
               {deliveryDistance != null && (
-                <span className={`text-[10px] ${t.bodyTextMuted}`}>{deliveryDistance}m from target</span>
+                <span className={`text-[10px] ${t.bodyTextMuted}`}>
+                  {deliveryDistance}m from target
+                  {deliveryGpsAccuracy != null && `  ±${Math.round(deliveryGpsAccuracy)}m`}
+                </span>
               )}
               {deliveryGpsLat != null && deliveryGpsLng != null && (
                 <span className={`text-[10px] ${t.bodyTextSubtle} font-mono`}>

@@ -4498,3 +4498,105 @@ Three UDS fixes + staff GPS marker enhancement.
 
 ### Next
 Review `nextActions` in `.opencode/context.json` for planned work items.
+
+---
+
+## 2026-06-25 — Live Monitoring Phase 2 (Staff GPS) + UDS Accuracy
+
+### Phase: Phase G.2 (Staff Positions) + Open Issue Fixes
+
+### What
+Complete Phase 2 implementation (live GPS blue dots on admin map) plus all open issues from the live monitoring audit.
+
+**Phase 2 — Staff Positions:**
+1. DB migration `050-staff-locations.sql` — table, indexes, cleanup function
+2. `POST /api/live/report-location` — staff phone reports GPS (rate-limited 30s)
+3. `GET /api/live/staff-positions?city=X` — admin fetches latest positions per city
+4. `useStaffPositions` hook — polls at admin-configurable interval (default 60s)
+5. `StaffPositionLayers` component — blue dots with first-name tooltips, active/inactive coloring
+6. GPS reporter in `use-user-location.ts` — reads admin setting, reports on movement or heartbeat
+
+**Unified polling interval:** All three loops (delivery trail, GPS reporting, staff positions) now read from the same `live_poll_interval` admin setting in Settings → General → Data Usage.
+
+**Live panel fixes:**
+- Missed items removed from summary, UC cards, staff list, activity feed
+- Staff list collapsible (default collapsed) with chevron toggle
+- Polling countdown timer in header (`42s`)
+- Stale/error indicator (amber dot when poll fails or data >2× interval old)
+- Loading skeleton on first fetch
+- Refresh button enabled in live mode
+- UC cards 10-item cap removed
+- Active staff count in summary bar
+- Mobile bottom sheet 85vh (near full-screen)
+- Staff list now uses activities (not just markers) to handle staff without GPS coordinates
+
+**UDS GPS accuracy:**
+- `gpsAccuracy` passed through `mark()` → API → response → displayed in both live GPS bar and post-delivery confirmation
+- Fixed stale closure bug: added `gpsAccuracy` to `handleFile` / `handleNoPhotoMark` dependency arrays
+- Live GPS bar: `±{accuracy}m  ⊹  {distance}m away  ● ● ○`
+- Post-delivery: `45m from target  ±12m`
+
+### Files Created (6)
+- `scripts/sql/050-staff-locations.sql`
+- `src/app/api/live/report-location/route.ts`
+- `src/app/api/live/staff-positions/route.ts`
+- `src/hooks/use-staff-positions.ts`
+- `src/components/live/staff-position-layers.tsx`
+
+### Files Modified (12)
+- `src/stores/live-store.ts` — added `selectedDate`, `setSelectedDate`
+- `src/hooks/use-delivery-trail.ts` — date param, limit/offset, no-poll-on-past
+- `src/app/api/live/delivery-trail/route.ts` — date filter, pagination, dedup
+- `src/hooks/use-user-location.ts` — GPS reporter (reads admin setting, 50m threshold)
+- `src/components/live/live-panel.tsx` — date picker, countdown, stale indicator, loading skeleton, staff collapse, mobile height
+- `src/components/live/live-summary-bar.tsx` — removed missed, added active staff count
+- `src/components/live/live-uc-cards.tsx` — removed missed, removed 10-item cap
+- `src/components/live/live-staff-list.tsx` — removed missed, switched to activities-based stats
+- `src/components/live/live-activity-feed.tsx` — filtered missed, pagination
+- `src/components/layout/floating-actions.tsx` — enabled refresh in live mode
+- `src/app/map/page.tsx` — added StaffPositionLayers
+- `src/components/delivery/unit-delivery-sheet.tsx` — GPS accuracy display (live + post-delivery)
+- `src/hooks/use-deliver-unit.ts` — added `gpsAccuracy` param
+- `src/app/api/deliveries/mark/route.ts` — accept and return `gpsAccuracy`
+
+### Build Verification
+- `npx tsc --noEmit` — clean, no errors
+
+### Next
+See priority list below
+
+---
+
+## Priority List — Work From Home (June 2026)
+
+### High Priority (Home PC — Can Do Without Office Access)
+| # | Task | Why Now | Files |
+|---|------|---------|-------|
+| 1 | **PWA manifest + service worker** | Already planned, no DB changes needed | `src/app/manifest.ts`, `public/sw.js`, `next.config.ts` |
+| 2 | **Fix delivery trail query order** | Current query fetches ALL city units first (wasteful). Query `assignment_items` by date first, THEN `survey_units` only for today's PSIDs | `src/app/api/live/delivery-trail/route.ts` |
+| 3 | **Marker clustering + UC count badges** | 50K+ markers on map is slow. Cluster at zoom <14 | `src/components/survey-markers.tsx` |
+| 4 | **Settings → General UI: confirm before saving live_poll_interval** | Accidental change to 10s could spike egress | `src/components/settings/general-tab.tsx` |
+
+### Medium Priority
+| # | Task | Why Now | Files |
+|---|------|---------|-------|
+| 5 | **Phase M3 — JSON Marker Chunks** | Bucket setup + chunk gen scripts on office PC, but can plan/design here | Planning docs |
+| 6 | **Map Unification (Phase M1)** | Staff map + admin map share 80% logic — merge them | `src/components/delivery/staff-map.tsx`, `src/components/map-view.tsx` |
+| 7 | **Auto-route generation (Phase F)** | Requires 2 months of delivery data — data exists now | New files |
+| 8 | **/flagged-units page (Phase E)** | Admin page to review flagged deliveries | `src/app/flagged-units/page.tsx` |
+
+### Needs Office PC (Can't Do From Home)
+| # | Task | Why |
+|---|------|-----|
+| — | **Monthly import (16th–20th)** | Requires lifecycle XLSX + payment CSV from SWMC portal |
+| — | **Daily payment sync** | Requires `bill-extractor-v4.py` on office PC |
+| — | **Test Phase 2 GPS with real phones** | Need field staff with physical phones outdoors |
+
+### Technical Debt / Small Fixes
+| # | Task | Effort |
+|---|------|--------|
+| 9 | Per-city breakdown rows in live panel | ~30m |
+| 10 | Add `gps_accuracy` column to `delivery_photos` + `assignment_items` | ~15m + migration |
+| 11 | Auto-cleanup cron for `staff_locations` | ~10m |
+| 12 | Remove `use-delivery-trail.ts` unused `time_label` from `ActivityEvent` | ~2m |
+| 13 | Orientations/architecture doc for new Phase 2 files | ~15m |

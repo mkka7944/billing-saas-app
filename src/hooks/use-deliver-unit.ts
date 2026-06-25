@@ -7,6 +7,7 @@ export interface DeliveryResult {
   distance: number | null
   gps_lat: number | null
   gps_lng: number | null
+  gps_accuracy: number | null
   delivery_photo_id: string | null
 }
 
@@ -16,6 +17,7 @@ export function useDeliverUnit() {
     gpsLat: number | null,
     gpsLng: number | null,
     skipPhoto: boolean,
+    gpsAccuracy?: number | null,
   ): Promise<DeliveryResult | null> => {
     try {
       const res = await fetch('/api/deliveries/mark', {
@@ -26,6 +28,7 @@ export function useDeliverUnit() {
           gpsLat,
           gpsLng,
           skipPhoto,
+          gpsAccuracy,
         }),
       })
 
