@@ -245,7 +245,7 @@ export function BillingSidebar() {
         {/* Version info */}
         {!effectiveCollapsed && (
           <div className="px-4 py-1.5 border-t border-border/30">
-            <p className="text-[10px] font-mono text-sidebar-foreground/50 text-center">
+            <p suppressHydrationWarning className="text-[10px] font-mono text-sidebar-foreground/50 text-center">
               {APP_VERSION}
             </p>
           </div>
