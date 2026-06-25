@@ -116,7 +116,11 @@ export async function POST(request: Request) {
     let distance: number | null = null
     let status: 'delivered' | 'processing' = 'delivered'
 
-    if (gps_lat != null && gps_lng != null && target_lat != null && target_lng != null) {
+    if (gps_lat == null || gps_lng == null) {
+      if (enforceGps) {
+        status = 'processing'
+      }
+    } else if (target_lat != null && target_lng != null) {
       distance = Math.round(haversine(gps_lat, gps_lng, target_lat, target_lng))
       if (enforceGps && distance > gpsThreshold) {
         status = 'processing'

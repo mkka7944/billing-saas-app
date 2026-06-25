@@ -4603,39 +4603,171 @@ See priority list below
 
 ---
 
-## 2026-06-25 — PWA Implementation + Icon Regeneration + Deploy
+## 2026-06-25 — PWA Implementation + Icon Regeneration + Deploy + GPS Fix
 
-### Phase: PWA Complete
+### Phase: PWA Complete + GPS Enforcement Fix
 
 ### What
-- **PWA core files created:**
-  - `public/sw.js` — Service worker with bypass rules (supabase.co, googleapis.com, map tiles, RSC payloads, all `/api/*`). CacheFirst for static assets, NetworkFirst for navigation (offline fallback), StaleWhileRevalidate for JSON. Background Sync support (`sync-photos`). Listens for `SKIP_WAITING` message.
-  - `public/offline.html` — Dark theme offline fallback page with Retry button.
-  - `src/app/manifest.ts` — Standalone, portrait, dark theme (`#0f172a`/`#1e293b`), 4 icons, stable `id: '/'`.
-  - `src/components/providers/pwa-register.tsx` — PWA register (SW reg, install prompt, update detection) + `useSWUpdate` hook.
-  - `scripts/generate-icons.mjs` — Sharp-based icon generation utility.
 
-- **Modified files:**
-  - `src/app/layout.tsx` — Added manifest link, appleWebApp metadata, formatDetection, `<PwaRegister />`.
-  - `next.config.ts` — PWA headers: SW no-cache, manifest 1h, static assets 1yr immutable.
-  - `src/app/settings/page.tsx` — App card with version ("Check for updates" + "Update now" buttons).
-  - `src/hooks/use-photo-queue.ts` — Added `navigator.storage.persist()` + Background Sync registration.
-  - `docs/PWA-PLAN.md` — Comprehensive 12-section plan.
+#### Part 1: PWA Icon Regeneration
+- User provided new icon `docs/tmt-billing-3-removebg-preview.png` (677×369, background removed, alpha channel)
+- Sharp-based script (scripts/generate-icons.mjs) trimmed transparent edges to 317×318 content bounding box
+- Centered on square canvas, generated 4 icon variants:
+  - `public/icon-192.png` (92 KB)
+  - `public/icon-512.png` (474 KB)
+  - `public/icon-192-maskable.png` (38 KB, 20% inner padding for Android adaptive icons)
+  - `public/icon-512-maskable.png` (213 KB)
+- Viewable square copy saved to `docs/tmt-billing-3-square.png` for user preview
+- Old icon source `docs/tmt-billing-3.png` (1380×752, no alpha) retained as reference
 
-- **Icon regeneration:**
-  - User provided `docs/tmt-billing-3-removebg-preview.png` (background removed).
-  - Trimmed 677×369 → 317×318 content bounding box, centered on square, generated 4 icon variants.
-  - Viewable copy saved to `docs/tmt-billing-3-square.png`.
+#### Part 2: PWA Core Files Created
+- **`public/sw.js`** — Manual service worker (no build dependency, easier to control exact bypass rules)
+  - Bypasses: supabase.co, googleapis.com, googleusercontent.com, openstreetmap.org, cartocdn.com (map tiles)
+  - Bypasses: RSC/Flight payloads (`/_next/data/*`, `/_next/static/chunks/*.js`), all `/api/*` routes
+  - CacheFirst for `/_next/static/*` hashed assets (1yr immutable)
+  - NetworkFirst for navigation (offline fallback to `/offline.html`)
+  - StaleWhileRevalidate for JSON responses
+  - Background Sync listener registered for `'sync-photos'` tag
+  - Listens for `SKIP_WAITING` message from the app (user-controlled update)
+  - Does NOT intercept photo upload POSTs to GAS webhook (direct browser-to-Google, no Vercel)
+  - `updateViaCache: 'none'` during registration — prevents stale SW from HTTP cache
+
+- **`public/offline.html`** — Dark theme (`#0f172a`/`#1e293b`) offline fallback page
+  - Shows "You're offline" message with wifi-off icon
+  - Retry button calls `window.location.reload()`
+  - Auto-reloads when `window.online` event fires
+
+- **`src/app/manifest.ts`** — Dynamic web app manifest (Next.js config-based route handler)
+  - Display: `standalone`, orientation: `portrait`, theme_color: `#0f172a`, background_color: `#1e293b`
+  - Stable `id: '/'` — prevents re-prompt on URL changes
+  - 4 icons with proper `sizes`, `type: 'image/png'`, and `purpose` (maskable + any)
+  - Scope: `/` (entire app)
+
+- **`src/components/providers/pwa-register.tsx`** — Two exports:
+  - `PwaRegister` component — renders at app root, handles:
+    - Service worker registration on mount
+    - Install prompt detection (`beforeinstallprompt` event)
+    - Shows install button when prompt available (hidden otherwise)
+  - `useSWUpdate` hook — returns:
+    - `updateAvailable: boolean` — true when new SW is waiting
+    - `applyUpdate()` — posts `SKIP_WAITING` to waiting SW, reloads on controller change
+    - `checkForUpdates()` — calls `reg.update()`, returns boolean indicating if update was found
+  - Detects `reg.waiting` + `controllerchange` to know when deploy happened
+  - Shows toast "New version available" with "Update now" button when update detected
+
+#### Part 3: Modified Files
+- **`src/app/layout.tsx`** — Added to `<head>`:
+  - `<link rel="manifest">` pointing to `/manifest.webmanifest`
+  - `<meta name="apple-mobile-web-app-capable" content="yes">`
+  - `<meta name="format-detection" content="telephone=no">`
+  - `<PwaRegister />` component (client-side, no SSR issues)
+
+- **`next.config.ts`** — Added headers:
+  - `/sw.js` → `Cache-Control: no-cache, no-store, must-revalidate` (prevents stale SW)
+  - `/manifest.webmanifest` → `Cache-Control: public, max-age=3600`
+  - `/_next/static/:path*` → `Cache-Control: public, max-age=31536000, immutable`
+
+- **`src/app/settings/page.tsx`** — Added "App" card in General tab:
+  - Shows `APP_VERSION` (git hash) from `src/lib/version.ts`
+  - "Check for updates" button → calls `reg.update()`, shows toast with result
+  - "Update now" button appears when `updateAvailable` is true
+  - Both buttons hidden for non-field_staff roles
+
+- **`src/hooks/use-photo-queue.ts`** — Two additions:
+  - `navigator.storage.persist()` called at mount — requests browser to protect IndexedDB from storage pressure eviction (Chrome auto-grants for installed PWAs)
+  - Background Sync registration: `'sync-photos'` tag registered when photo is queued — Chrome/Android retries upload even if tab closed or phone restarted
+
+- **`docs/PWA-PLAN.md`** — Replaced with comprehensive 12-section plan:
+  - Architecture decisions, icon generation, manifest, SW rules, install prompt, update flow, persistent storage, Background Sync, Firefox limitations, implementation order, testing checklist, lessons from photo queue history
+
+#### Part 4: Deploy
+- Committed all PWA files in one commit (`6472aca`)
+- Updated `.opencode/context.json` with commit hash
+- Second commit for doc update (`443365b`)
+- Pushed to `main` → Vercel auto-deploy triggered
+
+#### Part 5: Photo Queue Audit (Discussion)
+- User reported "23 photos stuck in database, queue was cleared" red banner for a staff
+- Failed Uploads tab showed nothing for that staff (empty state "All clear")
+- Delivery Quality tab showed "22 photos lost" for that staff
+- Investigation revealed the photo system has 6 separate query paths that use different join logic:
+
+  | Query | Filter | Shows 23? |
+  |-------|--------|-----------|
+  | `/api/deliveries/unsynced` | `synced_to_drive=false AND photo_url IS NULL` | ✅ Yes — 23 |
+  | `/api/deliveries/failed-uploads` | Same + `verified_by IS NULL` + inner joins | ❌ No — inner joins fail (orphaned records) |
+  | `get_delivery_quality` RPC | DISTINCT items with sync failures | ✅ Shows 22 (different count method) |
+  | Failed Uploads tab UI | Calls failed-uploads API | ❌ Shows nothing |
+  | Delivery Records tab | Shows all items by UC | ✅ Shows items — admin used Accept button |
+  | Delivery Quality tab | Calls quality API | ✅ Shows 22 "photos lost" |
+
+- Root cause: photos were created in IndexedDB queue but browser storage was evicted (common before the `persist()` fix)
+- Database receipts (`delivery_photos` rows) still exist but are orphaned — the join path from delivery_photos → assignment_items → daily_assignments → staff is broken (possibly due to assignment revocation or staff reassignment)
+- Admin Accept button (`/api/admin/accept-delivery`) successfully changes `assignment_items.status` from `processing` to `delivered` — but this only works if the item is `processing`, not already `delivered`
+- Key insight: there is no single "accept-all" action for orphaned photo receipts. Each admin action handles a different subset of the data
+
+#### Part 6: GPS Enforcement Fix (Critical)
+- **Bug found:** When the phone's GPS is unavailable (denied permission, hardware off), the distance check in `src/app/api/deliveries/mark/route.ts` was skipped entirely — status defaulted to `'delivered'` with null coordinates
+- **Root cause:** Lines 119-124 only checked distance when `gps_lat != null && gps_lng != null`. Null GPS meant the entire enforcement block was bypassed.
+- **Fix applied:**
+  ```
+  Before:
+    if (gps_lat != null && gps_lng != null && target_lat != null && target_lng != null) {
+      distance = haversine(...)
+      if (enforceGps && distance > threshold) status = 'processing'
+    }
+  
+  After:
+    if (gps_lat == null || gps_lng == null) {
+      if (enforceGps) status = 'processing'    // NEW: null GPS = processing
+    } else if (target_lat != null && target_lng != null) {
+      distance = haversine(...)
+      if (enforceGps && distance > threshold) status = 'processing'
+    }
+  ```
+- Behavior now:
+  - GPS on + within range → `delivered` (no change)
+  - GPS on + out of range → `processing` (no change)
+  - GPS off + enforcement on → `processing` (NEW — was `delivered`)
+  - GPS off + enforcement off → `delivered` (admin-controlled bypass)
+- Build verification: `npx tsc --noEmit` — zero errors
+
+#### Part 7: Duplicate Key Discussion
+- User's observation: duplicate PSID keys in React component `key={m.psid}` should not happen because PSID is not the app's primary key — `survey_id` is
+- Investigation found the delivery trail route (`src/app/api/live/delivery-trail/route.ts`) already deduplicates markers by PSID (lines 79-96), so `key={m.psid}` in `live-delivery-trail.tsx` is actually safe
+- The real issue was a different component: `search-results-popover.tsx` also uses `key={r.psid}` which could have duplicate PSIDs across different bill months
+- Office work already done (commit `3f2c9a2`) migrated search to use `survey_id` as primary identifier
+- Conclusion: the delivery trail should NOT be migrated to `survey_id` because:
+  - It's read-only (no data corruption risk from wrong key)
+  - The dedup already ensures key uniqueness
+  - The delivery system uses `psid` as its join key intentionally (per AGENTS.md)
 
 ### Key Decisions
 - Manual SW over @serwist — simpler bypass rules for Supabase/Google/map tiles, zero build complexity.
-- SW does NOT auto `skipWaiting` — user controls update via toast + reload.
-- `navigator.storage.persist()` prevents IndexedDB eviction under storage pressure.
+- SW does NOT auto `skipWaiting` — user controls update timing via toast + reload button.
+- `navigator.storage.persist()` prevents IndexedDB eviction under storage pressure — Chrome auto-grants for installed PWAs.
 - Background Sync is Chrome/Android only — Firefox/iOS falls back to existing `online` event listener.
+- Null GPS + enforcement on = `processing` (reject, not auto-deliver). Admin can still Accept in Delivery Records.
+- Null GPS + enforcement off = `delivered` (admin-controlled bypass for known problem areas).
+- Delivery trail should keep `psid` as join key (not migrate to `survey_id`) — the system uses `psid` for deliveries/payments intentionally.
 
 ### Build Verification
 - `npx tsc --noEmit` — zero errors
 - `npx next build` — successful, 56 routes including `/manifest.webmanifest`
 
-### Deploy
-- Committed and pushed to `main` → Vercel auto-deploy.
+### Git Log
+- `6472aca` — PWA: manifest, SW, icons, install prompt, update detection, persistent storage
+- `443365b` — Update context.json with PWA commit hash
+- Pushed to `main` → Vercel auto-deploy triggered
+
+### Testing Verification (Pending)
+1. Chrome Android: Open deployed site → manifest loads in DevTools → SW registered as "activated"
+2. Install prompt appears → install as standalone app → no address bar, dark splash screen
+3. Go offline → navigate to new URL → see "You're offline" fallback page
+4. Previously visited pages load from cache (NetworkFirst)
+5. Back online → normal function resumes
+6. `/settings` → App card shows version hash, "Check for updates" works
+7. Network tab: `/api/*`, supabase.co requests NOT cached by SW
+8. Staff GPS off → take photo → status shows `processing` (amber badge), not `delivered`
+9. Admin Settings → GPS Enforcement OFF → staff GPS off → `delivered` (bypass)
+10. Firefox: SW + offline work, no install prompt (expected limitation)

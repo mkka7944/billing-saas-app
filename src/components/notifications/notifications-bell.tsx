@@ -47,21 +47,23 @@ export function NotificationsBell({ className }: NotificationsBellProps) {
         <UnreadBadge />
       </button>
 
+      {/* Mobile: backdrop */}
+      {open && (
+        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)} />
+      )}
+
       {/* Mobile: bottom sheet */}
       {open && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpen(false)} />
-          <div className="fixed bottom-0 left-0 right-0 bg-background rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh] z-10 animate-in slide-in-from-bottom-2 duration-300 ease-out">
-            <div className="flex justify-center pt-2.5 pb-2 shrink-0">
-              <div className="w-9 h-1 rounded-full bg-muted-foreground/20" />
-            </div>
-            <div className="flex items-center justify-between px-4 pb-2 shrink-0">
-              <h2 className="text-sm font-bold">Notifications</h2>
-              <button onClick={() => setOpen(false)} className="text-[11px] text-muted-foreground hover:text-foreground cursor-pointer">Close</button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 pb-4">
-              <NotificationsPanelContent onClose={() => setOpen(false)} router={router} />
-            </div>
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh] lg:hidden animate-in slide-in-from-bottom-2 duration-300 ease-out">
+          <div className="flex justify-center pt-2.5 pb-2 shrink-0">
+            <div className="w-9 h-1 rounded-full bg-muted-foreground/20" />
+          </div>
+          <div className="flex items-center justify-between px-4 pb-2 shrink-0">
+            <h2 className="text-sm font-bold">Notifications</h2>
+            <button onClick={() => setOpen(false)} className="text-[11px] text-muted-foreground hover:text-foreground cursor-pointer">Close</button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 pb-4">
+            <NotificationsPanelContent onClose={() => setOpen(false)} router={router} />
           </div>
         </div>
       )}

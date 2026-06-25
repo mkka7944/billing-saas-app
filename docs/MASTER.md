@@ -74,6 +74,9 @@
 31. [M3 — JSON Marker Chunks + Global Search Design](#31-m3--json-marker-chunks--global-search-2026-06-21)
 32. [T1 — Transition & Zoom Uniformity Plan](#32-t1--transition--zoom-uniformity-plan-2026-06-21)
 33. [Global Search Implementation & UI Refinements](#33-global-search-implementation--ui-refinements-2026-06-22)
+34. [PWA Architecture](#34-pwa-architecture-2026-06-25)
+35. [GPS Enforcement Rules](#35-gps-enforcement-rules-2026-06-25)
+36. [Photo Queue System Map](#36-photo-queue-system-map-2026-06-25)
 ---
 ## App Vision â€” Daily Reference
 
@@ -3618,3 +3621,251 @@ See SESSION.md 2026-06-22 entry for full 14-step testing regime. Key ones:
 3. Clear search → marker disappears
 4. Mobile deliver page → FloatingActions shows Search + Photos only
 5. Deliver page search → navigates to item page + blue ring highlight
+
+---
+## 34. PWA Architecture (2026-06-25)
+
+### 34.1 Service Worker
+
+**File:** `public/sw.js` (manual JS, no build dependency)
+
+**Cache strategies:**
+
+| Pattern | Strategy | Targets |
+|---------|----------|---------|
+| Static assets | CacheFirst | `/_next/static/*` (hashed, 1yr immutable) |
+| Navigation | NetworkFirst | HTML pages → offline fallback on failure |
+| JSON data | StaleWhileRevalidate | API JSON responses |
+| Bypass (no cache) | — | `supabase.co`, `googleapis.com`, `googleusercontent.com`, `openstreetmap.org`, `basemaps.cartocdn.com`, RSC Flight payloads (`/_next/data/*`, chunk JS), all `/api/*` routes |
+
+**Key design choices:**
+- `updateViaCache: 'none'` — prevents stale SW from HTTP cache
+- Does NOT auto `skipWaiting` — user controls update via toast → `postMessage('SKIP_WAITING')` → `controllerchange` reload
+- Background Sync listener for `'sync-photos'` tag (registered by `use-photo-queue.ts`)
+- Photo upload POSTs to GAS webhook bypass the SW entirely (direct browser-to-Google, no Vercel)
+- No `window.caches` manipulation needed — photo queue uses IndexedDB, not Cache API
+
+### 34.2 Web App Manifest
+
+**File:** `src/app/manifest.ts` (Next.js route handler, served at `/manifest.webmanifest`)
+
+```ts
+export const GET = () => {
+  const manifest = {
+    name: 'TMT Billing',
+    short_name: 'TMT Billing',
+    description: 'Field staff bill delivery & verification',
+    start_url: '/',
+    id: '/',           // stable ID — prevents re-prompt on URL changes
+    display: 'standalone',
+    orientation: 'portrait',
+    theme_color: '#0f172a',     // slate-900
+    background_color: '#1e293b', // slate-800
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icon-192-maskable.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+      { src: '/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  }
+  return NextResponse.json(manifest)
+}
+```
+
+### 34.3 Update Detection Flow
+
+1. Vercel deploys new version → byte-diff change to `sw.js`
+2. Browser detects new SW in background, installs it, `reg.waiting` is set
+3. `PwaRegister` component detects `reg.waiting` via `onupdatefound` event
+4. `useSWUpdate().updateAvailable` becomes `true`
+5. Toast appears: "New version available → tap to reload"
+6. User taps → `applyUpdate()` posts `SKIP_WAITING` to waiting SW
+7. Old SW releases control, new SW activates, `controllerchange` fires
+8. `PwaRegister` detects `controllerchange` → `window.location.reload()`
+9. Page reloads with new code
+10. Manual check via Settings → App → "Check for updates" button calls `reg.update()`
+
+### 34.4 Install Prompt
+
+- `PwaRegister` listens for `beforeinstallprompt` event
+- Stores the event, shows install button in bottom nav or app header
+- User taps install → `prompt()` → user confirms → app added to home screen
+- If already installed, install button is hidden (detected via `matchMedia('(display-mode: standalone)')`)
+- Firefox: no install prompt support (expected limitation)
+
+### 34.5 Persistent Storage
+
+**File:** `src/hooks/use-photo-queue.ts` (mount effect)
+
+```ts
+useEffect(() => {
+  navigator.storage?.persist?.()
+    .then(granted => console.log('Storage persisted:', granted))
+}, [])
+```
+
+- Requests browser to protect IndexedDB from storage pressure eviction
+- Chrome auto-grants for installed PWAs with high engagement
+- Prevents the "N photos stuck" scenario where browser clears the photo queue IndexedDB store
+
+### 34.6 Background Sync
+
+- Registered in `use-photo-queue.ts` when photo is enqueued:
+  ```ts
+  navigator.serviceWorker?.ready.then(reg => reg.sync.register('sync-photos'))
+  ```
+- Chrome/Android only — service worker retries photo upload even if tab closed or phone restarted
+- Firefox/iOS fallback: `window.addEventListener('online', processQueue)` — runs when connection returns
+
+### 34.7 Headers
+
+**File:** `next.config.ts`
+
+```ts
+headers: async () => [
+  {
+    source: '/sw.js',
+    headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
+  },
+  {
+    source: '/manifest.webmanifest',
+    headers: [{ key: 'Cache-Control', value: 'public, max-age=3600' }],
+  },
+  {
+    source: '/_next/static/:path*',
+    headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+  },
+]
+```
+
+### 34.8 Browser Support
+
+| Feature | Chrome Android | Samsung Internet | Firefox Android |
+|---------|---------------|-----------------|----------------|
+| Install prompt | ✅ | ✅ (OneUI only) | ❌ |
+| Service Worker | ✅ | ✅ | ✅ |
+| Offline support | ✅ | ✅ | ✅ |
+| Background Sync | ✅ | ❌ | ❌ |
+| `persist()` | ✅ (auto-grant) | ⚠️ Partial | ⚠️ Partial |
+| Push notifications | ✅ | ❌ | ❌ |
+
+Staff encouraged to use Chrome Android for full PWA experience.
+
+---
+## 35. GPS Enforcement Rules (2026-06-25)
+
+### 35.1 Three Delivery Statuses
+
+| Status | Meaning | Set By |
+|--------|---------|--------|
+| `pending` | Not yet visited | Initial assignment |
+| `delivered` | Successfully delivered with verified location | Staff mark + GPS check passes |
+| `processing` | Photo taken but location is out of range or unavailable | Staff mark + GPS check fails |
+| `missed` | Could not deliver | Staff marks as missed |
+
+### 35.2 Status Determination Logic
+
+File: `src/app/api/deliveries/mark/route.ts` (lines 115-128)
+
+```
+enforceGps = read from app_settings (default: true)
+gpsThreshold = read from app_settings (default: 50 meters)
+
+IF staff's GPS coordinates are NULL:
+  IF enforceGps is true → status = 'processing'
+  IF enforceGps is false → status = 'delivered'
+
+IF staff's GPS coordinates are available AND target coordinates are available:
+  distance = haversine(staffGPS, targetGPS)
+  IF enforceGps is true AND distance > gpsThreshold → status = 'processing'
+  ELSE → status = 'delivered'
+```
+
+### 35.3 Admin Override Paths
+
+| Action | Endpoint | Changes | Use Case |
+|--------|----------|---------|----------|
+| Accept | `POST /api/admin/accept-delivery` | `processing` → `delivered` | Admin verifies delivery was valid despite GPS issue |
+| Verify | `POST /api/deliveries/verify-photo` | Sets `verified_by` on `delivery_photos` | Admin confirms photo is acceptable despite sync failure |
+| Force | `POST /api/deliveries/force` | Bypasses everything | Emergency override |
+
+### 35.4 GPS Enforcement Settings
+
+Stored in `app_settings` table under key `gps_enforcement`:
+```json
+{
+  "enforce": true,
+  "threshold": 50
+}
+```
+
+Configurable via Settings → Delivery → GPS Enforcement:
+- Toggle: Enable/disable (disabling allows delivery without GPS)
+- Threshold: Distance in meters (default 50)
+
+---
+## 36. Photo Queue System Map (2026-06-25)
+
+### 36.1 Complete File Inventory
+
+| Component | Path | Role |
+|-----------|------|------|
+| Unit Delivery Sheet (camera trigger) | `src/components/delivery/unit-delivery-sheet.tsx` | Captures photo, calls mark API, decides upload vs queue |
+| useDeliverUnit hook | `src/hooks/use-deliver-unit.ts` | Wraps POST /api/deliveries/mark |
+| POST /api/deliveries/mark | `src/app/api/deliveries/mark/route.ts` | Creates delivery_photos receipt, updates assignment_items status |
+| IndexedDB photo queue (low-level) | `src/lib/photo-queue.ts` | IndexedDB CRUD operations (openDB, addToQueue, getAllQueued, removeFromQueue, markFailed, incrementRetry) |
+| Photo queue Zustand state | `src/stores/photo-queue-store.ts` | queueCount, isProcessing, processingIndex, uploadSpeed, lastError |
+| usePhotoQueue hook (business logic) | `src/hooks/use-photo-queue.ts` | enqueuePhoto, processQueue, processSingle, persist(), Background Sync registration |
+| Google Apps Script upload | `src/lib/drive-upload.ts` | Converts blob to base64, POST to GAS webhook with 30s timeout |
+| stripDataPrefix helper | `src/lib/drive.ts` | Strips data URI prefix from base64 payload |
+| POST /api/deliveries/sync-photo | `src/app/api/deliveries/sync-photo/route.ts` | Updates delivery_photos with GDrive file ID, sets synced_to_drive=true |
+| GET /api/delivery/photo/[fileId] (proxy) | `src/app/api/delivery/photo/[fileId]/route.ts` | Proxies image from Google user content, 24h cache |
+| GET /api/delivery/photos/drive (gallery) | `src/app/api/delivery/photos/drive/route.ts` | Fetches all images for a surveyId from GAS |
+| GET /api/deliveries/failed-uploads | `src/app/api/deliveries/failed-uploads/route.ts` | Queries unsynced photos with strict inner joins |
+| GET /api/deliveries/unsynced | `src/app/api/deliveries/unsynced/route.ts` | Queries unsynced photos with simple filter |
+| POST /api/deliveries/verify-photo (admin) | `src/app/api/deliveries/verify-photo/route.ts` | Sets verified_by/verified_at on delivery_photos |
+| POST /api/deliveries/force (admin) | `src/app/api/deliveries/force/route.ts` | Force-marks assignment_items as delivered by PSID |
+| GET /api/deliveries/quality | `src/app/api/deliveries/quality/route.ts` | Per-staff monthly quality metrics |
+| GET /api/admin/accept-delivery | `src/app/api/admin/accept-delivery/route.ts` | Changes processing → delivered for one item |
+| Image compression | `src/lib/image/compress.ts` | WebP 1024px max, 0.6 quality |
+| Offline assignment cache | `src/lib/offline-cache.ts` | IndexedDB store for cached assignment data (separate DB from photo queue) |
+| Service Worker | `public/sw.js` | Bypasses all upload requests, Background Sync listener |
+| GAS webhook URL | `.env.local` (NEXT_PUBLIC_DRIVE_WEBHOOK_URL) | Production: script.google.com/macros/s/.../exec |
+
+### 36.2 Query Criteria Differences (Root Cause of "N photos stuck" Confusion)
+
+| Query | SQL Filter | Shows Orphan? |
+|-------|-----------|---------------|
+| `unsynced` | `synced_to_drive=false AND photo_url IS NULL` | ✅ Yes — catch-all |
+| `failed-uploads` | `synced_to_drive=false AND verified_by IS NULL` + inner joins through assignment_items → daily_assignments → staff | ❌ Only if join path is intact |
+| `quality` RPC | DISTINCT items where photos match sync failure | ⚠️ Partial — different count method |
+
+The inner joins in `failed-uploads` are the key difference. When an assignment is revoked or a staff member is reassigned, the photos still exist in `delivery_photos` but can't be linked back through the join chain. These orphans are visible in the unsynced count (red banner on deliver page) but invisible in the Failed Uploads admin tab.
+
+### 36.3 The Photo Journey (End-to-End)
+
+1. **Capture:** Staff taps "Take Picture & Deliver" → GPS distance check (50m threshold)
+   - If GPS out of range → flag dialog appears (UnSent / Duplicate PSID / Duplicate S-ID)
+   - If in range → opens phone camera via `<input type="file" capture="environment">`
+2. **Mark:** Photo file selected → `POST /api/deliveries/mark` called with the assignment item ID
+   - Creates `delivery_photos` row with `synced_to_drive = false`
+   - Updates `assignment_items.status` to `delivered` or `processing`
+   - Returns `delivery_photo_id`
+3. **Upload:** Compresses photo to WebP (1024px, 0.6 quality) → `uploadToGAS(blob, surveyId, email)`
+   - Direct POST to Google Apps Script webhook (30s timeout, no Vercel)
+   - Returns Google Drive file ID
+4. **Sync:** If upload succeeds → `POST /api/deliveries/sync-photo` links file ID to DB
+   - Sets `photo_url = /api/delivery/photo/{fileId}`, `synced_to_drive = true`
+   - Photo is now fully delivered and viewable
+5. **Queue fallback:** If upload fails OR offline OR manual sync mode → `enqueuePhoto()` saves to IndexedDB
+   - Stored as WebP Blob (50-100 KB each)
+   - Automatic retry process: upload → sync → remove from queue
+   - Exponential backoff: 5s × retryCount, max 60s
+6. **Retry conditions:**
+   - `window.addEventListener('online')` → auto-process queue
+   - Background Sync (`sync-photos` event, Chrome/Android) → retries even when phone asleep
+   - Manual sync mode: staff taps "Sync All" button in Unsent Images section
+7. **Admin recovery paths:**
+   - **Accept** button (Delivery Records tab): `processing` → `delivered`, no photo needed
+   - **Verify** button (Failed Uploads tab): marks photo as admin-verified, clears the failed-uploads query
+   - **Force** button `/api/deliveries/force`: emergency override by PSID
