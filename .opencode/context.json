@@ -34,6 +34,6 @@
     "Phase M3 — JSON Marker Chunks (Supabase Storage)",
     "Pipeline: update bill-extractor-v4.py with city/tehsil, add updated_at to payment_history"
   ],
-  "gitCheckpoint": "{will update after commit}",
-  "gitCurrentHead": "{will update after commit}"
+  "gitCheckpoint": "6472aca",
+  "gitCurrentHead": "6472aca"
 }
