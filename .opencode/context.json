@@ -1,52 +1,39 @@
 {
-  "lastSession": "2026-06-25 — Live Monitoring Phase 2 (Staff GPS) + UDS Accuracy",
-  "currentPhase": "Phase G.2 Complete — All open issues fixed",
-  "currentStep": "Phase 2 staff positions (DB, API, hook, map layer, GPS reporter). Unified polling interval. UDS GPS accuracy display. 14+ file changes across live monitoring and delivery flow.",
+  "lastSession": "2026-06-25 — PWA implementation + icon regeneration + deploy",
+  "currentPhase": "PWA Complete — Deploying to Vercel",
+  "currentStep": "PWA: manifest, SW, icons, install prompt, update detection, persistent storage, Background Sync. Regenerated icons from background-removed source (docs/tmt-billing-3-removebg-preview.png). Pre-commit doc update + git push to main.",
   "filesModified": [
-    "src/stores/live-store.ts",
-    "src/hooks/use-delivery-trail.ts",
-    "src/hooks/use-user-location.ts",
-    "src/hooks/use-deliver-unit.ts",
-    "src/hooks/use-staff-positions.ts",
-    "src/app/api/live/delivery-trail/route.ts",
-    "src/app/api/live/report-location/route.ts",
-    "src/app/api/live/staff-positions/route.ts",
-    "src/app/api/deliveries/mark/route.ts",
-    "src/components/live/live-panel.tsx",
-    "src/components/live/live-summary-bar.tsx",
-    "src/components/live/live-uc-cards.tsx",
-    "src/components/live/live-staff-list.tsx",
-    "src/components/live/live-activity-feed.tsx",
-    "src/components/live/staff-position-layers.tsx",
-    "src/components/layout/floating-actions.tsx",
-    "src/app/map/page.tsx",
-    "src/components/delivery/unit-delivery-sheet.tsx",
-    "scripts/sql/050-staff-locations.sql"
+    "src/app/layout.tsx",
+    "src/app/settings/page.tsx",
+    "src/hooks/use-photo-queue.ts",
+    "next.config.ts",
+    "docs/PWA-PLAN.md"
   ],
   "filesCreated": [
-    "scripts/sql/050-staff-locations.sql",
-    "src/app/api/live/report-location/route.ts",
-    "src/app/api/live/staff-positions/route.ts",
-    "src/hooks/use-staff-positions.ts",
-    "src/components/live/staff-position-layers.tsx"
+    "public/sw.js",
+    "public/offline.html",
+    "public/icon-192.png",
+    "public/icon-512.png",
+    "public/icon-192-maskable.png",
+    "public/icon-512-maskable.png",
+    "public/icon-source.png",
+    "src/app/manifest.ts",
+    "src/components/providers/pwa-register.tsx",
+    "scripts/generate-icons.mjs"
   ],
   "keyDecisions": [
-    "GPS positions come from periodic phone POSTs to staff_locations table, not from assignment_items.",
-    "Staff phone reports GPS every live_poll_interval (default 60s), only when moved >50m or >5min heartbeat.",
-    "Admin polls for positions at the same live_poll_interval — one setting controls both directions.",
-    "Staff list uses activities (not markers) so staff without GPS coordinates still appear.",
-    "Missed items excluded from live panel UI (removed from summary, UC cards, staff list, activity feed).",
-    "GPS accuracy ±Xm shown in UDS live bar (before icon) and post-delivery confirmation."
+    "Manual SW over @serwist — simpler bypass rules for Supabase/Google/map tiles, zero build complexity",
+    "SW does NOT auto skipWaiting — user controls update timing via toast + reload button",
+    "navigator.storage.persist() added to photo-queue mount — prevents IndexedDB eviction",
+    "Background Sync (Chrome/Android) registered for failed photo uploads — retries even if tab closed",
+    "PWA icons generated from docs/tmt-billing-2.png (4 variants). User provided removebg version, regenerated."
   ],
   "nextActions": [
-    "PWA: manifest.ts, sw.js, pwa-register component, icons, next.config headers",
-    "Fix delivery trail query order — query assignment_items by date first, then survey_units",
-    "Marker clustering + UC count badges (Phase M2)",
-    "Settings confirm dialog before saving live_poll_interval",
-    "Add gps_accuracy column to delivery_photos + assignment_items",
-    "Auto-cleanup cron for staff_locations",
-    "Per-city breakdown rows in live panel"
+    "Test PWA in production — manifest, install, offline, update flow",
+    "Phase T1 — persist mapZoom, selectedHouseId, filters across navigation",
+    "Phase M3 — JSON Marker Chunks (Supabase Storage)",
+    "Pipeline: update bill-extractor-v4.py with city/tehsil, add updated_at to payment_history"
   ],
-  "gitCheckpoint": "939db22",
-  "gitCurrentHead": "939db22 + 5 file changes (UDS accuracy flow)"
+  "gitCheckpoint": "{will update after commit}",
+  "gitCurrentHead": "{will update after commit}"
 }

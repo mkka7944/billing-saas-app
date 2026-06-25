@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { AuthInit } from "@/components/providers/auth-init";
 import { GlobalErrorLogger } from "@/components/providers/global-error-logger";
+import { PwaRegister } from "@/components/providers/pwa-register";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { ToastProvider } from "@/hooks/use-toast";
 
@@ -29,6 +30,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "TMT Billing",
   description: "Billing & Recovery System",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "TMT Billing",
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport: Viewport = {
@@ -65,6 +75,7 @@ export default function RootLayout({
               <ConfirmProvider>
                 <ToastProvider>
                   <GlobalErrorLogger />
+                  <PwaRegister />
                   {children}
                 </ToastProvider>
               </ConfirmProvider>

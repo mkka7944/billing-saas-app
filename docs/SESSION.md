@@ -4600,3 +4600,42 @@ See priority list below
 | 11 | Auto-cleanup cron for `staff_locations` | ~10m |
 | 12 | Remove `use-delivery-trail.ts` unused `time_label` from `ActivityEvent` | ~2m |
 | 13 | Orientations/architecture doc for new Phase 2 files | ~15m |
+
+---
+
+## 2026-06-25 — PWA Implementation + Icon Regeneration + Deploy
+
+### Phase: PWA Complete
+
+### What
+- **PWA core files created:**
+  - `public/sw.js` — Service worker with bypass rules (supabase.co, googleapis.com, map tiles, RSC payloads, all `/api/*`). CacheFirst for static assets, NetworkFirst for navigation (offline fallback), StaleWhileRevalidate for JSON. Background Sync support (`sync-photos`). Listens for `SKIP_WAITING` message.
+  - `public/offline.html` — Dark theme offline fallback page with Retry button.
+  - `src/app/manifest.ts` — Standalone, portrait, dark theme (`#0f172a`/`#1e293b`), 4 icons, stable `id: '/'`.
+  - `src/components/providers/pwa-register.tsx` — PWA register (SW reg, install prompt, update detection) + `useSWUpdate` hook.
+  - `scripts/generate-icons.mjs` — Sharp-based icon generation utility.
+
+- **Modified files:**
+  - `src/app/layout.tsx` — Added manifest link, appleWebApp metadata, formatDetection, `<PwaRegister />`.
+  - `next.config.ts` — PWA headers: SW no-cache, manifest 1h, static assets 1yr immutable.
+  - `src/app/settings/page.tsx` — App card with version ("Check for updates" + "Update now" buttons).
+  - `src/hooks/use-photo-queue.ts` — Added `navigator.storage.persist()` + Background Sync registration.
+  - `docs/PWA-PLAN.md` — Comprehensive 12-section plan.
+
+- **Icon regeneration:**
+  - User provided `docs/tmt-billing-3-removebg-preview.png` (background removed).
+  - Trimmed 677×369 → 317×318 content bounding box, centered on square, generated 4 icon variants.
+  - Viewable copy saved to `docs/tmt-billing-3-square.png`.
+
+### Key Decisions
+- Manual SW over @serwist — simpler bypass rules for Supabase/Google/map tiles, zero build complexity.
+- SW does NOT auto `skipWaiting` — user controls update via toast + reload.
+- `navigator.storage.persist()` prevents IndexedDB eviction under storage pressure.
+- Background Sync is Chrome/Android only — Firefox/iOS falls back to existing `online` event listener.
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors
+- `npx next build` — successful, 56 routes including `/manifest.webmanifest`
+
+### Deploy
+- Committed and pushed to `main` → Vercel auto-deploy.

@@ -166,6 +166,16 @@ export function usePhotoQueue() {
     if (!opts.skipAutoSync && navigator.onLine) {
       processQueue()
     }
+
+    // Register background sync for failed uploads (Chrome/Android)
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      try {
+        const reg = await navigator.serviceWorker.ready
+        await (reg as any).sync.register('sync-photos')
+      } catch {
+        // Background Sync not supported (Firefox, iOS) — fallback to online event
+      }
+    }
   }, [refreshCount, processQueue])
 
   const { data: appSettings } = useSettings()
@@ -175,6 +185,15 @@ export function usePhotoQueue() {
   }, [appSettings])
 
   useEffect(() => {
+    // Request persistent storage so browser doesn't evict the photo queue
+    if (navigator.storage?.persist) {
+      navigator.storage.persist().then((persisted) => {
+        if (persisted) {
+          console.log('Persistent storage granted — photo queue protected')
+        }
+      })
+    }
+
     refreshCount()
 
     const handleOnline = () => {

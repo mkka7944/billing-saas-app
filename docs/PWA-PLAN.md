@@ -1,7 +1,7 @@
 # PWA Implementation Plan
 
-> Based on routing-station reference (`scripts/ref/routing-station-src/routing-station-src/`)
-> and modern Next.js 16 App Router best practices. Created 2026-06-22.
+> Updated 2026-06-25 with lessons from photo queue history, routing station PWA reference,
+> and comprehensive research on IndexedDB persistence, Background Sync, and Firefox support.
 
 ---
 
@@ -15,16 +15,68 @@
 | Icons | PNGs 192x192 + 512x512 (+ maskable variants) | `public/icon-*.png` |
 | Install Prompt | `beforeinstallprompt` event handler | In `pwa-register.tsx` |
 | Offline Fallback | Minimal HTML page | `public/offline.html` |
+| Update Detection | Toast + "Reload" via `postMessage('SKIP_WAITING')` | In `pwa-register.tsx` |
+| Persistent Storage | `navigator.storage.persist()` at app init | In `src/lib/photo-queue.ts` |
+| Background Sync | `SyncManager` API in SW + `online` event fallback | In `public/sw.js` + `use-photo-queue.ts` |
 
 **Why manual SW instead of @serwist/turbopack:**
 - Our app has very specific caching rules (bypass Supabase/Google/map tiles) that are easier in plain JS
 - The routing-station's SW is a proven template we can adapt directly
 - Zero build complexity — plain JS in `public/`, no extra dependencies
 - RSC avoidance is one check in the fetch handler
+- We must never cache RSC payloads or API routes (lessons from photo queue history)
 
 ---
 
-## 1. Manifest — `src/app/manifest.ts`
+## Hard-Earned Lessons (From Photo Queue + Routing Station History)
+
+These are the specific failures and fixes that shaped this plan:
+
+| Lesson | What happened | How PWA addresses it |
+|--------|--------------|----------------------|
+| **SSR proxy killed uploads** | Photos routed through Vercel → 85% failure (10s timeout + GAS rate limits). Fixed by direct browser→GAS upload. | SW must never intercept upload POSTs. API routes = network-only bypass. |
+| **IndexedDB DB_VERSION trap** | "object store not found" — store created after DB was already opened at older version. Manual version bump fixed it. | Migration pattern must use cumulative `switch` with fall-through. Add version check at app init. |
+| **Two separate IndexedDB queues** | `photo-queue` and `unsent-photo-queue` are independent. Photos in one are invisible in the other. Still an open issue. | PWA should consolidate to one queue with a `type` field (`online` / `unsent`). |
+| **`incrementRetry` race condition** | Potential queue data corruption under concurrent async access. | Use IndexedDB transactions properly. One transaction per read-modify-write. |
+| **sendBeacon on tab close** | Best-effort only. Photo lost if phone dies before upload completes. | Background Sync API retries after phone restart/tab close (Chrome/Android). |
+| **Blob stored directly in IndexedDB** | Correct choice — avoids FileReader UI freeze on main thread. | Keep this pattern. Add `navigator.storage.persist()` to prevent eviction under storage pressure. |
+| **GAS 30s timeout + unbounded retries** | Timeout 8s→30s, removed MAX_RETRIES cap. Currently retries forever while app is open. | Background Sync handles retries even after browser close. Combined = full coverage. |
+| **Caching supabase.co breaks auth** | #1 routing station lesson. Caching Supabase API calls causes silent auth failures. | Bypass list in SW: `supabase.co`, `google.com`, `googleapis.com`, map tile hosts. |
+| **RSC payloads must never be cached** | Stale RSC = blank screen or broken UI after deploy. | Check `event.request.headers.get('Accept')` for `text/x-component` — bypass immediately. |
+| **Staff use Firefox for camera** | Samsung Chrome has broken BarcodeDetector. Firefox cameras work. | Service workers work in Firefox (caching + offline). Install prompt + Background Sync are Chrome-only. See Firefox section below. |
+
+---
+
+## 1. Icons — `public/icon-*.png`
+
+Need 4 icon files:
+- `icon-192.png` (192x192)
+- `icon-512.png` (512x512)
+- `icon-192-maskable.png` (192x192 with 20% padding for maskable)
+- `icon-512-maskable.png` (512x512 with 20% padding for maskable)
+
+**Generation options:**
+
+1. **Canva** (free) — Design an icon with "TMT Billing" text + simple symbol (shield/map pin). Export PNGs at 192 and 512.
+2. **`pwa-asset-generator`** (npm) — `npx pwa-asset-generator logo.svg public/` — auto-generates all sizes + maskable variants from a single source SVG.
+3. **ChatGPT-4o / DALL-E** — Prompt: "App icon for TMT Billing field app, dark theme rounded square, simple flat design, 512x512 PNG" — generates unique icon, then resize for variants.
+4. **realfavicongenerator.net** — Upload a source image, download all icon formats.
+
+**What they look like in manifest:**
+```json
+{
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+```
+
+---
+
+## 2. Manifest — `src/app/manifest.ts`
 
 Next.js App Router convention: export a default function returning `MetadataRoute.Manifest`.
 
@@ -38,6 +90,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description: 'Billing & Recovery System — Delivery management and field staff operations',
     start_url: '/',
     scope: '/',
+    id: '/',                    // stable ID prevents re-install on update
     display: 'standalone',
     orientation: 'portrait',
     background_color: '#0f172a',
@@ -52,8 +105,6 @@ export default function manifest(): MetadataRoute.Manifest {
 }
 ```
 
-Reference: routing-station's `manifest.json` (same name/short_name pattern, same dark theme colors, two icons).
-
 ### Layout Metadata Update (`src/app/layout.tsx`)
 
 Add to existing `metadata` export:
@@ -61,7 +112,7 @@ Add to existing `metadata` export:
 export const metadata: Metadata = {
   title: 'TMT Billing',
   description: 'Billing & Recovery System',
-  manifest: '/manifest.webmanifest',  // ← auto-generated by Next.js from manifest.ts
+  manifest: '/manifest.webmanifest',  // auto-generated by Next.js from manifest.ts
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -71,34 +122,20 @@ export const metadata: Metadata = {
 }
 ```
 
-Next.js auto-wires `<link rel="manifest" href="/manifest.webmanifest">` in the HTML head.
-
 ---
 
-## 2. Service Worker — `public/sw.js`
+## 3. Service Worker — `public/sw.js`
 
-Adapted from routing-station's `sw.js` with Next.js-specific additions.
+Adapted from routing-station's proven `sw.js` (95 lines, `scripts/ref/routing-station-src/routing-station-src/sw.js`) with Next.js-specific additions.
 
-### Strategy
-
-| Asset | Strategy | Why |
-|-------|----------|-----|
-| `/_next/static/*` | **CacheFirst** | Content-hashed filenames = immutable forever |
-| `/_next/image/*` | **NetworkOnly** | Dynamic images need fresh data |
-| `/api/*` (all SSR routes) | **NetworkOnly** | Always fresh data |
-| Supabase/Google/map tiles | **Bypass** (return undefined) | Same as routing-station — critical |
-| `*.json` (future JSON chunks) | **StaleWhileRevalidate** | Same as routing-station |
-| Navigation (HTML) | **NetworkFirst** with offline fallback | Same as routing-station |
-| RSC/Flight payloads | **NetworkOnly** | Stale RSC = broken app after deploy |
-
-### Full SW Code Outline
+### Full SW Code
 
 ```js
 const CACHE_NAME = 'tmt-billing-v1'
 const STATIC_CACHE = 'tmt-static-v1'
 const OFFLINE_URL = '/offline.html'
 
-// Bypass hosts — exact list from routing-station
+// Bypass hosts — exact list from routing station (#1 lesson: caching these breaks auth + maps)
 const BYPASS_HOSTS = [
   'supabase.co',
   'google.com',
@@ -107,6 +144,36 @@ const BYPASS_HOSTS = [
   'openstreetmap.org',
   'basemaps.cartocdn.com',
 ]
+
+// Background Sync: process photo queue when online
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-photos') {
+    event.waitUntil(processPhotoQueue())
+  }
+})
+
+async function processPhotoQueue() {
+  // SW reads IndexedDB photo queue and retries failed uploads
+  // This retries even after phone restart or tab close (Chrome/Android only)
+  const db = await openDB('billing-saas-photo-queue', 6)
+  const items = await db.getAll('photo_queue')
+  for (const item of items) {
+    try {
+      await fetch(item.email, {
+        method: 'POST',
+        body: JSON.stringify({
+          photo: item.photoBlob,
+          surveyId: item.surveyId,
+          lat: item.gpsLat,
+          lng: item.gpsLng,
+        }),
+      })
+      await db.delete('photo_queue', item.id)
+    } catch {
+      // Will retry on next sync event
+    }
+  }
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -132,16 +199,16 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
 
-  // 1. BYPASS — Supabase, Google, map tiles (same as routing-station)
+  // 1. BYPASS — Supabase, Google, map tiles (#1 routing station lesson)
   if (BYPASS_HOSTS.some((h) => url.hostname.includes(h))) return
 
-  // 2. BYPASS — RSC/Flight payloads (critical for Next.js)
+  // 2. BYPASS — RSC/Flight payloads (critical for Next.js — stale RSC = blank screen)
   if (event.request.headers.get('Accept')?.includes('text/x-component')) return
 
-  // 3. BYPASS — API routes (always fresh)
+  // 3. BYPASS — API routes (always fresh data, never cache SSR endpoints)
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/image')) return
 
-  // 4. CacheFirst for static assets
+  // 4. CacheFirst for static assets (hashed filenames are immutable)
   if (url.pathname.startsWith('/_next/static')) {
     event.respondWith(
       caches.match(event.request).then((cached) => cached || fetch(event.request).then((res) => {
@@ -190,17 +257,85 @@ self.addEventListener('fetch', (event) => {
 })
 ```
 
-### Key Decisions (from routing-station + research)
+### Key Decisions (from routing station + production lessons)
 
-1. **Bypass Supabase/Google/map tiles** — This was the routing-station's #1 lesson. Caching these breaks auth and maps.
-2. **Never cache RSC payloads** — The most dangerous Next.js-specific SW bug. Stale RSC = blank screen after deploy.
+1. **Bypass Supabase/Google/map tiles** — #1 routing station lesson. Caching these breaks auth and maps.
+2. **Never cache RSC payloads** — Most dangerous Next.js-specific SW bug. Stale RSC = blank screen after deploy.
 3. **Only cache `/_next/static/*` with CacheFirst** — Content-hashed filenames are immutable, safe forever.
 4. **NetworkFirst for navigation** — Uses cached HTML as offline fallback but always tries network first.
-5. **No precache of app shell** — Next.js generates different chunks per build. Precaching the entire app bundle would break after deploy. We only precache the offline page + icons + manifest.
+5. **No precache of app shell** — Next.js generates different chunks per build. Precaching entire app bundle would break after deploy. Only precache offline page + icons + manifest.
+6. **Background Sync for photo queue** — Chrome/Android only. Falls back to `online` event on other browsers.
 
 ---
 
-## 3. SW Registration — `src/components/providers/pwa-register.tsx`
+## 4. Persistent Storage — `src/lib/photo-queue.ts`
+
+Add at app initialization to prevent IndexedDB eviction under storage pressure:
+
+```ts
+async function requestPersistentStorage() {
+  if (navigator.storage?.persist) {
+    const persisted = await navigator.storage.persist()
+    if (persisted) {
+      console.log('Persistent storage granted — photo queue protected from eviction')
+    }
+  }
+}
+```
+
+Chrome auto-grants persistent storage if:
+- The site is installed as a PWA (home screen)
+- The site has high engagement
+- The site has push notifications enabled
+
+Without this, the browser may delete IndexedDB data (including the photo queue) when the device runs low on storage. This is the #1 risk for photo loss in production.
+
+---
+
+## 5. Background Sync for Photo Queue
+
+### Chrome/Android (Primary)
+
+In the service worker, handle `sync` events:
+
+```js
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-photos') {
+    event.waitUntil(processPhotoQueue())
+  }
+})
+```
+
+Register from the client when a photo fails to upload:
+
+```ts
+async function registerBackgroundSync() {
+  if ('serviceWorker' in navigator && 'SyncManager' in window) {
+    const reg = await navigator.serviceWorker.ready
+    await reg.sync.register('sync-photos')
+  }
+}
+```
+
+### Firefox/iOS (Fallback)
+
+Keep the existing `online` event + `visibilitychange` listener in `use-photo-queue.ts`:
+
+```ts
+window.addEventListener('online', syncPhotos)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') syncPhotos()
+})
+```
+
+Background Sync means Chrome retries the upload even if:
+- The user closes the browser tab
+- The phone goes to sleep
+- The phone restarts (next time Chrome opens and detects network)
+
+---
+
+## 6. PWA Register + Install + Update Detection — `src/components/providers/pwa-register.tsx`
 
 ```tsx
 'use client'
@@ -210,26 +345,49 @@ import { useEffect, useState } from 'react'
 export function PwaRegister() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
   const [installable, setInstallable] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', {
-        scope: '/',
-        updateViaCache: 'none',
-      })
-    }
+    if (!('serviceWorker' in navigator)) return
 
+    // Register SW with updateViaCache: 'none' (critical — prevents stale SW from HTTP cache)
+    navigator.serviceWorker.register('/sw.js', {
+      scope: '/',
+      updateViaCache: 'none',
+    }).then((reg) => {
+      // Detect waiting SW (new version deployed but not yet active)
+      if (reg.waiting) {
+        setWaitingWorker(reg.waiting)
+        setUpdateAvailable(true)
+      }
+
+      reg.addEventListener('updatefound', () => {
+        const newSW = reg.installing
+        if (!newSW) return
+        newSW.addEventListener('statechange', () => {
+          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+            setWaitingWorker(newSW)
+            setUpdateAvailable(true)
+          }
+        })
+      })
+    })
+
+    // Auto-reload when new SW takes over
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload()
+    })
+
+    // Install prompt
     const handler = (e: Event) => {
       e.preventDefault()
       setDeferredPrompt(e)
       setInstallable(true)
     }
-
     window.addEventListener('beforeinstallprompt', handler)
 
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handler)
-    }
+    return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
 
   const handleInstall = async () => {
@@ -240,48 +398,53 @@ export function PwaRegister() {
     setDeferredPrompt(null)
   }
 
-  return installable ? (
-    <button
-      onClick={handleInstall}
-      className="fixed bottom-4 right-4 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-lg shadow-lg text-sm font-semibold"
-    >
-      Install App
-    </button>
-  ) : null
+  const handleUpdate = () => {
+    if (waitingWorker) {
+      waitingWorker.postMessage('SKIP_WAITING')
+    }
+  }
+
+  return (
+    <>
+      {/* Update available toast — uses existing toast system */}
+      {updateAvailable && (
+        <div className="update-banner">
+          {/* Wired via useToast() — show "New version available" with reload action */}
+        </div>
+      )}
+
+      {/* Install button */}
+      {installable && (
+        <button onClick={handleInstall} className="...">
+          Install App
+        </button>
+      )}
+    </>
+  )
 }
 ```
 
 Key details:
 - `updateViaCache: 'none'` — critical, prevents browser from caching SW from HTTP cache
-- Registers SW once on mount
-- Handles `beforeinstallprompt` for native install banner
-- Shows "Install App" button when installable
+- SW does NOT auto `skipWaiting` — user controls when to update
+- Update is surfaced via the existing `useToast()` system (toast with action)
+- Manual "Check for updates" button goes in Settings → General tab
 
----
+### Listen for SKIP_WAITING in SW
 
-## 4. Icons — `public/icon-*.png`
+Add to `public/sw.js`:
 
-Need 4 icon files:
-- `icon-192.png` (192x192)
-- `icon-512.png` (512x512)
-- `icon-192-maskable.png` (192x192 with 20% padding for maskable)
-- `icon-512-maskable.png` (512x512 with 20% padding for maskable)
-
-**Generation options:**
-1. Design in Photoshop/Canva and export
-2. Use a tool like `pwa-asset-generator` (npm) to generate from SVG
-3. Use Sharp/ImageMagick from the existing SVG logo
-
-If using existing Next.js SVG (`public/next.svg` or `public/globe.svg`):
-```bash
-npx pwa-asset-generator public/globe.svg public/ -i ./src/app/layout.tsx -m ./src/app/manifest.ts
+```js
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})
 ```
 
 ---
 
-## 5. Offline Fallback — `public/offline.html`
-
-Minimal page shown when navigation fails offline:
+## 7. Offline Fallback — `public/offline.html`
 
 ```html
 <!DOCTYPE html>
@@ -307,9 +470,7 @@ Minimal page shown when navigation fails offline:
 
 ---
 
-## 6. Headers — `next.config.ts`
-
-Add proper Content-Type and cache headers:
+## 8. Headers — `next.config.ts`
 
 ```ts
 import type { NextConfig } from "next"
@@ -333,6 +494,12 @@ const nextConfig: NextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=3600' },
         ],
       },
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
     ]
   },
 }
@@ -340,34 +507,80 @@ const nextConfig: NextConfig = {
 export default nextConfig
 ```
 
+**Key point about sw.js caching:** The browser detects service worker updates by byte-comparing the fetched sw.js with the cached version. If sw.js is cached by a CDN or HTTP cache, updates never get picked up. `no-cache, no-store, must-revalidate` is mandatory.
+
 ---
 
-## 7. Implementation Order
+## 9. Firefox Support
+
+Firefox on Android has **partial** PWA support:
+
+| Feature | Chrome Android | Firefox Android |
+|---------|---------------|-----------------|
+| `beforeinstallprompt` | ✅ Full support | ❌ Not supported |
+| `display: standalone` | ✅ Full support | ❌ Opens as normal tab |
+| **Service Worker** (caching, offline) | ✅ Full support | ✅ Full support |
+| **Background Sync** | ✅ Full support | ❌ Not supported |
+| **IndexedDB** | ✅ Full support | ✅ Full support |
+| **`navigator.storage.persist()`** | ✅ Auto-grant for installed PWAs | ✅ Supported |
+
+**What this means for staff:**
+- Staff using **Firefox** still benefit from: faster load from cache, offline fallback page, and IndexedDB photo queue working normally.
+- Staff using **Firefox** miss: install-to-homescreen prompt, standalone mode (no browser chrome), and Background Sync (uploads don't retry if Firefox is closed).
+- **Recommendation:** Encourage Chrome for the full PWA experience. Firefox is a backup browser for QR scanning (the Samsung Chrome BarcodeDetector bug was already fixed separately).
+
+---
+
+## 10. What Problem Each Feature Solves
+
+| Scenario | Before PWA | After PWA |
+|----------|-----------|-----------|
+| **Photo queue survives phone shutdown** | ❌ sendBeacon best-effort only | ✅ IndexedDB + Background Sync retries after reboot |
+| **Photo queue survives tab close** | ❌ Lost if sendBeacon fails | ✅ Background Sync fires regardless of tab state |
+| **App loads on slow network** | ⏳ White screen until chunks arrive | ✅ Static chunks served from cache instantly |
+| **Phone goes offline mid-delivery** | ⚠️ Photo queued, but page blank on nav | ✅ Offline fallback page, cached assets work |
+| **New version deployed** | ❌ Staff sees stale app until hard refresh | ✅ Toast "New version → reload" |
+| **Install to home screen** | ❌ Opens in browser with URL bar | ✅ Standalone app, no browser chrome |
+| **IndexedDB evicted under storage pressure** | ⚠️ Possible photo loss | ✅ `persist()` prevents eviction for installed PWAs |
+
+---
+
+## 11. Implementation Order
 
 | Step | File(s) | Description | Est. Time |
 |------|---------|-------------|-----------|
-| 1 | `public/icon-*.png` | Generate/design icons | 15 min |
+| 1 | `public/icon-*.png` | Generate/design icons (192 + 512 + maskable variants) | 15 min |
 | 2 | `src/app/manifest.ts` | Create manifest route | 10 min |
 | 3 | `src/app/layout.tsx` | Add manifest + appleWebApp metadata | 5 min |
 | 4 | `public/offline.html` | Create minimal offline fallback | 5 min |
 | 5 | `public/sw.js` | Write service worker (adapted from routing-station) | 20 min |
-| 6 | `src/components/providers/pwa-register.tsx` | PWA register component | 10 min |
-| 7 | `next.config.ts` | Add headers for SW/manifest | 5 min |
-| 8 | Testing | Open in Chrome, verify install prompt, test offline | 20 min |
+| 6 | `src/components/providers/pwa-register.tsx` | PWA register component (SW reg + install + update detection) | 15 min |
+| 7 | `src/lib/photo-queue.ts` | Add `navigator.storage.persist()` + Background Sync registration | 10 min |
+| 8 | `next.config.ts` | Add headers for SW/manifest | 5 min |
+| 9 | Settings General tab | Add "Check for updates" button | 10 min |
+| 10 | Testing | Verify manifest, SW, install, offline, update flow | 20 min |
 | | **Total** | | **~1.5 hr** |
 
 ---
 
-## 8. Testing Checklist
+## 12. Testing Checklist
 
 1. Open app in Chrome → DevTools → Application → Manifest → verify manifest loads
-2. Application → Service Workers → verify SW registered
-3. Click "Install App" button → verify install prompt appears
-4. After install, open the standalone PWA → verify it looks/works correctly
-5. Go offline (DevTools → Network → Offline) → verify offline page shows
-6. Go back online → verify navigation works
-7. Clear SW cache → verify re-registration works
-8. Test on mobile Chrome → verify install prompt on Android
-9. Verify Supabase API calls still work (not cached by SW)
-10. Verify map tiles still load (not cached by SW)
-11. Deploy to Vercel → verify SW still works in production
+2. Application → Service Workers → verify SW registered with correct scope
+3. Verify BYPASS hosts don't appear in cache storage (supabase.co, googleapis.com)
+4. Click "Install App" button → verify install prompt appears
+5. After install, open the standalone PWA → verify it looks/works correctly
+6. Go offline (DevTools → Network → Offline) → verify offline page shows on navigation
+7. Go back online → verify navigation works
+8. Verify `/_next/static/*` files are cached (CacheFirst strategy)
+9. Verify `/api/*` calls are NOT cached (always fresh from network)
+10. Verify RSC payloads (`text/x-component`) are NOT cached
+11. Verify Supabase API calls still work (not cached by SW)
+12. Verify map tiles still load (not cached by SW)
+13. Take photo offline → verify it's queued in IndexedDB and `persist()` is active
+14. Register Background Sync → go offline → verify sync event fires when online
+15. Test update flow: deploy new version → verify toast appears → tap reload → verify new version loads
+16. Test on mobile Chrome → verify install prompt on Android
+17. Test on Firefox → verify SW still works (caching + offline)
+18. Clear SW cache → verify re-registration works
+19. Deploy to Vercel → verify SW still works in production

@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup } from '@/components/ui/select'
-import { Building2, ChevronDown, ChevronRight, Sun, Moon, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save, Send, CameraOff, CheckCircle2 } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight, Sun, Moon, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save, Send, CameraOff, CheckCircle2, RotateCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -27,6 +27,8 @@ import { DeliveryQualityTab } from '@/components/settings/delivery-quality-tab'
 import { DeliveryTable } from '@/components/settings/delivery-table'
 import { UsageTab } from '@/components/settings/usage-tab'
 import { UdsThemeSelector } from '@/components/settings/uds-theme-selector'
+import { APP_VERSION } from '@/lib/version'
+import { useSWUpdate } from '@/components/providers/pwa-register'
 
 const THEMES = [
   { id: 'light', label: 'Light', icon: Sun, desc: 'Default light' },
@@ -194,6 +196,8 @@ export default function SettingsPage() {
 
   const confirm = useConfirm()
   const { toast } = useToast()
+  const { updateAvailable, applyUpdate, checkForUpdates } = useSWUpdate()
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
 
   useEffect(() => {
     setPageIdentity('Settings', 'Appearance, account, and data usage')
@@ -668,6 +672,49 @@ export default function SettingsPage() {
                     <p>Notifications: {savedNotificationsPollingEnabled ? `${savedNotificationsPollInterval}s` : 'Off'}</p>
                     <p className="text-[10px] text-muted-foreground/60 mt-1">Ask an admin to adjust data usage settings.</p>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-bold">App</CardTitle>
+                <CardDescription className="text-xs">TMT Billing PWA</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Version</span>
+                  <span className="text-xs font-mono font-bold">{APP_VERSION}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-8 text-xs"
+                  disabled={checkingUpdate}
+                  onClick={async () => {
+                    setCheckingUpdate(true)
+                    const found = await checkForUpdates()
+                    setCheckingUpdate(false)
+                    if (found) {
+                      toast('New version available — tap Update to reload', 'info')
+                    } else {
+                      toast('App is up to date', 'success')
+                    }
+                  }}
+                >
+                  {checkingUpdate ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+                  Check for updates
+                </Button>
+                {updateAvailable && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={applyUpdate}
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Update now
+                  </Button>
                 )}
               </CardContent>
             </Card>
