@@ -12,6 +12,7 @@ import {
   getQueueCount,
   incrementRetry,
   markFailed,
+  clearAll,
 } from '@/lib/photo-queue'
 import { uploadToGAS } from '@/lib/drive-upload'
 import type { QueuedPhoto } from '@/lib/photo-queue'
@@ -203,6 +204,24 @@ export function usePhotoQueue() {
     return () => window.removeEventListener('online', handleOnline)
   }, [refreshCount, processQueue])
 
+  const clearQueue = useCallback(async () => {
+    await clearAll()
+    await refreshCount()
+    // Also clean up orphaned server-side records
+    try {
+      await fetch('/api/deliveries/clear-failed', { method: 'POST' })
+    } catch {
+      // API cleanup is best-effort
+    }
+    setProcessingIndex(0)
+    setTotalToProcess(0)
+    setCurrentFileSize('')
+    setUploadSpeed('')
+    setLastError(null)
+    processingRef.current = false
+    setProcessing(false)
+  }, [refreshCount])
+
   return {
     queueCount,
     isProcessing,
@@ -214,5 +233,6 @@ export function usePhotoQueue() {
     enqueuePhoto,
     processQueue,
     refreshCount,
+    clearQueue,
   }
 }

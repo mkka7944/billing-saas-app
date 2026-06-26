@@ -1,7 +1,7 @@
-const DB_NAME = 'billing-saas-photo-queue'
+const DB_NAME = 'billing-saas-offline-cache'
 const STORE_NAME = 'offline_cache'
 const CACHE_KEY = 'deliver-assignment-cache'
-const DB_VERSION = 6
+const DB_VERSION = 1
 
 export interface CachedAssignment {
   data: Record<string, unknown> | null

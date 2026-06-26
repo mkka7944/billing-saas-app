@@ -4,8 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 async function checkAdmin() {
   const sup = await createClient()
-  const { data: { user } } = await sup.auth.getUser()
-  if (!user) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+  const { data: { user }, error: authError } = await sup.auth.getUser()
+  if (!user || authError) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
 
   const { data: profile } = await sup
     .from('profiles')
@@ -33,54 +33,52 @@ export async function GET(req: NextRequest) {
   const dateTo = searchParams.get('date_to')
   const staffId = searchParams.get('staff_id')
   const grouped = searchParams.has('grouped')
+  const selectIdsOnly = searchParams.has('select_ids_only')
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
+  const pageSize = Math.min(Math.max(1, parseInt(searchParams.get('page_size') || '100')), 250)
 
   try {
     const sup = await createClient()
 
-    // 1. Fetch assignment_items with assignment + staff data
-    let query = sup
-      .from('assignment_items')
-      .select(`
-        id, psid, status, started_at, delivered_at, gps_lat, gps_lng,
-        daily_assignments!inner(uc_name, staff_id, staff:staff_id(id, full_name))
-      `)
-
-    if (status) {
-      query = query.eq('status', status)
-    } else {
-      query = query.in('status', ['delivered', 'processing'])
+    function applyFilters(baseQuery: any) {
+      let q = baseQuery
+      if (status) {
+        q = q.eq('status', status)
+      } else {
+        q = q.in('status', ['delivered', 'processing'])
+      }
+      if (ucName) q = q.eq('daily_assignments.uc_name', ucName)
+      if (staffId) q = q.eq('daily_assignments.staff_id', staffId)
+      if (dateFrom) q = q.gte('delivered_at', dateFrom)
+      if (dateTo) q = q.lte('delivered_at', dateTo)
+      return q
     }
 
-    if (ucName) {
-      query = query.eq('daily_assignments.uc_name', ucName)
+    const JOIN_SELECT = 'id, daily_assignments!inner(uc_name, staff_id)'
+    const DATA_SELECT = 'id, psid, status, started_at, delivered_at, gps_lat, gps_lng, daily_assignments!inner(uc_name, staff_id, staff:staff_id(id, full_name))'
+
+    const { count: total } = await applyFilters(
+      sup.from('assignment_items').select(JOIN_SELECT, { count: 'exact', head: true })
+    )
+
+    const totalPages = Math.ceil((total || 0) / pageSize)
+
+    if (selectIdsOnly) {
+      const { data: rows } = await applyFilters(
+        sup.from('assignment_items').select('id')
+      ).order('delivered_at', { ascending: false }).limit(10000)
+
+      return NextResponse.json({ ids: (rows || []).map((r: any) => r.id), total: total || 0 })
     }
 
-    if (staffId) {
-      query = query.eq('daily_assignments.staff_id', staffId)
-    }
-
-    if (dateFrom) {
-      query = query.gte('delivered_at', dateFrom)
-    }
-
-    if (dateTo) {
-      query = query.lte('delivered_at', dateTo)
-    }
-
-    const { data: itemsData, error: fetchErr } = await query
-      .order('delivered_at', { ascending: false })
-      .limit(500)
-
-    if (fetchErr) {
-      return NextResponse.json({ error: fetchErr.message }, { status: 500 })
-    }
-
-    if (!itemsData?.length) {
-      return NextResponse.json(grouped ? { grouped: {}, total: 0 } : { items: [], total: 0 })
-    }
-
-    // Grouped mode — return simple format for RevokeDeliverySection
     if (grouped) {
+      const { data: itemsData, error: fetchErr } = await applyFilters(
+        sup.from('assignment_items').select(DATA_SELECT)
+      ).order('delivered_at', { ascending: false }).limit(500)
+
+      if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
+      if (!itemsData?.length) return NextResponse.json({ grouped: {}, total: 0 })
+
       const result: Record<string, any[]> = {}
       for (const r of itemsData as any[]) {
         const uc = r.daily_assignments.uc_name
@@ -101,7 +99,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ grouped: result, total: itemsData.length })
     }
 
-    // Full mode — batch-fetch survey_units + delivery_photos joins
+    const offset = (page - 1) * pageSize
+    const { data: itemsData, error: fetchErr } = await applyFilters(
+      sup.from('assignment_items').select(DATA_SELECT)
+    ).order('delivered_at', { ascending: false }).range(offset, offset + pageSize - 1)
+
+    if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 })
+    if (!itemsData?.length) return NextResponse.json({ items: [], total: total || 0, page, pageSize, totalPages })
+
     const psids = [...new Set(itemsData.map((r: any) => r.psid).filter(Boolean))]
     const { data: units } = await sup
       .from('survey_units')
@@ -112,7 +117,6 @@ export async function GET(req: NextRequest) {
 
     const itemIds = itemsData.map((r: any) => r.id)
 
-    // Batch-fetch flagged_psids (unresolved only)
     const { data: flaggedEntries } = await sup
       .from('flagged_psids')
       .select('psid, reason')
@@ -169,14 +173,14 @@ export async function GET(req: NextRequest) {
     if (q) {
       const lower = q.toLowerCase()
       items = items.filter(
-        (i) =>
+        (i: any) =>
           i.psid?.toLowerCase().includes(lower) ||
           i.consumer_name?.toLowerCase().includes(lower) ||
           i.survey_id?.toLowerCase().includes(lower),
       )
     }
 
-    return NextResponse.json({ items, total: items.length })
+    return NextResponse.json({ items, total: total || 0, page, pageSize, totalPages })
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 })
   }

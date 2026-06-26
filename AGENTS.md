@@ -311,3 +311,8 @@ Sargodha is both a district AND tehsil. Bhalwal is a tehsil WITHIN Sargodha dist
 
 ### Reference: MASTER.md Section 19
 For ALL data model rules (geography model, status semantics, domain separation, assignment model, auth model, reference tables, billing cycle, trigger inventory, API data flow, approved RPCs, data integrity rules), see `docs/MASTER.md` Section 19 (Data Model Rules Comprehensive Reference). Read before making any schema or query changes.
+
+## IndexedDB: One Database Per Feature
+**Two features must NEVER share the same IndexedDB database name unless they share a coordinated migration handler.** If `feature-a.ts` opens DB at version N and `feature-b.ts` opens the same DB at version N, whichever runs first creates its store. The second one's `onupgradeneeded` never fires (version hasn't changed), and the store doesn't exist. This silently produces `NotFoundError("One of the specified object stores was not found")`.
+
+Fix: Give each feature its own `DB_NAME`. Or, if they truly must share, create a single `db.ts` that handles all stores in one `onupgradeneeded` with a single version counter.

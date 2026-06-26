@@ -7,10 +7,12 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup } from '@/components/ui/select'
-import { Loader2, RotateCcw, UndoDot, Search, ChevronUp, ChevronDown } from 'lucide-react'
+import { Loader2, RotateCcw, UndoDot, Search, ChevronUp, ChevronDown, X } from 'lucide-react'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { useStaffList } from '@/hooks/use-assignments'
+import { PaginationBar } from '@/components/pagination-bar'
 
 interface DeliveryItem {
   id: string
@@ -36,6 +38,9 @@ interface DeliveryItem {
 interface DeliveryTableData {
   items: DeliveryItem[]
   total: number
+  page: number
+  pageSize: number
+  totalPages: number
 }
 
 type SortKey = keyof DeliveryItem | 'distance'
@@ -45,30 +50,44 @@ export function DeliveryTable() {
   const [data, setData] = useState<DeliveryTableData | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [ucFilter, setUcFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [ucFilter, setUcFilter] = useState<string | null>(null)
+  const [staffFilter, setStaffFilter] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('delivered_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [revoking, setRevoking] = useState<Set<string>>(new Set())
   const [accepting, setAccepting] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [ucList, setUcList] = useState<string[]>([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(100)
+  const [globalSelectActive, setGlobalSelectActive] = useState(false)
+  const [globalSelectLoading, setGlobalSelectLoading] = useState(false)
   const confirm = useConfirm()
   const { toast } = useToast()
+  const { data: staffList } = useStaffList()
+
+  const buildParams = useCallback(() => {
+    const params = new URLSearchParams()
+    if (search) params.set('q', search)
+    if (ucFilter) params.set('uc_name', ucFilter)
+    if (staffFilter) params.set('staff_id', staffFilter)
+    if (statusFilter) params.set('status', statusFilter)
+    params.set('page', String(page))
+    params.set('page_size', String(pageSize))
+    return params
+  }, [search, ucFilter, staffFilter, statusFilter, page, pageSize])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (search) params.set('q', search)
-      if (ucFilter) params.set('uc_name', ucFilter)
-      if (statusFilter) params.set('status', statusFilter)
-
+      const params = buildParams()
       const res = await fetch(`/api/admin/revoke-delivery?${params}`)
       if (!res.ok) throw new Error('Failed to load')
       const json = await res.json()
       setData(json)
       setSelected(new Set())
+      setGlobalSelectActive(false)
 
       const ucs = [...new Set<string>((json.items || []).map((i: DeliveryItem) => i.uc_name))]
       if (!ucFilter && ucs.length > 0 && ucList.length === 0) {
@@ -79,9 +98,11 @@ export function DeliveryTable() {
     } finally {
       setLoading(false)
     }
-  }, [search, ucFilter, statusFilter, toast])
+  }, [buildParams, ucFilter, ucList.length, toast])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  useEffect(() => { setPage(1) }, [ucFilter, staffFilter, statusFilter, search])
 
   const displayItems = useMemo(() => {
     if (!data?.items) return []
@@ -137,6 +158,7 @@ export function DeliveryTable() {
   }
 
   function toggleSelect(id: string) {
+    setGlobalSelectActive(false)
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -146,10 +168,35 @@ export function DeliveryTable() {
   }
 
   function toggleSelectAll() {
+    if (globalSelectActive) {
+      setGlobalSelectActive(false)
+      setSelected(new Set())
+      return
+    }
     if (selected.size === displayItems.length) {
       setSelected(new Set())
     } else {
       setSelected(new Set(displayItems.map((i) => i.id)))
+    }
+  }
+
+  async function handleSelectAllAcrossPages() {
+    setGlobalSelectLoading(true)
+    try {
+      const params = buildParams()
+      params.delete('page')
+      params.delete('page_size')
+      params.set('select_ids_only', 'true')
+      const res = await fetch(`/api/admin/revoke-delivery?${params}`)
+      if (!res.ok) throw new Error('Failed to load')
+      const json = await res.json()
+      setSelected(new Set(json.ids || []))
+      setGlobalSelectActive(true)
+      toast(`Selected ${json.ids?.length || 0} items across all pages`, 'success')
+    } catch {
+      toast('Failed to select all items', 'error')
+    } finally {
+      setGlobalSelectLoading(false)
     }
   }
 
@@ -192,10 +239,9 @@ export function DeliveryTable() {
 
   const handleBulkRevoke = useCallback(async () => {
     if (selected.size === 0) return
-    const names = displayItems.filter((i) => selected.has(i.id)).map((i) => i.consumer_name || i.psid || i.survey_id)
     const ok = await confirm({
       title: `Revoke ${selected.size} Deliveries`,
-      message: `Reset ${selected.size} delivered/processing items back to pending? Photos and delivery records will be deleted.\n\n${names.slice(0, 5).join(', ')}${names.length > 5 ? ` and ${names.length - 5} more` : ''}`,
+      message: `Reset ${selected.size} delivered/processing items back to pending? Photos and delivery records will be deleted.`,
       confirmLabel: `Revoke All (${selected.size})`,
       variant: 'destructive',
     })
@@ -224,12 +270,13 @@ export function DeliveryTable() {
         }
       })
       setSelected(new Set())
+      setGlobalSelectActive(false)
     } catch {
       toast('Failed to revoke selected items', 'error')
     } finally {
       setRevoking(new Set())
     }
-  }, [selected, displayItems, confirm, toast])
+  }, [selected, confirm, toast])
 
   const handleAccept = useCallback(async (item: DeliveryItem) => {
     const ok = await confirm({
@@ -268,9 +315,10 @@ export function DeliveryTable() {
     }
   }, [confirm, toast])
 
-  const allSelected = displayItems.length > 0 && selected.size === displayItems.length
-  const someSelected = selected.size > 0 && selected.size < displayItems.length
+  const allPageSelected = displayItems.length > 0 && displayItems.every((i) => selected.has(i.id))
+  const somePageSelected = displayItems.some((i) => selected.has(i.id)) && !allPageSelected
   const isBulkRevoking = revoking.size > 0
+  const showSelectAllLink = allPageSelected && !globalSelectActive && (data?.total || 0) > displayItems.length
 
   const fmtCoord = (v: number | null) => v != null ? v.toFixed(5) : '—'
   const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleString() : '—'
@@ -280,8 +328,8 @@ export function DeliveryTable() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <Checkbox
-          checked={allSelected}
-          data-state={someSelected ? 'indeterminate' : allSelected ? 'checked' : 'unchecked'}
+          checked={allPageSelected || globalSelectActive}
+          data-state={somePageSelected ? 'indeterminate' : allPageSelected || globalSelectActive ? 'checked' : 'unchecked'}
           onCheckedChange={() => toggleSelectAll()}
           className="shrink-0"
         />
@@ -294,28 +342,52 @@ export function DeliveryTable() {
             className="pl-8 h-9 text-xs"
           />
         </div>
-        <Select value={ucFilter || '__all__'} onValueChange={(v) => setUcFilter(v === '__all__' ? '' : (v ?? ''))}>
-          <SelectTrigger className="w-[150px] h-9 text-xs">
-            <SelectValue placeholder="All UCs" />
+        <Select value={ucFilter} onValueChange={(v) => setUcFilter(v === '__all__' ? null : v)}>
+          <SelectTrigger className="w-[130px] sm:w-[150px] h-9 text-xs">
+            <SelectValue placeholder="ALL UCS" />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value="__all__">All UCs</SelectItem>
+              <SelectItem value="__all__">ALL UCS</SelectItem>
               {ucList.map((uc) => (
                 <SelectItem key={uc} value={uc}>{uc}</SelectItem>
               ))}
             </SelectGroup>
           </SelectContent>
         </Select>
-        <Select value={statusFilter || '__all__'} onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : (v ?? ''))}>
-          <SelectTrigger className="w-[130px] h-9 text-xs">
-            <SelectValue placeholder="All status" />
+        <Select value={staffFilter} onValueChange={(v) => setStaffFilter(v === '__all__' ? null : v)}>
+          <SelectTrigger className="w-[130px] sm:w-[160px] h-9 text-xs">
+            <SelectValue placeholder="ALL STAFF" />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value="__all__">All status</SelectItem>
+              <SelectItem value="__all__">ALL STAFF</SelectItem>
+              {(staffList || []).map((s) => (
+                <SelectItem key={s.id} value={s.id}>{s.full_name || s.id}</SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v === '__all__' ? null : v)}>
+          <SelectTrigger className="w-[120px] sm:w-[130px] h-9 text-xs">
+            <SelectValue placeholder="ALL STATUS" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="__all__">ALL STATUS</SelectItem>
               <SelectItem value="delivered">Delivered</SelectItem>
               <SelectItem value="processing">Processing</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1) }}>
+          <SelectTrigger className="w-[90px] h-9 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="100">100 / page</SelectItem>
+              <SelectItem value="250">250 / page</SelectItem>
             </SelectGroup>
           </SelectContent>
         </Select>
@@ -332,9 +404,41 @@ export function DeliveryTable() {
           className={cn('h-9 text-xs shrink-0 transition-opacity', selected.size === 0 && 'opacity-40')}
         >
           {isBulkRevoking ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <UndoDot className="h-3 w-3 mr-1" />}
-          Revoke Selected{selected.size > 0 ? ` (${selected.size})` : ''}
+          Revoke{selected.size > 0 ? ` (${selected.size})` : ''}
         </Button>
       </div>
+
+      {/* Select all across pages link */}
+      {showSelectAllLink && (
+        <div className="flex items-center gap-2 px-1">
+          <button
+            onClick={handleSelectAllAcrossPages}
+            disabled={globalSelectLoading}
+            className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline underline-offset-2 disabled:opacity-50"
+          >
+            {globalSelectLoading ? (
+              <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Selecting...</span>
+            ) : (
+              `Select all ${data?.total || 0} items across all pages`
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Global select banner */}
+      {globalSelectActive && (
+        <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2">
+          <span className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+            All {selected.size.toLocaleString()} items selected across {data?.totalPages || 0} pages
+          </span>
+          <button
+            onClick={() => { setGlobalSelectActive(false); setSelected(new Set()) }}
+            className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
@@ -353,8 +457,8 @@ export function DeliveryTable() {
                 <TableRow className="text-[11px]">
                   <TableHead className="w-10">
                     <Checkbox
-                      checked={allSelected}
-                      data-state={someSelected ? 'indeterminate' : allSelected ? 'checked' : 'unchecked'}
+                      checked={allPageSelected || globalSelectActive}
+                      data-state={somePageSelected ? 'indeterminate' : allPageSelected || globalSelectActive ? 'checked' : 'unchecked'}
                       onCheckedChange={() => toggleSelectAll()}
                     />
                   </TableHead>
@@ -545,6 +649,16 @@ export function DeliveryTable() {
             })}
           </div>
         </>
+      )}
+
+      {/* Pagination */}
+      {data && (data.totalPages || 0) > 1 && (
+        <PaginationBar
+          page={data.page || page}
+          totalPages={data.totalPages || 1}
+          totalRecords={data.total || 0}
+          onPageChange={setPage}
+        />
       )}
     </div>
   )

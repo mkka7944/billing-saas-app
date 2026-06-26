@@ -44,7 +44,7 @@ export async function uploadToGAS(
       }),
     })
   } catch (e) {
-    throw new Error(e instanceof DOMException && e.name === 'AbortError' ? 'GAS timeout (8s)' : 'GAS network error')
+    throw new Error(e instanceof DOMException && e.name === 'AbortError' ? 'GAS timeout (30s)' : 'GAS network error')
   } finally {
     clearTimeout(timeout)
   }

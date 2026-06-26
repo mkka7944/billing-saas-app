@@ -15,6 +15,7 @@ export function PwaRegister() {
   }, [waitingWorker])
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'development') return
     if (!('serviceWorker' in navigator)) return
 
     const regPromise = navigator.serviceWorker.register('/sw.js', {
@@ -89,6 +90,7 @@ export function useSWUpdate() {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'development') return
     if (!('serviceWorker' in navigator)) return
 
     navigator.serviceWorker.register('/sw.js', {
@@ -124,6 +126,7 @@ export function useSWUpdate() {
   }, [waitingWorker])
 
   const checkForUpdates = useCallback(async () => {
+    if (process.env.NODE_ENV === 'development') return false
     if (!('serviceWorker' in navigator)) return false
     const reg = await navigator.serviceWorker.getRegistration()
     if (!reg) return false

@@ -76,6 +76,17 @@ export default function UnitDeliverySheet({
     setManualSync(appSettings?.unsent_mode?.enabled === true)
   }, [appSettings])
 
+  // Warn before leaving/refreshing during active delivery
+  useEffect(() => {
+    if (!isDelivering) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDelivering])
+
   const { data: flagData } = useFlaggedPsids(unit?.survey_id || null, unit?.psid || null)
   const isFlagged = !!flagData?.entries?.length
 

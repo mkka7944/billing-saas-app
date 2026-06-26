@@ -76,6 +76,63 @@ export async function GET(request: Request) {
   // 4. Build maps for fast lookup
   const unitByPsid = new Map(units.map((u: any) => [u.psid, u]))
 
+  // 5. Staff summary — accurate per-staff counts from the full items array.
+  //    This is the authoritative source, not derived from markers or activities.
+  const staffSummary: Record<string, {
+    staff_id: string
+    total_actioned: number
+    delivered: number
+    missed: number
+    processing: number
+    assigned: number
+    pending: number
+  }> = {}
+  for (const item of items) {
+    const staffInfo = staffMap.get(item.assignment_id) || { name: 'Unknown', id: null }
+    const name = staffInfo.name
+    if (!staffSummary[name]) staffSummary[name] = {
+      staff_id: staffInfo.id || name,
+      total_actioned: 0,
+      delivered: 0,
+      missed: 0,
+      processing: 0,
+      assigned: 0,
+      pending: 0,
+    }
+    staffSummary[name].total_actioned++
+    if (item.status === 'delivered') staffSummary[name].delivered++
+    else if (item.status === 'missed') staffSummary[name].missed++
+    else if (item.status === 'processing') staffSummary[name].processing++
+  }
+
+  // 6. Get total assigned items per assignment (includes pending) so we can show
+  //    "Assigned (A)" and "Pending (P)" per the live monitoring plan.
+  if (assignmentIds.length > 0) {
+    const { data: totalByAssignment } = await sup
+      .from('assignment_items')
+      .select('assignment_id')
+      .in('assignment_id', assignmentIds)
+    if (totalByAssignment) {
+      // Count items per assignment_id
+      const perAssignment: Record<string, number> = {}
+      for (const row of totalByAssignment) {
+        const aid = row.assignment_id
+        perAssignment[aid] = (perAssignment[aid] || 0) + 1
+      }
+      // Map each staff_summary entry to its assignment to get total assigned count
+      const assignmentsList = assignments || []
+      for (const [staffName, entry] of Object.entries(staffSummary)) {
+        const match = assignmentsList.find(
+          (a: any) => a.staff_id === entry.staff_id || a.staff?.full_name === staffName
+        )
+        if (match) {
+          entry.assigned = perAssignment[match.id] || 0
+          entry.pending = Math.max(0, entry.assigned - entry.total_actioned)
+        }
+      }
+    }
+  }
+
   // Deduplicate items by PSID for markers — keep highest-priority status, then latest timestamp
   const statusRank: Record<string, number> = { delivered: 0, missed: 1, processing: 2 }
   const bestItemByPsid = new Map<string, any>()
@@ -140,5 +197,5 @@ export async function GET(request: Request) {
   const total = activities.length
   const paginatedActivities = activities.slice(offset, offset + limit)
 
-  return NextResponse.json({ markers, activities: paginatedActivities, total })
+  return NextResponse.json({ markers, activities: paginatedActivities, total, staffSummary })
 }

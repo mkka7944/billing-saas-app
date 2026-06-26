@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingStore } from '@/stores/billing-store'
@@ -9,7 +9,7 @@ import { useOnlineStatus } from '@/hooks/use-online-status'
 import { useToast } from '@/hooks/use-toast'
 import { cacheAssignment, getCachedAssignment } from '@/lib/offline-cache'
 import type { CachedAssignment } from '@/lib/offline-cache'
-import { Loader2, WifiOff, CheckCircle2, ArrowLeft, ArrowRight, ChevronDown, Upload } from 'lucide-react'
+import { Loader2, WifiOff, CheckCircle2, ArrowLeft, ArrowRight, ChevronDown, Upload, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AssignmentItemWithUnit } from '@/types'
 import { shortenMCName, compareMC } from '@/lib/mc-utils'
@@ -30,7 +30,7 @@ const STATUS_CONFIG: Record<string, { label: string; dot: string }> = {
 function formatTime(iso: string | null) {
   if (!iso) return ''
   const d = new Date(iso)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' })
 }
 
 export default function DeliverPage() {
@@ -53,7 +53,7 @@ export default function DeliverPage() {
 
   const tabInitialized = useRef(false)
 
-  const { queueCount, isProcessing, processQueue, processingIndex, totalToProcess, currentFileSize, uploadSpeed } = usePhotoQueue()
+  const { queueCount, isProcessing, processQueue, processingIndex, totalToProcess, currentFileSize, uploadSpeed, clearQueue } = usePhotoQueue()
 
   const { data, isLoading, isError, refetch } = useStaffAssignment(user?.id || null)
   const isOnline = useOnlineStatus()
@@ -64,15 +64,20 @@ export default function DeliverPage() {
   useEffect(() => { setPageIdentity('Deliver') }, [setPageIdentity])
 
   // Fallback: check DB for unsynced photos when IndexedDB queue is empty
-  useEffect(() => {
+  const refreshUnsynced = useCallback(async () => {
     if (!user?.id) return
-    fetch('/api/deliveries/unsynced')
-      .then(r => r.json())
-      .then(json => {
-        if (json.count) setDbUnsyncedCount(json.count)
-      })
-      .catch(() => {})
+    try {
+      const res = await fetch('/api/deliveries/unsynced')
+      const json = await res.json()
+      setDbUnsyncedCount(json.count || 0)
+    } catch {
+      // ignore
+    }
   }, [user?.id])
+
+  useEffect(() => {
+    refreshUnsynced()
+  }, [refreshUnsynced])
 
   const [cached, setCached] = useState<CachedAssignment | null>(null)
 
@@ -339,21 +344,31 @@ export default function DeliverPage() {
                     : `${queueCount} photo${queueCount !== 1 ? 's' : ''} waiting to sync`
                   }
                 </span>
-                <button
-                  onClick={() => processQueue()}
-                  disabled={isProcessing}
-                  className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-800 cursor-pointer disabled:opacity-50"
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      {uploadSpeed ? ` ${uploadSpeed}` : ''}
-                    </>
-                  ) : (
-                    <Upload className="h-3 w-3" />
+                <div className="flex items-center gap-2">
+                  {!isProcessing && queueCount > 0 && (
+                    <button
+                      onClick={async () => { await clearQueue(); refreshUnsynced(); toast('Photo queue cleared', 'info') }}
+                      className="flex items-center gap-1 text-[10px] font-semibold text-red-600 dark:text-red-400 hover:text-red-700 cursor-pointer"
+                    >
+                      <Trash2 className="h-3 w-3" /> Clear
+                    </button>
                   )}
-                  {!isProcessing && 'Sync'}
-                </button>
+                  <button
+                    onClick={() => processQueue()}
+                    disabled={isProcessing}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-800 cursor-pointer disabled:opacity-50"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {uploadSpeed ? ` ${uploadSpeed}` : ''}
+                      </>
+                    ) : (
+                      <Upload className="h-3 w-3" />
+                    )}
+                    {!isProcessing && 'Sync'}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -559,7 +574,7 @@ export default function DeliverPage() {
               <div className="flex items-center justify-between px-4 py-2 border-t bg-card shrink-0">
                 <button
                   onClick={() => setPage(Math.max(0, page - 1))}
-                  disabled={page === 0 || filterTab === 'my-position'}
+                  disabled={page === 0}
                   className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none py-1 cursor-pointer"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" /> Previous

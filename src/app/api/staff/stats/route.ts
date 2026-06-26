@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
   let q = sup
     .from('staff_daily_stats')
-    .select('staff_id, assigned_date, total_assigned, delivered, missed')
+    .select('staff_id, assigned_date, total_assigned, delivered, missed, processing')
     .gte('assigned_date', fromDate)
     .lte('assigned_date', toDate)
 

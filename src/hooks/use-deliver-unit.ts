@@ -20,9 +20,12 @@ export function useDeliverUnit() {
     gpsAccuracy?: number | null,
   ): Promise<DeliveryResult | null> => {
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 15000)
       const res = await fetch('/api/deliveries/mark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           assignmentItemId,
           gpsLat,
@@ -31,6 +34,7 @@ export function useDeliverUnit() {
           gpsAccuracy,
         }),
       })
+      clearTimeout(timeoutId)
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}))
@@ -41,6 +45,7 @@ export function useDeliverUnit() {
       return result
     } catch (e) {
       if (e instanceof TypeError) return null
+      if (e instanceof DOMException && e.name === 'AbortError') throw new Error('Request timed out — please try again')
       if (e instanceof Error) throw e
       throw new Error('Server error — please try again')
     }

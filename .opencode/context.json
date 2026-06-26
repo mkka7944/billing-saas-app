@@ -1,48 +1,35 @@
 {
-  "lastSession": "2026-06-25 — PWA deploy + GPS enforcement fix + notification mobile fix",
-  "currentPhase": "PWA Deployed — Photo system audit — GPS enforcement fixed",
-  "currentStep": "GPS enforcement fix: null staff GPS now sets 'processing' status instead of 'delivered' when enforcement is on. Notification mobile panel Z-index fix: backdrop and panel are now independent fixed elements (z-40/z-50). Full photo queue system audit completed. Deploy notification auto-send deferred to future phase.",
+  "lastSession": "2026-06-26 — 6 quick wins + offline-cache fix + full delivery readiness assessment",
+  "currentPhase": "Pre-TestCity: delivery hardening & quick wins",
+  "currentStep": "All 6 quick wins implemented. Session saved — resuming after 28 June training.",
   "filesModified": [
-    "src/app/layout.tsx",
-    "src/app/settings/page.tsx",
+    "src/lib/offline-cache.ts",
+    "src/lib/photo-queue.ts",
     "src/hooks/use-photo-queue.ts",
-    "next.config.ts",
-    "docs/PWA-PLAN.md",
-    "docs/MASTER.md",
-    "docs/SESSION.md",
-    "src/app/api/deliveries/mark/route.ts",
-    "src/components/notifications/notifications-bell.tsx"
+    "src/app/deliver/page.tsx",
+    "src/components/delivery/unit-delivery-sheet.tsx"
   ],
   "filesCreated": [
-    "public/sw.js",
-    "public/offline.html",
-    "public/icon-192.png",
-    "public/icon-512.png",
-    "public/icon-192-maskable.png",
-    "public/icon-512-maskable.png",
-    "public/icon-source.png",
-    "src/app/manifest.ts",
-    "src/components/providers/pwa-register.tsx",
-    "scripts/generate-icons.mjs"
+    "src/app/api/deliveries/clear-failed/route.ts"
   ],
   "keyDecisions": [
-    "Manual SW over @serwist — simpler bypass rules for Supabase/Google/map tiles, zero build complexity",
-    "SW does NOT auto skipWaiting — user controls update timing via toast + reload button",
-    "navigator.storage.persist() added to photo-queue mount — prevents IndexedDB eviction",
-    "Background Sync (Chrome/Android) registered for failed photo uploads — retries even if tab closed",
-    "PWA icons generated from docs/tmt-billing-2.png (4 variants). User provided removebg version, regenerated.",
-    "Null GPS + enforcement on = 'processing' status. Null GPS + enforcement off = 'delivered' (admin bypass).",
-    "Notification panel mobile fix: separated backdrop (z-40) and panel (z-50) to prevent touch interception.",
-    "Auto-deploy notification (GitHub Action + broadcast endpoint) deferred to Phase X."
+    "offline-cache.ts given its own IndexedDB DB name ('billing-saas-offline-cache') to eliminate version coupling with photo-queue.ts",
+    "beforeunload event added during active delivery to prevent accidental navigation/refresh",
+    "Clear Failed button on deliver page calls clearAll() in IndexedDB + POST /api/deliveries/clear-failed for orphaned server-side records",
+    "My Position pagination enabled (removed filterTab guard) — allows browsing all items while map is visible",
+    "dbUnsyncedCount now properly resets to 0 after clear (fixed falsy-count bug)",
+    "Auto-advance (skip delivered), parallel uploads, mark-queue, pull-to-refresh, route stabilization, admin review tab deferred until after 28 June training"
   ],
   "nextActions": [
-    "Test PWA in production — manifest, install, offline, update flow",
-    "Manually send 'New update' notification to all staff via Settings → Users",
-    "Phase T1 — persist mapZoom, selectedHouseId, filters across navigation",
-    "Phase M3 — JSON Marker Chunks (Supabase Storage)",
-    "Phase X — Auto-deploy notification: GitHub Action + broadcast endpoint + Settings tab badge",
-    "Pipeline: update bill-extractor-v4.py with city/tehsil, add updated_at to payment_history"
+    "28 June: TestCity staff training — deliver repeatedly to harden photo queue, GPS enforcement, app familiarity",
+    "After test session: build route stabilization pipeline (GPS timestamps → route_seq)",
+    "Deferred: auto-advance skip delivered items",
+    "Deferred: parallel photo uploads (concurrency 3-5)",
+    "Deferred: mark request offline queueing (new IndexedDB store + SW sync handler)",
+    "Deferred: pull-to-refresh on deliver page",
+    "Deferred: admin combined review tab (merge verify-photo + accept-delivery into one view)",
+    "Deferred: orphaned Drive file cleanup (requires GAS 'delete' action)"
   ],
-  "gitCheckpoint": "e40c43e",
-  "gitCurrentHead": "e40c43e"
+  "gitCheckpoint": "33a6fdf",
+  "gitCurrentHead": "33a6fdf + 6 quick wins + offline-cache fix"
 }

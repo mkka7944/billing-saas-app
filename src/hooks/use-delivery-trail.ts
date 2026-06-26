@@ -22,10 +22,21 @@ export interface ActivityEvent {
   time_label: string
 }
 
+export interface StaffSummaryEntry {
+  staff_id: string
+  total_actioned: number
+  delivered: number
+  missed: number
+  processing: number
+  assigned: number
+  pending: number
+}
+
 interface DeliveryTrailResponse {
   markers: DeliveryMarker[]
   activities: ActivityEvent[]
   total?: number
+  staffSummary?: Record<string, StaffSummaryEntry>
 }
 
 import { useSettings } from '@/hooks/use-settings'

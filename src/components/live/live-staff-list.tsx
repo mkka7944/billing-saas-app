@@ -15,37 +15,18 @@ export function LiveStaffList() {
   const { data: trail } = useDeliveryTrail(selectedCity, selectedDate !== pktToday() ? selectedDate : null)
 
   const staffStats = useMemo(() => {
-    const markers = trail?.markers || []
-    const activities = trail?.activities || []
+    const summary = trail?.staffSummary
+    if (!summary) return []
 
-    // Build marker-based data (staff_id, uc per staff)
-    const markerStaffId = new Map<string, string>()
-    const markerStaffUc = new Map<string, string>()
-    for (const m of markers) {
-      if (!markerStaffId.has(m.staff_name)) markerStaffId.set(m.staff_name, m.staff_id || m.staff_name)
-      if (!markerStaffUc.has(m.staff_name)) markerStaffUc.set(m.staff_name, m.uc_name || 'Unknown')
-    }
-
-    // Build stats from activities (covers all staff even without GPS coords)
-    const staffDelivered = new Map<string, number>()
-    const staffTotal = new Map<string, number>()
-    for (const a of activities) {
-      staffTotal.set(a.staff_name, (staffTotal.get(a.staff_name) || 0) + 1)
-      if (a.status === 'delivered') {
-        staffDelivered.set(a.staff_name, (staffDelivered.get(a.staff_name) || 0) + 1)
-      }
-    }
-
-    return Array.from(staffTotal.entries()).map(([staffName, total]) => {
-      const delivered = staffDelivered.get(staffName) || 0
-      return {
-        staff_id: markerStaffId.get(staffName) || staffName,
-        staff_name: staffName,
-        delivered,
-        total_assigned: total,
-        rate: total > 0 ? Math.round((delivered / total) * 100) : 0,
-      }
-    }).sort((a, b) => b.rate - a.rate)
+    return Object.entries(summary).map(([staffName, s]) => ({
+      staff_id: s.staff_id,
+      staff_name: staffName,
+      delivered: s.delivered,
+      assigned: s.assigned || s.total_actioned,
+      pending: s.pending,
+      total_actioned: s.total_actioned,
+      rate: s.assigned > 0 ? Math.round((s.delivered / s.assigned) * 100) : 0,
+    })).sort((a, b) => b.rate - a.rate)
   }, [trail])
 
   if (!staffStats.length) {
@@ -58,6 +39,14 @@ export function LiveStaffList() {
 
   return (
     <div className="space-y-0.5">
+      <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
+        <span className="flex-1">Name</span>
+        <span className="w-5 text-center">A</span>
+        <span className="w-5 text-center">D</span>
+        <span className="w-5 text-center">P</span>
+        <span className="w-7 text-right">Rate</span>
+        <span className="w-5" />
+      </div>
       {staffStats.map((s) => {
         const gpsOn = staffGpsVisible.has(s.staff_id)
         return (
@@ -67,8 +56,10 @@ export function LiveStaffList() {
           >
             <Circle className={`h-2.5 w-2.5 shrink-0 ${gpsOn ? 'fill-blue-500 text-blue-500' : 'fill-gray-300 text-gray-300'}`} />
             <span className="font-medium truncate flex-1">{s.staff_name}</span>
-            <span className="text-muted-foreground shrink-0">{s.delivered}/{s.total_assigned}</span>
-            <span className={`font-bold shrink-0 w-7 text-right ${s.rate >= 80 ? 'text-green-600' : s.rate >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
+            <span className="text-muted-foreground shrink-0 w-5 text-center tabular-nums">{s.assigned}</span>
+            <span className="text-green-600 shrink-0 w-5 text-center tabular-nums">{s.delivered}</span>
+            <span className="text-amber-500 shrink-0 w-5 text-center tabular-nums">{s.pending}</span>
+            <span className={`font-bold shrink-0 w-7 text-right tabular-nums ${s.rate >= 80 ? 'text-green-600' : s.rate >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
               {s.rate}%
             </span>
             <button

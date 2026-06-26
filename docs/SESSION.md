@@ -4771,3 +4771,99 @@ See priority list below
 8. Staff GPS off → take photo → status shows `processing` (amber badge), not `delivered`
 9. Admin Settings → GPS Enforcement OFF → staff GPS off → `delivered` (bypass)
 10. Firefox: SW + offline work, no install prompt (expected limitation)
+
+---
+
+## 2026-06-26 — 6 Quick Wins + Offline-Cache Fix + Delivery Readiness Assessment
+
+### Phase: Pre-TestCity Delivery Hardening
+
+### Context
+Staff delivery training scheduled for TestCity on 28 June (Sunday). App needed several quick hardening fixes before training. Also completed a Staff Delivery Readiness Assessment (report in SESSION).
+
+### What
+
+**1. Staff Delivery Readiness Report (analyzed, not coded)**
+Comprehensive assessment covering My Position, MC-team assignment, route stabilization, photo queue, GPS enforcement. Conclusion: app is production-ready for training; route stabilization is month-2 work.
+
+**2. Fixed staff_daily_stats trigger** (`scripts/sql/048-fix-staff-stats-trigger.sql`)
+Trigger was `FOR EACH STATEMENT` but function used `NEW`/`OLD` columns (NULL in statement-level triggers in PostgreSQL). Changed to `FOR EACH ROW` + backfilled all 19 assignments.
+
+**3. Staff filter dropdown in Settings → Delivery** (`delivery-table.tsx`)
+Added staff filter select from `useStaffList()` hook. UI updated to ALL CAPS for ALL UCS / ALL STAFF / ALL STATUS labels.
+
+**4. Fixed ALL CAPS display in @base-ui/react/select**
+SelectValue shows `placeholder` when value is `null`, not with `'__all__'` sentinel. Changed all three filters to use `null` sentinel.
+
+**5. PWA caching guard for dev mode** (`pwa-register.tsx`)
+SW registration guarded with `process.env.NODE_ENV === 'development'` — works on Vercel, skipped on localhost. Prevents stale SW in dev.
+
+**6. Pagination on Settings → Delivery tab** (`delivery-table.tsx`)
+Server-side pagination via `page` + `page_size` params, count query with `select('*', { head: true, count: 'exact' })`. Page size selector (100/250). Uses existing `PaginationBar` component.
+
+**7. Select all across pages** (`delivery-table.tsx`)
+Blue link appears when header checkbox is checked — "Select all X items across all pages" — fetches all matching IDs via `select_ids_only=true` param.
+
+**8. Optimized bulk revoke — no re-render** (`delivery-table.tsx`)
+In-place optimistic update instead of `fetchData()`. "Select all" only shows when ALL rows on current page are selected.
+
+**9. 15-second AbortController timeout** (`use-deliver-unit.ts`)
+Clear "Request timed out — please try again" message instead of frozen spinner.
+
+**10. Fixed GAS timeout error message** (`drive-upload.ts`)
+Corrected from "8s" to "30s" (actual timeout was always 30s).
+
+**11. PKT timezone in formatTime** (`deliver/page.tsx`)
+Added `timeZone: 'Asia/Karachi'` so delivery times show correctly regardless of device TZ.
+
+**12. Leaving warning during active delivery** (`unit-delivery-sheet.tsx`)
+`beforeunload` event prevents accidental navigation/refresh while `isDelivering` is true.
+
+**13. Clear Failed button for photo queue** (`deliver/page.tsx`)
+New `Trash2` button in queue badge (visible when not processing + queue has items). Clears IndexedDB queue AND server-side orphaned `delivery_photos` records via `POST /api/deliveries/clear-failed`. Created `clearAll()` in `photo-queue.ts`, exposed via `usePhotoQueue.clearQueue`.
+
+**14. Fixed IndexedDB store not found error** (`offline-cache.ts`)
+`offline-cache.ts` and `photo-queue.ts` shared the same DB name (`billing-saas-photo-queue`) at version 6. `photo-queue.ts` ran first (created `photo_queue` store), then `offline-cache.ts` opened at version 6 — `onupgradeneeded` never fires when version doesn't change — `offline_cache` store didn't exist. Fix: gave `offline-cache.ts` its own DB name (`billing-saas-offline-cache`) at version 1.
+
+**15. Enabled My Position pagination** (`deliver/page.tsx`)
+Removed `|| filterTab === 'my-position'` guard so Previous/Next buttons work on all filter tabs.
+
+**16. Fixed dbUnsyncedCount reset to 0** (`deliver/page.tsx`)
+`if (json.count)` was falsy when count=0, so banner never cleared. Changed to `setDbUnsyncedCount(json.count || 0)`.
+
+### Key Decisions
+- `staff_daily_stats` trigger was always broken (FOR EACH STATEMENT with NEW/OLD), not just from migration 035
+- `@base-ui/react/select` SelectValue shows `placeholder` when value is `null`, not with `'__all__'` sentinel
+- PWA SW guard uses `process.env.NODE_ENV` — tree-shaken in production
+- Pagination uses server-side count query + `.range()` on `assignment_items`
+- "Select all across pages" fetches IDs only (`select_ids_only=true`), not full item data
+- `clearQueue` now does 3 things: clear IndexedDB, call clear-failed API, refresh unsynced count
+- Route stabilization intentionally month-2 work — raw data collection is all that's needed for tomorrow
+- Auto-advance, parallel uploads, mark-queue, pull-to-refresh deferred to avoid risking current functioning for training
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors (verified after every change)
+
+### Files Created
+- `src/app/api/deliveries/clear-failed/route.ts` — POST endpoint to delete orphaned delivery_photos
+
+### Files Modified
+- `src/lib/offline-cache.ts` — separate DB name, drop version to 1
+- `src/lib/photo-queue.ts` — added `clearAll()` function
+- `src/hooks/use-photo-queue.ts` — exposed `clearQueue`, calls clear-failed API
+- `src/app/deliver/page.tsx` — clear button, My Position pagination, dbUnsyncedCount fix, useCallback import
+- `src/components/delivery/unit-delivery-sheet.tsx` — beforeunload effect
+
+### Deferred Items (post-28-June training)
+1. **Auto-advance skip delivered** — `nextDeliverable()` needs to scan forward past delivered items. Requires storing item status in `deliverableList`. Risk: Medium (touches store + map page).
+2. **Pull-to-refresh** — touch gesture wrapper on deliver page. Risk: Low.
+3. **Parallel photo uploads** — concurrency-3-5 in `processQueue()`, aggregate progress metrics, IndexedDB claim pattern. Risk: Medium-High (race conditions, GAS quotas).
+4. **Mark request offline queue** — new IndexedDB store for mark requests, SW `sync` event handler, two-phase commit issue. Risk: Medium-High (architectural).
+5. **Orphaned Drive cleanup** — add GAS `delete` action (outside codebase) + manual cleanup button. Risk: Low.
+6. **Route stabilization pipeline** — Python/DB pipeline: GPS timestamps → `route_seq`. Risk: Low (standalone). Data collection from 28 June training.
+7. **Admin combined review tab** — single view merging verify-photo + accept-delivery. Risk: Low.
+
+### Next
+- 28 June: TestCity staff training — deliver repeatedly, harden photo queue, GPS enforcement
+- After training: tackle deferred items in risk order (low → medium → high)
+- Show staff: processing fix (get closer + retap), offline amber overlay, refresh if spinner stuck
