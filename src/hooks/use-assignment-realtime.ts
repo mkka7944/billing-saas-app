@@ -52,17 +52,13 @@ export function useAssignmentRealtime(userId: string | null) {
     // Run immediately on mount
     sync()
 
-    // Poll every 30s
-    const timer = setInterval(sync, 30_000)
-
-    // Also sync when tab regains focus
+    // Sync when tab regains focus (no active polling — egress saving)
     const onVisibility = () => {
       if (document.visibilityState === 'visible') sync()
     }
     document.addEventListener('visibilitychange', onVisibility)
 
     return () => {
-      clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [userId, queryClient])

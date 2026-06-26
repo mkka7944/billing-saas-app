@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Camera, Loader2, X, Image, MapPin, CheckCircle2, ChevronRight, ChevronLeft, Crosshair, Flag } from 'lucide-react'
 import { useDeliverUnit } from '@/hooks/use-deliver-unit'
 import { usePhotoQueue } from '@/hooks/use-photo-queue'
@@ -116,7 +116,19 @@ export default function UnitDeliverySheet({
     : gpsError ? 'unavailable'
     : 'ready'
 
-  const heroImages = useMemo(() => (unit?.image_urls)?.filter(Boolean) || [], [unit?.image_urls])
+  const { data: portalImages } = useQuery<string[]>({
+    queryKey: ['portal-images', unit?.survey_id],
+    queryFn: async () => {
+      if (!unit?.survey_id) return []
+      const res = await fetch(`/api/delivery/portal-images?survey_id=${encodeURIComponent(unit.survey_id)}`)
+      if (!res.ok) return []
+      const json = await res.json()
+      return (json.image_urls || []).filter(Boolean)
+    },
+    enabled: !!unit?.survey_id,
+    staleTime: 5 * 60 * 1000,
+  })
+  const heroImages = portalImages || []
   const displayImage = heroImages[selectedImageIdx] || null
   const slides = heroImages.map((src) => ({ src }))
 
@@ -235,7 +247,6 @@ export default function UnitDeliverySheet({
           }
         )
       }
-      queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
       queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
       queryClient.invalidateQueries({ queryKey: ['delivery-photos'] })
@@ -372,7 +383,6 @@ export default function UnitDeliverySheet({
           }
         )
       }
-      queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
       queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
     } catch (e) {

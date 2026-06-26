@@ -4867,3 +4867,70 @@ Removed `|| filterTab === 'my-position'` guard so Previous/Next buttons work on 
 - 28 June: TestCity staff training — deliver repeatedly, harden photo queue, GPS enforcement
 - After training: tackle deferred items in risk order (low → medium → high)
 - Show staff: processing fix (get closer + retap), offline amber overlay, refresh if spinner stuck
+
+---
+
+## 2026-06-26 (late) — Supabase Egress Optimization
+
+### Phase: Egress Reduction
+
+### Context
+Measured ~200 MB Supabase egress for 400-500 test deliveries over 2 days. At projected 7,000 deliveries/day, that scales to ~960 MB/day = ~29 GB/month — far exceeding the 5 GB free tier. Analyzed all 46 API routes to find the biggest sources.
+
+### What
+
+**Egress audit findings:**
+- Biggest source: `queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })` fired AFTER EVERY delivery mark, triggering a full refetch of all ~100 assignment items + survey_units with `image_urls` (~70 KB per refetch). For 7,000 deliveries/day: **~490 MB/day**.
+- Second biggest: `useAssignmentRealtime` polls `GET /api/assignments?staff_id=` every 30 seconds via `setInterval` (~70 KB per poll × 360 polls per staff session). For 70 staff: **~175 MB/day**. This is NOT admin live monitoring — that's a separate endpoint (`/api/live/delivery-trail` every 60s).
+- Third: `image_urls` column (~20 KB per row set) carried in every assignment fetch. **~210 MB/day**.
+- Notifications polling (120s), GPS reporting (60s), admin map occasional UC views: collectively ~75 MB/day.
+
+**3 changes implemented:**
+
+1. **Removed `invalidateQueries(['staff-assignment'])`** after each delivery (`unit-delivery-sheet.tsx:238,375`). The existing optimistic cache update already marks the item status in-place. Saves ~490 MB/day.
+
+2. **Removed 30s `setInterval` in `useAssignmentRealtime`** (`use-assignment-realtime.ts:56`). Kept the visibility-change handler so staff detect changes when returning to tab. Admin live monitoring untouched. Saves ~175 MB/day.
+
+3. **Moved `image_urls` to on-demand fetch** — removed from `UNIT_COLS` in `assignment-repository.ts:232`. Created `GET /api/delivery/portal-images?survey_id=` endpoint (~1 KB per call). Updated UDS (`unit-delivery-sheet.tsx:119`) to fetch portal images via `useQuery` when sheet opens. The user confirmed a brief loading delay is fine — scanning the bill QR takes time. Saves ~210 MB/day. Type `AssignmentItemUnit.image_urls` made optional.
+
+**New endpoint:** `src/app/api/delivery/portal-images/route.ts`
+
+### Key Decisions
+- `invalidateQueries(['staff-assignment'])` after each delivery was the single biggest egress source — removing it saves more than the other two changes combined
+- `useAssignmentRealtime` 30s polling is staff-side only (not admin live monitoring) — safe to remove; visibility-change handler covers the detection use case
+- Portal images fetched on-demand via `useQuery` with 5min staleTime — subsequent UDS opens for the same unit use cached data
+- Admin map `MAP_PAGE_SIZE=50000` left unchanged for now — admin uses it occasionally, not worth risking marker loading issues before training
+
+### Build Verification
+- `npx tsc --noEmit` — zero errors
+
+### Projection (7,000 deliveries/day)
+| Source | Before | After |
+|--------|--------|-------|
+| Assignment refetch (per delivery) | ~490 MB | 0 |
+| 30s polling (staff-side) | ~175 MB | 0 |
+| image_urls in bulk fetches | ~210 MB | 0 |
+| Mark/sync/flagged APIs | ~11 MB | ~11 MB |
+| Notifications (120s poll) | ~13 MB | ~13 MB |
+| Admin live monitoring (60s poll) | ~10 MB | ~10 MB |
+| Admin map (occasional) | ~50 MB | ~50 MB |
+| Everything else | ~1 MB | ~1 MB |
+| **Daily total** | **~960 MB** | **~85 MB** |
+| **Monthly (30 days)** | **~28.8 GB** | **~2.6 GB** |
+
+**Under 5 GB free tier: yes, with ~2x headroom.**
+
+### Files Created
+- `src/app/api/delivery/portal-images/route.ts` — on-demand portal image fetch
+
+### Files Modified
+- `src/components/delivery/unit-delivery-sheet.tsx` — removed 2x staff-assignment invalidation, added portal-images useQuery, removed image_urls reliance
+- `src/hooks/use-assignment-realtime.ts` — removed 30s setInterval, kept visibility handler
+- `src/lib/repositories/assignment-repository.ts` — removed image_urls from UNIT_COLS
+- `src/types/index.ts` — made AssignmentItemUnit.image_urls optional
+- `.opencode/context.json` — updated session state
+- `docs/SESSION.md` — this entry
+
+### Next
+- 28 June: TestCity staff training (Sunday)
+- After training: tackle deferred features in risk order

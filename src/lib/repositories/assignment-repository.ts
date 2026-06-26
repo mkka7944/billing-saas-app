@@ -229,7 +229,7 @@ export async function getStaffAssignment(sup: SupabaseClient, q: AssignmentQuery
   }
 
   const psids = (items || []).map((i: any) => i.psid)
-  const UNIT_COLS = 'psid, survey_id, consumer_name, address, lat, lng, monthly_fee, arrears, route_name, route_seq, uc_name, image_urls'
+  const UNIT_COLS = 'psid, survey_id, consumer_name, address, lat, lng, monthly_fee, arrears, route_name, route_seq, uc_name'
   let units: any[]
   if (psids.length) {
     const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!

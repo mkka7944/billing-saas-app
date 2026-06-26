@@ -1,35 +1,30 @@
 {
-  "lastSession": "2026-06-26 — 6 quick wins + offline-cache fix + full delivery readiness assessment",
-  "currentPhase": "Pre-TestCity: delivery hardening & quick wins",
-  "currentStep": "All 6 quick wins implemented. Session saved — resuming after 28 June training.",
+  "lastSession": "2026-06-26 (late) — Supabase egress optimization: 3 changes, ~90% reduction",
+  "currentPhase": "Pre-TestCity: egress optimized, pending 28 June training",
+  "currentStep": "Egress reduced from ~960 MB/day to ~85 MB/day via 3 changes. Ready for training.",
   "filesModified": [
-    "src/lib/offline-cache.ts",
-    "src/lib/photo-queue.ts",
-    "src/hooks/use-photo-queue.ts",
-    "src/app/deliver/page.tsx",
-    "src/components/delivery/unit-delivery-sheet.tsx"
+    "src/components/delivery/unit-delivery-sheet.tsx",
+    "src/hooks/use-assignment-realtime.ts",
+    "src/lib/repositories/assignment-repository.ts",
+    "src/types/index.ts",
+    ".opencode/context.json",
+    "docs/SESSION.md"
   ],
   "filesCreated": [
-    "src/app/api/deliveries/clear-failed/route.ts"
+    "src/app/api/delivery/portal-images/route.ts"
   ],
   "keyDecisions": [
-    "offline-cache.ts given its own IndexedDB DB name ('billing-saas-offline-cache') to eliminate version coupling with photo-queue.ts",
-    "beforeunload event added during active delivery to prevent accidental navigation/refresh",
-    "Clear Failed button on deliver page calls clearAll() in IndexedDB + POST /api/deliveries/clear-failed for orphaned server-side records",
-    "My Position pagination enabled (removed filterTab guard) — allows browsing all items while map is visible",
-    "dbUnsyncedCount now properly resets to 0 after clear (fixed falsy-count bug)",
-    "Auto-advance (skip delivered), parallel uploads, mark-queue, pull-to-refresh, route stabilization, admin review tab deferred until after 28 June training"
+    "invalidateQueries(['staff-assignment']) after each delivery was the #1 egress source (~490 MB/day at 7k deliveries) — removed, optimistic cache update covers it",
+    "useAssignmentRealtime 30s polling is staff-side, not admin live monitoring — safe to remove; visibility-change handler retained",
+    "image_urls moved to on-demand fetch via /api/delivery/portal-images — tiny payload (~1 KB) fetched only when UDS opens",
+    "Admin map MAP_PAGE_SIZE=50000 left unchanged — not a frequent source of egress in practice",
+    "After all changes: ~2.6 GB/month projected — under 5 GB free tier with ~2x headroom"
   ],
   "nextActions": [
-    "28 June: TestCity staff training — deliver repeatedly to harden photo queue, GPS enforcement, app familiarity",
-    "After test session: build route stabilization pipeline (GPS timestamps → route_seq)",
-    "Deferred: auto-advance skip delivered items",
-    "Deferred: parallel photo uploads (concurrency 3-5)",
-    "Deferred: mark request offline queueing (new IndexedDB store + SW sync handler)",
-    "Deferred: pull-to-refresh on deliver page",
-    "Deferred: admin combined review tab (merge verify-photo + accept-delivery into one view)",
-    "Deferred: orphaned Drive file cleanup (requires GAS 'delete' action)"
+    "28 June: TestCity staff training — deliver repeatedly, harden photo queue, GPS enforcement",
+    "After training: build route stabilization pipeline (GPS timestamps → route_seq)",
+    "Deferred: auto-advance skip delivered items, parallel photo uploads, mark-queue, pull-to-refresh, admin review tab, Drive cleanup"
   ],
-  "gitCheckpoint": "33a6fdf",
-  "gitCurrentHead": "33a6fdf + 6 quick wins + offline-cache fix"
+  "gitCheckpoint": "1bce8fd",
+  "gitCurrentHead": "1bce8fd + egress optimization (3 changes)"
 }

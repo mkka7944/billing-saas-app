@@ -143,7 +143,7 @@ export interface AssignmentItemUnit {
   route_name: string | null
   route_seq: number | null
   uc_name: string | null
-  image_urls: string[]
+  image_urls?: string[]
 }
 
 export interface AssignmentItemWithUnit extends AssignmentItem {
