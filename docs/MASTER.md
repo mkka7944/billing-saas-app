@@ -3869,3 +3869,72 @@ The inner joins in `failed-uploads` are the key difference. When an assignment i
    - **Accept** button (Delivery Records tab): `processing` → `delivered`, no photo needed
    - **Verify** button (Failed Uploads tab): marks photo as admin-verified, clears the failed-uploads query
    - **Force** button `/api/deliveries/force`: emergency override by PSID
+
+---
+
+## 35. Auth & Account Management Plan (2026-06-27)
+
+### Current State
+
+- **Login flow:** Username/email + password → Supabase Auth → fetches profile via `GET /api/auth/profile`. Uses a `toEmail()` hack (`username@billing.local`) because Supabase Auth requires email format.
+- **User creation:** Admin creates via Settings → Users tab. Password is set manually by admin (shown once).
+- **Password change:** No self-service — admin must reset from Settings.
+- **Single session:** Not enforced — user can log in on unlimited devices simultaneously.
+- **Login page:** Basic centered card, "TMT Billing" + Building2 icon, functional but plain.
+- **Middleware:** `src/proxy.ts` exists but is dead code — never imported or wired up. No server-side route protection.
+- **Freeze/delete:** Supported via `profiles.suspended_at` / `deleted_at` columns. Auth session guarded in profile fetch API route.
+
+### Step 1 — Wire up middleware (5 min, no DB)
+
+| File | Action |
+|------|--------|
+| `src/proxy.ts` | Rename to `src/middleware.ts`, export properly as Next.js middleware |
+| Route protection | Protect `/map`, `/deliver`, `/assignments`, `/stats`, `/route`, `/flagged-units`, `/settings` |
+| Login redirect | Redirect authenticated users from `/login` to `/map` |
+
+**Risk:** Zero — file already contains all logic, just needs standard Next.js middleware entry point.
+
+### Step 2 — Login screen redesign (~1 hour, CSS + components only)
+
+| Change | Detail |
+|--------|--------|
+| Layout | Full-screen gradient background, centered card with subtle shadow/animation |
+| Branding | TMT logo area (left side on desktop, top on mobile) + tagline |
+| Loading state | Pulsing logo animation instead of skeleton rectangles |
+| Error display | Alert icon + red card with message (current is plain red text) |
+| Forgot password link | Opens dialog → notifies admin (no self-service reset yet — that's Step 3) |
+| Version/build | Footer text with version (already exists elsewhere in app) |
+
+**No DB changes, no API changes.** Pure UI.
+
+### Step 3 — Self-service password change (~45 min, new API route + UI)
+
+| Change | Detail |
+|--------|--------|
+| API route | `POST /api/auth/change-password` — verifies current password, then updates via `supabase.auth.updateUser()` |
+| UI trigger | User avatar dropdown → "Change Password" option |
+| Dialog | Current password, new password, confirm new password, validation, success/error toast |
+| Auth guard | Must be logged in; old password must match before accepting new one |
+
+**No DB migration.** Uses standard Supabase user-side password update (not admin API).
+
+### Step 4 — Single session enforcement (~1.5 hours, new API route + store change)
+
+| Change | Detail |
+|--------|--------|
+| API route | `POST /api/auth/sign-out-other-sessions` — Supabase Admin API `admin.auth.admin.listSessions()` + `admin.auth.admin.signOut()` |
+| Store hook | In `auth-store.ts signIn()`, after successful login, call the new API route |
+| Capability | Revokes all sessions for the user except the current one |
+| UX | Old device works until next page refresh — then stale session cookie redirects to login |
+
+**No DB migration.** Uses Supabase Admin Auth API directly.
+
+### Deferred (Future)
+
+| Feature | Why Deferred |
+|---------|-------------|
+| User-activated "log out all devices" button | Low priority — admin can already freeze user |
+| Self-service forgot password (email reset) | Requires real email addresses or SMS. Current `@billing.local` convention doesn't support this. |
+| 2FA / OTP | Not needed at current scale |
+| Rate limiting / brute force protection | Handled by Supabase Auth default settings |
+| Account lockout after N failed attempts | Supabase doesn't expose failed attempt count — would need custom tracking table |

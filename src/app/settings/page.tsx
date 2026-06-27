@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup } from '@/components/ui/select'
-import { Building2, ChevronDown, ChevronRight, Sun, Moon, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save, Send, CameraOff, CheckCircle2, RotateCw } from 'lucide-react'
+import { Building2, ChevronDown, ChevronRight, Sun, Moon, Plus, MoreHorizontal, UserCog, KeyRound, Snowflake, Trash2, RefreshCw, Loader2, Save, Send, CameraOff, CheckCircle2, RotateCw, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -154,6 +154,14 @@ export default function SettingsPage() {
   const [editRoleValue, setEditRoleValue] = useState('field_staff')
   const [resetPwOpen, setResetPwOpen] = useState(false)
   const [resetPwValue, setResetPwValue] = useState('')
+
+  // Change own password
+  const [changePwOpen, setChangePwOpen] = useState(false)
+  const [cpCurrent, setCpCurrent] = useState('')
+  const [cpNew, setCpNew] = useState('')
+  const [cpConfirm, setCpConfirm] = useState('')
+  const [cpSubmitting, setCpSubmitting] = useState(false)
+  const [cpError, setCpError] = useState<string | null>(null)
   const [editCityOpen, setEditCityOpen] = useState(false)
   const [editCityValue, setEditCityValue] = useState<string | null>('')
   const [editCitySaving, setEditCitySaving] = useState(false)
@@ -620,8 +628,74 @@ export default function SettingsPage() {
                 <div className="text-xs text-muted-foreground">
                   User ID: <span className="font-mono text-foreground">{user?.id}</span>
                 </div>
+                <button
+                  onClick={() => setChangePwOpen(true)}
+                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                >
+                  <KeyRound className="h-3 w-3" />
+                  Change password
+                </button>
               </CardContent>
             </Card>
+
+            <Dialog open={changePwOpen} onOpenChange={(o) => { setChangePwOpen(o); if (!o) { setCpCurrent(''); setCpNew(''); setCpConfirm(''); setCpError(null) } }}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Change Password</DialogTitle>
+                  <DialogDescription>Update your account password.</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={async (e) => {
+                  e.preventDefault()
+                  setCpError(null)
+                  if (cpNew !== cpConfirm) { setCpError('Passwords do not match'); return }
+                  if (cpNew.length < 6) { setCpError('New password must be at least 6 characters'); return }
+                  setCpSubmitting(true)
+                  try {
+                    const res = await fetch('/api/auth/change-password', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ currentPassword: cpCurrent, newPassword: cpNew }),
+                    })
+                    const data = await res.json()
+                    if (!res.ok) { setCpError(data.error); return }
+                    toast('Password changed successfully', 'success')
+                    setChangePwOpen(false)
+                    setCpCurrent('')
+                    setCpNew('')
+                    setCpConfirm('')
+                  } catch {
+                    setCpError('Network error. Try again.')
+                  } finally {
+                    setCpSubmitting(false)
+                  }
+                }} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-foreground/80">Current Password</label>
+                    <Input type="password" value={cpCurrent} onChange={(e) => setCpCurrent(e.target.value)} placeholder="Current password" required minLength={6} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-foreground/80">New Password</label>
+                    <Input type="password" value={cpNew} onChange={(e) => setCpNew(e.target.value)} placeholder="New password (min 6 chars)" required minLength={6} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-foreground/80">Confirm New Password</label>
+                    <Input type="password" value={cpConfirm} onChange={(e) => setCpConfirm(e.target.value)} placeholder="Repeat new password" required minLength={6} />
+                  </div>
+                  {cpError && (
+                    <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
+                      <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                      <span>{cpError}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setChangePwOpen(false)}>Cancel</Button>
+                    <Button type="submit" disabled={cpSubmitting}>
+                      {cpSubmitting ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Saving...</> : 'Save Password'}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
 
             <Card>
               <CardHeader className="pb-2">

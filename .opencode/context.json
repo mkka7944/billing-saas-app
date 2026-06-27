@@ -1,36 +1,35 @@
 {
-  "lastSession": "2026-06-27 — JUN2026 full monthly import (survey_units + payment_history)",
-  "currentPhase": "Pre-TestCity: JUN2026 data loaded, ready for 28 June training",
-  "currentStep": "Full monthly import complete: 215,428 survey_units enriched to JUN2026, 150,493 payments upserted (JUN2026 has 273 new). Two bugfixes in enrich-survey-units.py (chronological file sorting, variable name fix).",
+  "lastSession": "2026-06-27 — Auth system: middleware, login redesign, password change, single-session enforcement",
+  "currentPhase": "Pre-TestCity: JUN2026 data loaded + auth improvements deployed",
+  "currentStep": "All 4 auth steps complete: middleware wired up, login page redesigned, self-service password change, single-session enforcement on login.",
   "filesModified": [
-    "scripts/enrich-survey-units.py",
-    "AGENTS.md",
-    "src/app/api/uc-stats/route.ts",
-    "src/app/api/billing-charts/route.ts",
-    "src/lib/repositories/assignment-repository.ts",
-    "src/hooks/use-assignments.ts",
-    "src/components/charts/office-breakdown.tsx",
     ".opencode/context.json",
-    "docs/SESSION.md"
+    "docs/SESSION.md",
+    "docs/MASTER.md",
+    "src/app/login/page.tsx",
+    "src/app/settings/page.tsx",
+    "src/stores/auth-store.ts"
   ],
   "filesCreated": [
-    "docs/superpowers/specs/2026-06-27-jun2026-monthly-import-design.md",
-    "docs/superpowers/plans/2026-06-27-jun2026-monthly-import.md"
+    "src/middleware.ts",
+    "src/app/api/auth/change-password/route.ts",
+    "src/app/api/auth/sign-out-other-sessions/route.ts"
+  ],
+  "filesDeleted": [
+    "src/proxy.ts"
   ],
   "keyDecisions": [
-    "JUN2026 survey data loaded: 215,428 survey_ids enriched (3,850 new, 211,578 updated). NULL bill_month dropped from 5,232 to 1,400 as previously unbilled surveys now have lifecycle data.",
-    "JUN2026 payments: 273 new payment records from latest CSV. MAY2026 payments grew by 1,605.",
-    "enrich-survey-units.py bugfix 1: find_latest_lifecycle_files() used reverse alphabetical sort which selected May2026 over Jun2026 (M > J). Fixed to chronological sort by parsing month-year from filename.",
-    "enrich-survey-units.py bugfix 2: Line 210 used undefined variable surveyor_name_col instead of surveyor_col. This was a latent bug that never triggered because the column_mapping.json may have masked it.",
-    "UC list fix: fetchAllParallel replaced with sequential fetchAllRows — parallel approach caused 100+ concurrent requests that timed out on large datasets.",
-    "Office Breakdown fix: removed city/tehsil guard so the chart always fetches all cities regardless of the active city filter.",
-    "Assignment UC lookup fix: added district/tehsil filters to getUnassignedBills so UC queries are scoped to the right city."
+    "Middleware: proxy.ts renamed to middleware.ts with proper Next.js export — server-side route protection for all protected paths.",
+    "Login redesign: gradient background, pulsing logo loading state, error cards with icons, forgot password dialog, version footer.",
+    "Password change: own API route verifies current password by re-authenticating, then updates via supabase.auth.updateUser(). Settings → General → Account section.",
+    "Single session: admin.auth.admin.signOut(userId) called after every login, then re-authenticate — signs out all other devices.",
+    "Single-session UX: old device works until next action, then stale cookie redirects to login via middleware."
   ],
   "nextActions": [
     "28 June: TestCity staff training — deliver repeatedly, harden photo queue, GPS enforcement",
     "After training: build route stabilization pipeline (GPS timestamps → route_seq)",
     "Deferred: auto-advance skip delivered items, parallel photo uploads, mark-queue, pull-to-refresh, admin review tab, Drive cleanup"
   ],
-  "gitCheckpoint": "923c4e7",
-  "gitCurrentHead": "923c4e7 + 4 bugfixes (UC list, Office Breakdown, assignment city scope, JUN2026 label)"
+  "gitCheckpoint": "a9c32ca",
+  "gitCurrentHead": "a9c32ca + auth steps 1-4 (middleware, login redesign, password change, single session)"
 }

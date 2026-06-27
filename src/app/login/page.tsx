@@ -6,8 +6,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Building2, Loader2 } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Building2, Loader2, AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
 
   useEffect(() => {
     if (initialized && user) router.replace('/map')
@@ -23,18 +24,16 @@ export default function LoginPage() {
 
   if (!initialized) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-muted/30 p-4">
-        <Card className="w-full max-w-sm">
-          <CardHeader className="text-center">
-            <Skeleton className="h-8 w-32 mx-auto mb-2" />
-            <Skeleton className="h-4 w-40 mx-auto" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
-        </Card>
+      <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-950 p-4">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-pulse-subtle">
+            <div className="p-3 rounded-2xl bg-primary/10">
+              <Building2 className="h-10 w-10 text-primary" />
+            </div>
+          </div>
+          <div className="h-5 w-32 bg-muted rounded animate-pulse" />
+          <div className="h-4 w-48 bg-muted rounded animate-pulse" />
+        </div>
       </div>
     )
   }
@@ -52,38 +51,74 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-sm animate-in fade-in duration-500">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Building2 className="h-8 w-8 text-primary" />
+    <>
+      <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-950 p-4">
+        <Card className="w-full max-w-sm shadow-xl ring-1 ring-foreground/5 animate-in fade-in duration-500">
+          <CardHeader className="text-center pt-8 pb-6">
+            <div className="flex justify-center mb-4">
+              <div className="p-3 rounded-2xl bg-primary/10 ring-1 ring-primary/20">
+                <Building2 className="h-10 w-10 text-primary" />
+              </div>
             </div>
-          </div>
-          <CardTitle className="text-2xl font-bold font-display">TMT Billing</CardTitle>
-          <CardDescription>Sign in with your username or email</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="login" className="text-sm font-medium">Username or Email</label>
-              <Input id="login" type="text" value={login} onChange={(e) => setLogin(e.target.value)} placeholder="your_username" required autoComplete="username" />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium">Password</label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required autoComplete="current-password" />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={submitting || isLoading}>
-              {submitting ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in...</>
-              ) : (
-                'Sign in'
+            <CardTitle className="text-2xl font-bold font-display">TMT Billing</CardTitle>
+            <CardDescription>Field staff bill delivery & verification</CardDescription>
+          </CardHeader>
+          <CardContent className="pb-8">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="login" className="text-sm font-medium text-foreground/80">Username or Email</label>
+                <Input id="login" type="text" value={login} onChange={(e) => setLogin(e.target.value)} placeholder="your_username" required autoComplete="username" />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="password" className="text-sm font-medium text-foreground/80">Password</label>
+                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required autoComplete="current-password" />
+              </div>
+              {error && (
+                <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
               )}
+              <Button type="submit" className="w-full h-11" disabled={submitting || isLoading}>
+                {submitting ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Signing in...</>
+                ) : (
+                  'Sign in'
+                )}
+              </Button>
+            </form>
+            <div className="mt-6 text-center">
+              <button
+                type="button"
+                onClick={() => setForgotOpen(true)}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+              >
+                Forgot password?
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="fixed bottom-4 left-0 right-0 text-center">
+        <p className="text-xs text-muted-foreground/50">v1.0.0</p>
+      </div>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Forgot Password</DialogTitle>
+            <DialogDescription>
+              Please contact your administrator to reset your password.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setForgotOpen(false)}>
+              Got it
             </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

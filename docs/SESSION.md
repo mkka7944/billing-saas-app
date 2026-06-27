@@ -4989,3 +4989,55 @@ Ran the full monthly import pipeline for JUN2026 billing cycle:
 
 ### Verification
 - `npx tsc --noEmit` — zero errors
+
+---
+
+## Next Steps (Priority: Today)
+
+Detailed plan saved to `docs/MASTER.md` Section 35 — Auth & Account Management.
+
+| Step | What | Time | DB Change? |
+|------|------|------|-----------|
+| 1 | Wire up `src/middleware.ts` (dead proxy.ts → working middleware) | 5 min | No |
+| 2 | Redesign login screen (gradient, branding, animations, error UI) | ~1 hr | No |
+| 3 | Self-service password change (API route + dialog) | ~45 min | No |
+| 4 | Single session enforcement (revoke old sessions on login) | ~1.5 hr | No |
+
+All 4 steps require zero DB migrations — only API routes, store changes, and component/CSS changes.
+
+---
+
+## 2026-06-27 — Auth System: Steps 1-4 Implemented
+
+### Step 1 — Middleware wired up
+- Renamed `src/proxy.ts` → `src/middleware.ts`, exported as `middleware`
+- Protects `/map`, `/deliver`, `/assignments`, `/stats`, `/route`, `/flagged-units`, `/settings`
+- Redirects unauthenticated users to `/login` before page loads
+- Redirects authenticated users from `/login` to `/map`
+
+### Step 2 — Login screen redesign
+- Gradient background (blue/indigo light, dark slate/indigo dark)
+- Pulsing logo animation during loading (replaced skeleton rectangles)
+- Error card with `AlertCircle` icon (replaced plain red text)
+- "Forgot password?" link → dialog: "Contact your admin"
+- Version footer `v1.0.0`
+- `shadow-xl`, `ring-1`, rounded-2xl icon container
+
+### Step 3 — Self-service password change
+- `POST /api/auth/change-password` — verifies current password via re-auth, updates via `supabase.auth.updateUser()`
+- Link in Settings → General → Account section (below User ID)
+- Dialog with: Current Password, New Password, Confirm
+- Validates: match, min 6, different from current, server-side verification
+
+### Step 4 — Single session enforcement
+- `POST /api/auth/sign-out-other-sessions` — calls `admin.auth.admin.signOut(userId)` to revoke all sessions
+- auth-store.signIn(): after login → sign out all sessions → re-authenticate
+- Old device works until next action, then middleware redirects to login
+
+### Files
+- **Created:** `src/middleware.ts`, `src/app/api/auth/change-password/route.ts`, `src/app/api/auth/sign-out-other-sessions/route.ts`
+- **Modified:** `src/app/login/page.tsx`, `src/app/settings/page.tsx`, `src/stores/auth-store.ts`
+- **Deleted:** `src/proxy.ts`
+
+### Verification
+- `npx tsc --noEmit` — zero errors

@@ -79,6 +79,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return { error: error.message }
 
+    // Revoke all other sessions so only this device stays logged in
+    await fetch('/api/auth/sign-out-other-sessions', { method: 'POST' })
+
+    // Re-authenticate because the sign-out above revoked all sessions (including current)
+    const { error: reAuthError } = await supabase.auth.signInWithPassword({ email, password })
+    if (reAuthError) return { error: reAuthError.message }
+
     const { data: { session } } = await supabase.auth.getSession()
     const user = session?.user ?? null
     if (!user) return { error: 'Session not found' }
