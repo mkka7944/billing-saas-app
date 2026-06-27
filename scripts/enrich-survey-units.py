@@ -65,9 +65,19 @@ def find_latest_lifecycle_files():
         if len(parts) >= 4:
             city = parts[3]
             city_files[city].append(f)
+    month_order = {
+        "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,
+        "May": 5, "Jun": 6, "Jul": 7, "Aug": 8,
+        "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
+    }
+    def sort_key(fname):
+        m = re.search(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(20[0-9]{2})", fname)
+        if m:
+            return (int(m.group(2)), month_order.get(m.group(1), 0))
+        return (0, 0)
     latest = []
     for city, files in city_files.items():
-        files.sort(reverse=True)
+        files.sort(key=sort_key, reverse=True)
         latest.append(files[0])
         if len(files) > 1:
             print(f"  {city}: using {files[0]} (skipping {len(files)-1} older)")
@@ -197,7 +207,7 @@ def main():
                     "city_district": first_found(city_col_candidates, row).upper(),
                     "tehsil": safe_str(row.get(tehsil_col, "")).upper(),
                     "uc_name": safe_str(row.get(uc_col, "")),
-                    "surveyor_name": safe_str(row.get(surveyor_name_col, "")),
+                    "surveyor_name": safe_str(row.get(surveyor_col, "")),
                     "survey_date": safe_str(row.get(survey_date_col, "")) or None,
                     "survey_time": safe_str(row.get(survey_time_col, "")) or None,
                     "lat": safe_float(row.get(lat_col, 0)),

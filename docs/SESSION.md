@@ -4934,3 +4934,32 @@ Measured ~200 MB Supabase egress for 400-500 test deliveries over 2 days. At pro
 ### Next
 - 28 June: TestCity staff training (Sunday)
 - After training: tackle deferred features in risk order
+
+---
+
+## 2026-06-27 — JUN2026 Full Monthly Import
+
+### Phase: Data Import (Pre-Training)
+
+### What
+Ran the full monthly import pipeline for JUN2026 billing cycle:
+1. **enrich-survey-units.py** — 215,428 survey_ids enriched from 3 lifecycle XLSX files (Bhalwal: 36,442 → Khushab: 103,344 → Sargodha: 215,428). 3,850 new records, 211,578 updated, 0 errors.
+2. **load-payments.py** — 150,493 payment records upserted from combined CSV. JUN2026: 273 new payments. MAY2026 grew by 1,605 (28,398 total).
+3. **Reference tables** — JUN2026 added to bill_months. Surveyors: 116 (1 new).
+
+### Bugs Found & Fixed
+- **Chronological sorting bug** (`find_latest_lifecycle_files`): Used `sort(reverse=True)` which sorts alphabetically. "May" > "Jun" alphabetically, so May2026 files were always selected as "latest" when Jun2026 files existed. Fixed to parse month-year from filename with a numeric sort key.
+- **Variable name bug** (line 210): `surveyor_name_col` referenced but variable was defined as `surveyor_col`. Latent bug that prevented enrich from running on files with surveyor data.
+
+### Files Modified
+- `scripts/enrich-survey-units.py` — chronological sort + surveyor_col fix
+
+### Files Created
+- `docs/superpowers/specs/2026-06-27-jun2026-monthly-import-design.md`
+- `docs/superpowers/plans/2026-06-27-jun2026-monthly-import.md`
+
+### Verification
+- ingest_log: both scripts `success`, 0 errors
+- survey_units: 216,828 total (215,428 on JUN2026, 1,400 NULL)
+- payment_history: 10 months of data, JUN2026 present
+- Spot-check: 5 JUN2026 records verified with correct consumer_name, city_district, tehsil, uc_name
