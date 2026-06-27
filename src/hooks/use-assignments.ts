@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { DailyAssignment, AssignmentItemWithUnit } from '@/types'
 import { currentMonth } from '@/lib/constants'
 import { STALE_TIMES } from '@/lib/queries/constants'
+import { useBillingStore } from '@/stores/billing-store'
+import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 
 export interface UCTotals {
   uc_name: string
@@ -54,12 +56,18 @@ export function useAssignmentTotals(month: string = currentMonth(), district?: s
 }
 
 export function useUnassignedBills(uc: string | null, month: string = currentMonth(), routeName?: string) {
+  const selectedCity = useBillingStore((s) => s.selectedCity)
+  const cfg = selectedCity ? CITY_TEHSIL_MAP[selectedCity] : null
   return useQuery<{ data: UnassignedBill[]; total: number }>({
-    queryKey: ['unassigned-bills', uc, month, routeName],
+    queryKey: ['unassigned-bills', uc, month, routeName, selectedCity],
     queryFn: async () => {
       if (!uc) return { data: [], total: 0 }
       const params = new URLSearchParams({ uc, month })
       if (routeName) params.set('route_name', routeName)
+      if (cfg) {
+        params.set('district', cfg.district)
+        params.set('tehsil', cfg.tehsil)
+      }
       const res = await fetch(`/api/assignments?${params}`)
       if (!res.ok) throw new Error('Failed to fetch unassigned bills')
       const json = await res.json()

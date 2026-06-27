@@ -6,6 +6,7 @@
 2. Explain what happened in plain words, what caused it, and what the fix does
 3. Say WHY a choice was made, not just the technical details
 4. If technical terms are unavoidable, explain them right after in plain words
+5. **All answers must be short, non-technical, plain simple English. No jargon. No code. No file paths. Save details for when the user asks for them.**
 
 ## Source of Truth
 **At session start:** Read `.opencode/context.json` (machine-readable state) and `docs/SESSION.md` (running session log).

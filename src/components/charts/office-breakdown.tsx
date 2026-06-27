@@ -24,6 +24,7 @@ const MONTH_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#0
 const MONTH_LABELS: Record<string, string> = {
   SEP2025: 'Sep 2025', OCT2025: 'Oct 2025', NOV2025: 'Nov 2025', DEC2025: 'Dec 2025',
   JAN2026: 'Jan 2026', FEB2026: 'Feb 2026', MAR2026: 'Mar 2026', APR2026: 'Apr 2026', MAY2026: 'May 2026',
+  JUN2026: 'Jun 2026',
 }
 
 const ALL_TEHSILS = ['BHALWAL', 'KHUSHAB', 'SARGODHA']

@@ -4,6 +4,12 @@
   "currentStep": "Full monthly import complete: 215,428 survey_units enriched to JUN2026, 150,493 payments upserted (JUN2026 has 273 new). Two bugfixes in enrich-survey-units.py (chronological file sorting, variable name fix).",
   "filesModified": [
     "scripts/enrich-survey-units.py",
+    "AGENTS.md",
+    "src/app/api/uc-stats/route.ts",
+    "src/app/api/billing-charts/route.ts",
+    "src/lib/repositories/assignment-repository.ts",
+    "src/hooks/use-assignments.ts",
+    "src/components/charts/office-breakdown.tsx",
     ".opencode/context.json",
     "docs/SESSION.md"
   ],
@@ -15,13 +21,16 @@
     "JUN2026 survey data loaded: 215,428 survey_ids enriched (3,850 new, 211,578 updated). NULL bill_month dropped from 5,232 to 1,400 as previously unbilled surveys now have lifecycle data.",
     "JUN2026 payments: 273 new payment records from latest CSV. MAY2026 payments grew by 1,605.",
     "enrich-survey-units.py bugfix 1: find_latest_lifecycle_files() used reverse alphabetical sort which selected May2026 over Jun2026 (M > J). Fixed to chronological sort by parsing month-year from filename.",
-    "enrich-survey-units.py bugfix 2: Line 210 used undefined variable surveyor_name_col instead of surveyor_col. This was a latent bug that never triggered because the column_mapping.json may have masked it."
+    "enrich-survey-units.py bugfix 2: Line 210 used undefined variable surveyor_name_col instead of surveyor_col. This was a latent bug that never triggered because the column_mapping.json may have masked it.",
+    "UC list fix: fetchAllParallel replaced with sequential fetchAllRows — parallel approach caused 100+ concurrent requests that timed out on large datasets.",
+    "Office Breakdown fix: removed city/tehsil guard so the chart always fetches all cities regardless of the active city filter.",
+    "Assignment UC lookup fix: added district/tehsil filters to getUnassignedBills so UC queries are scoped to the right city."
   ],
   "nextActions": [
     "28 June: TestCity staff training — deliver repeatedly, harden photo queue, GPS enforcement",
     "After training: build route stabilization pipeline (GPS timestamps → route_seq)",
     "Deferred: auto-advance skip delivered items, parallel photo uploads, mark-queue, pull-to-refresh, admin review tab, Drive cleanup"
   ],
-  "gitCheckpoint": "07fa0ce",
-  "gitCurrentHead": "07fa0ce + JUN2026 full monthly import + enrich script bugfixes"
+  "gitCheckpoint": "923c4e7",
+  "gitCurrentHead": "923c4e7 + 4 bugfixes (UC list, Office Breakdown, assignment city scope, JUN2026 label)"
 }

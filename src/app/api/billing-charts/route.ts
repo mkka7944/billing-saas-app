@@ -33,16 +33,13 @@ export async function GET(request: Request) {
 
   const raw = (data || {}) as any
 
-  // Only fetch unfiltered tehsil_breakdown when no specific district/tehsil is selected
-  let unfilteredTehsilBreakdown: any[] | null = null
-  if (!district && !tehsil) {
-    const { data: allData } = await sup.rpc('get_charts_data', {
-      p_district: '',
-      p_tehsil: '',
-      p_month: month,
-    } as any)
-    unfilteredTehsilBreakdown = ((allData || {}) as any).tehsil_breakdown || null
-  }
+  // Always fetch unfiltered tehsil_breakdown so the Office Breakdown tab shows all cities
+  const { data: allData } = await sup.rpc('get_charts_data', {
+    p_district: '',
+    p_tehsil: '',
+    p_month: month,
+  } as any)
+  const unfilteredTehsilBreakdown = ((allData || {}) as any).tehsil_breakdown || null
   const curves: MonthlyCurveRow[] = (raw.monthly_curves || []).map((r: any) => ({
     bill_month: r.bill_month,
     day: r.day,

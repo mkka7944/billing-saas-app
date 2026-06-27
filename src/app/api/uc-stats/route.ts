@@ -2,25 +2,26 @@ import { NextResponse } from 'next/server'
 import { currentMonth } from '@/lib/constants'
 import { CITY_TEHSIL_MAP, type UCStatRow } from '@/lib/queries/hierarchy'
 
-/** Batched parallel fetch: HEAD for total count, then all pages in parallel. */
-async function fetchAllParallel(url: string, batchSize = 1000): Promise<any[]> {
+async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
   const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const headers = { apikey: svcKey, Authorization: `Bearer ${svcKey}` }
-
-  const headRes = await fetch(url, {
-    method: 'HEAD',
-    headers: { ...headers, Prefer: 'count=exact' },
-  })
-  const cr = headRes.headers.get('content-range')
-  const total = parseInt(cr?.split('/')[1] || '0', 10)
-  if (!total) return []
-
-  const pages = Math.ceil(total / batchSize)
-  const promises = Array.from({ length: pages }, (_, i) =>
-    fetch(url, { headers: { ...headers, Range: `${i * batchSize}-${(i + 1) * batchSize - 1}` } }).then((r) => r.json()),
-  )
-  const results = await Promise.all(promises)
-  return results.flat()
+  const all: any[] = []
+  let offset = 0
+  while (true) {
+    const res = await fetch(url, {
+      headers: {
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Range: `${offset}-${offset + batchSize - 1}`,
+      },
+    })
+    if (!res.ok) throw new Error(`PostgREST ${res.status}`)
+    const chunk = await res.json()
+    if (!chunk?.length) break
+    all.push(...chunk)
+    offset += chunk.length
+    if (chunk.length < batchSize) break
+  }
+  return all
 }
 
 export async function GET(request: Request) {
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
       filterParts.push(`tehsil=eq.${cfg.tehsil}`)
     }
     const unitsUrl = `${supUrl}/rest/v1/survey_units?select=uc_name&${filterParts.join('&')}&order=uc_name.asc`
-    const allUcNames: { uc_name: string }[] = await fetchAllParallel(unitsUrl)
+    const allUcNames: { uc_name: string }[] = await fetchAllRows(unitsUrl)
 
     const ucTotal = new Map<string, number>()
     for (const u of allUcNames) {
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
     // 2. Assigned per UC: sum daily_assignments.total_items (stored at creation time)
     //    Cap at total to prevent cross-city same-name-UC collisions.
     const assignUrl = `${supUrl}/rest/v1/daily_assignments?select=uc_name,total_items&bill_month=eq.${month}`
-    const allAssignments: { uc_name: string; total_items: number }[] = await fetchAllParallel(assignUrl)
+    const allAssignments: { uc_name: string; total_items: number }[] = await fetchAllRows(assignUrl)
 
     const ucAssignedRaw = new Map<string, number>()
     for (const a of allAssignments) {

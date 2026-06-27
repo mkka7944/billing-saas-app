@@ -4963,3 +4963,29 @@ Ran the full monthly import pipeline for JUN2026 billing cycle:
 - survey_units: 216,828 total (215,428 on JUN2026, 1,400 NULL)
 - payment_history: 10 months of data, JUN2026 present
 - Spot-check: 5 JUN2026 records verified with correct consumer_name, city_district, tehsil, uc_name
+
+---
+
+## 2026-06-27 (continued) — Bugfixes: UC List, Office Breakdown, Assignment City Scope
+
+### What
+4 fixes based on post-import issues:
+
+1. **UC list not loading** (`src/app/api/uc-stats/route.ts`): `fetchAllParallel` fired 100+ concurrent requests to Supabase — the database timed out and returned nothing. Replaced with sequential `fetchAllRows` (same pattern used everywhere else in the app). Less aggressive, actually finishes.
+
+2. **Office Breakdown only shows Sargodha** (`src/app/api/billing-charts/route.ts`): The code had a guard `if (!district && !tehsil)` to fetch all-cities data. Since the app always defaults to Sargodha, `tehsil` was always set, so the guard never passed. Removed the guard — always fetch unfiltered breakdown.
+
+3. **House lookup ignores city** (`src/lib/repositories/assignment-repository.ts` + `src/hooks/use-assignments.ts`): `getUnassignedBills` queried by UC name only, without city/tehsil. If two cities have a UC with the same name, houses from the wrong city would appear. Added district/tehsil filters. Hook now reads `selectedCity` from billing store and passes district/tehsil via query params.
+
+4. **Missing JUN2026 month label** (`src/components/charts/office-breakdown.tsx`): Hardcoded `MONTH_LABELS` didn't include JUN2026. Added it.
+
+### Files Modified
+- `AGENTS.md` — strengthened plain-language rule
+- `src/app/api/uc-stats/route.ts` — fetchAllParallel → fetchAllRows
+- `src/app/api/billing-charts/route.ts` — always fetch unfiltered tehsil_breakdown
+- `src/lib/repositories/assignment-repository.ts` — added district/tehsil filters
+- `src/hooks/use-assignments.ts` — pass district/tehsil in useUnassignedBills
+- `src/components/charts/office-breakdown.tsx` — added JUN2026 label
+
+### Verification
+- `npx tsc --noEmit` — zero errors
