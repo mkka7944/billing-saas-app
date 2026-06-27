@@ -4992,6 +4992,26 @@ Ran the full monthly import pipeline for JUN2026 billing cycle:
 
 ---
 
+## 2026-06-27 (continued) — Batch Fixes: Vercel build, SW updates, performance
+
+### Changes
+
+| # | Fix | Files |
+|---|-----|-------|
+| 1 | **`git rm src/proxy.ts`** — proxy.ts was deleted from disk but tracked in git, causing Vercel build failure ("Both middleware and proxy file detected") since commit 8f2abc8 | git index |
+| 2 | **SW update timeout 10s → 30s** — mobile SW checks often exceed 10s, silently returned false | `pwa-register.tsx` |
+| 3 | **Update notification toast** — `PwaRegister` now shows a persistent toast when a new SW is detected | `pwa-register.tsx`, `use-toast.tsx` |
+| 4 | **LIMIT 1000 on `getUnassignedBills`** — MC-1 (6293 units) no longer fetches all rows via batched REST | `assignment-repository.ts` |
+| 5 | **COUNT exact → estimated** — notification queries changed from `count: 'exact'` to `count: 'estimated'` (near-instant) | `notifications/route.ts` |
+| 6 | **Composite indexes** — covering indexes for trigger and notification queries | `scripts/sql/051-assignment-performance-indexes.sql` |
+| 7 | **Incremental trigger** — rewritten from full-aggregate (O(n²), rescans all items per row) to incremental O(1) per row | `scripts/sql/052-incremental-staff-stats-trigger.sql` |
+
+### Verification
+- `npx tsc --noEmit` — zero errors
+- Supabase migrations 051 and 052 applied successfully
+
+---
+
 ## Next Steps (Priority: Today)
 
 Detailed plan saved to `docs/MASTER.md` Section 35 — Auth & Account Management.

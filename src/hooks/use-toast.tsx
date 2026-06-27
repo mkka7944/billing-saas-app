@@ -50,8 +50,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const toast = useCallback((message: string, variant: ToastVariant = 'info', duration?: number) => {
     const id = `toast-${++toastId}`
     setToasts((prev) => [...prev, { id, message, variant }])
-    const timer = setTimeout(() => removeToast(id), duration ?? DEFAULT_DURATION)
-    timersRef.current.set(id, timer)
+    if (duration !== 0) {
+      const timer = setTimeout(() => removeToast(id), duration ?? DEFAULT_DURATION)
+      timersRef.current.set(id, timer)
+    }
     return id
   }, [removeToast])
 
@@ -59,8 +61,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const timer = timersRef.current.get(id)
     if (timer) { clearTimeout(timer); timersRef.current.delete(id) }
     setToasts((prev) => prev.map((t) => t.id === id ? { ...t, message, ...(variant ? { variant } : {}) } : t))
-    const newTimer = setTimeout(() => removeToast(id), duration ?? DEFAULT_DURATION)
-    timersRef.current.set(id, newTimer)
+    if (duration !== 0) {
+      const newTimer = setTimeout(() => removeToast(id), duration ?? DEFAULT_DURATION)
+      timersRef.current.set(id, newTimer)
+    }
   }, [removeToast])
 
   return (

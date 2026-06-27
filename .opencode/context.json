@@ -31,5 +31,5 @@
     "Deferred: auto-advance skip delivered items, parallel photo uploads, mark-queue, pull-to-refresh, admin review tab, Drive cleanup"
   ],
   "gitCheckpoint": "a9c32ca",
-  "gitCurrentHead": "a9c32ca + auth steps 1-4 (middleware, login redesign, password change, single session)"
+  "gitCurrentHead": "a9c32ca + auth + perf fixes (proxy rm, SW toast, limit 1000, estimated counts, incremental trigger)"
 }

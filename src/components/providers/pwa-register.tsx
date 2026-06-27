@@ -1,14 +1,16 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useToast } from '@/hooks/use-toast'
 
 export function PwaRegister() {
+  const { toast } = useToast()
   const [installable, setInstallable] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
-  const [updateAvailable, setUpdateAvailable] = useState(false)
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
+  const [notified, setNotified] = useState(false)
 
-  const promptUpdate = useCallback(() => {
+  const applyUpdate = useCallback(() => {
     if (waitingWorker) {
       waitingWorker.postMessage('SKIP_WAITING')
     }
@@ -24,25 +26,23 @@ export function PwaRegister() {
     })
 
     regPromise.then((reg) => {
-      if (reg.waiting) {
+      if (reg.waiting && !notified) {
         setWaitingWorker(reg.waiting)
-        setUpdateAvailable(true)
+        setNotified(true)
+        toast('New version available — tap to reload', 'info', 0)
       }
 
       reg.addEventListener('updatefound', () => {
         const newSW = reg.installing
         if (!newSW) return
         newSW.addEventListener('statechange', () => {
-          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+          if (newSW.state === 'installed' && navigator.serviceWorker.controller && !notified) {
             setWaitingWorker(newSW)
-            setUpdateAvailable(true)
+            setNotified(true)
+            toast('New version available — tap to reload', 'info', 0)
           }
         })
       })
-    })
-
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      window.location.reload()
     })
 
     const beforeInstallHandler = (e: Event) => {
@@ -61,7 +61,7 @@ export function PwaRegister() {
     return () => {
       window.removeEventListener('beforeinstallprompt', beforeInstallHandler)
     }
-  }, [])
+  }, [toast, notified])
 
   const handleInstall = async () => {
     if (!deferredPrompt) return
@@ -114,9 +114,6 @@ export function useSWUpdate() {
       })
     })
 
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      window.location.reload()
-    })
   }, [])
 
   const applyUpdate = useCallback(() => {
@@ -133,7 +130,7 @@ export function useSWUpdate() {
 
     // Wait for updatefound event or timeout
     const result = await new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 10000)
+      const timeout = setTimeout(() => resolve(false), 30000)
 
       if (reg.waiting) {
         clearTimeout(timeout)

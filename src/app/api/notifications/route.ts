@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     // Count unread
     const { count: unreadCount, error: countErr } = await sup
       .from('notifications')
-      .select('*', { head: true, count: 'exact' })
+      .select('*', { head: true, count: 'estimated' })
       .eq('user_id', user.id)
       .eq('read', false)
 
@@ -44,12 +44,12 @@ export async function GET(req: NextRequest) {
     if (isAdmin) {
       const { count: pending } = await sup
         .from('assignment_items')
-        .select('*', { head: true, count: 'exact' })
+        .select('*', { head: true, count: 'estimated' })
         .eq('status', 'pending')
 
       const { count: processing } = await sup
         .from('assignment_items')
-        .select('*', { head: true, count: 'exact' })
+        .select('*', { head: true, count: 'estimated' })
         .eq('status', 'processing')
 
       summary = { pending: pending ?? 0, processing: processing ?? 0 }

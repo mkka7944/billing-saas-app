@@ -189,7 +189,7 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
   if (q.tehsil) filterParts.push(`tehsil=eq.${encodeURIComponent(q.tehsil)}`)
   if (q.routeName) filterParts.push(`route_name=eq.${encodeURIComponent(q.routeName)}`)
   const sortOrder = q.routeName ? 'route_seq.asc.nullslast' : 'survey_id.asc'
-  const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent(PSID_COLS)}&${filterParts.join('&')}&order=${sortOrder}`
+  const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent(PSID_COLS)}&${filterParts.join('&')}&order=${sortOrder}&limit=1000`
 
   let data: any[]
   try {
