@@ -80,7 +80,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (error) return { error: error.message }
 
     // Revoke all other sessions so only this device stays logged in
-    await fetch('/api/auth/sign-out-other-sessions', { method: 'POST' })
+    const revokeRes = await fetch('/api/auth/sign-out-other-sessions', { method: 'POST' })
+    if (!revokeRes.ok) return { error: 'Failed to enforce single session. Try again.' }
 
     // Re-authenticate because the sign-out above revoked all sessions (including current)
     const { error: reAuthError } = await supabase.auth.signInWithPassword({ email, password })

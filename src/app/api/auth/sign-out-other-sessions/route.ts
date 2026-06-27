@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function POST() {
   const sup = await createClient()
@@ -10,11 +9,20 @@ export async function POST() {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
-  const admin = createAdminClient()
-  const { error: signOutError } = await (admin.auth as any).admin.signOut(user.id)
+  const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-  if (signOutError) {
-    return NextResponse.json({ error: signOutError.message }, { status: 500 })
+  const res = await fetch(`${supUrl}/auth/v1/admin/users/${user.id}/sessions`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${svcKey}`,
+      apikey: svcKey,
+    },
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    return NextResponse.json({ error: `Failed to revoke sessions: ${res.status} ${body}` }, { status: 500 })
   }
 
   return NextResponse.json({ success: true })
