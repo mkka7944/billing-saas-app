@@ -5061,3 +5061,30 @@ All 4 steps require zero DB migrations — only API routes, store changes, and c
 
 ### Verification
 - `npx tsc --noEmit` — zero errors
+
+---
+
+## 2026-06-27 (continued) — Notification fixes + MC assignment bugs
+
+### Fixes
+
+1. **All Staff notifications** (`admin/notifications/route.ts`): `.is('deleted_at', null)` → `.eq('is_active', true)`. Staff table has no deleted_at column — query silently returned 0 targets.
+
+2. **Notification panel z-index** (`notifications-bell.tsx`): Raised from `z-40/z-50` to `z-[1001]/z-[1002]` — was hidden behind sidebar (`z-[1000]`) and FloatingActions (`z-[800]`).
+
+3. **Desktop panel position** (`notifications-bell.tsx`): Hardcoded `top-[48px]` replaced with dynamic positioning from button's `getBoundingClientRect()`, calculated in onClick before panel renders — no flicker.
+
+4. **Error state** (`notifications-bell.tsx`): API failures no longer show infinite loading spinner — shows "Failed to load notifications" with red triangle.
+
+5. **MC-1 "All bills assigned"** (`assignment-repository.ts`, `uc-detail-panel.tsx`): Removed `&limit=1000` from survey_units URL — broke `fetchAllRows` pagination for large UCs (MC-1 has 6293 units). Added `.eq('bill_month', q.month)` to daily_assignments subquery (was querying ALL months). Added `isError` check in `UCDetailPanel` to show actual error instead of misleading empty state.
+
+6. **Manage tab missing assignments** (`assignment-repository.ts`): `getAssignmentList` was filtering by UC names from `hierarchy_summary` (cached, `UPPER(uc_name)`, possibly stale). Changed to query `survey_units` directly — always in sync with where `daily_assignments.uc_name` comes from.
+
+### Files Modified
+- `src/app/api/admin/notifications/route.ts`
+- `src/components/notifications/notifications-bell.tsx`
+- `src/lib/repositories/assignment-repository.ts`
+- `src/components/assignments/uc-detail-panel.tsx`
+
+### Verification
+- `npx tsc --noEmit` — zero errors

@@ -29,7 +29,7 @@ function parseRange(input: string, max: number): [number, number] | null {
 export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }: Props) {
   const { toast } = useToast()
   const month = currentMonth()
-  const { data, isLoading } = useUnassignedBills(uc, month, routeName)
+  const { data, isLoading, isError, error } = useUnassignedBills(uc, month, routeName)
   const { data: staffList } = useStaffList()
   const createAssignment = useCreateAssignment()
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([])
@@ -162,6 +162,14 @@ export function UCDetailPanel({ uc, city, routeName, onCreated, onDirtyChange }:
     return (
       <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
         Loading PSIDs...
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center h-full text-sm text-destructive">
+        Failed to load bills — {error?.message || 'server error'}
       </div>
     )
   }

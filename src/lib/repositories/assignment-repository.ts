@@ -92,19 +92,20 @@ export async function getAssignmentList(sup: SupabaseClient, q: AssignmentQuery)
 
   if (q.month) query = query.eq('bill_month', q.month)
 
-  // Filter by district/tehsil via hierarchy_summary UC names
+  // Filter by district/tehsil via survey_units UC names (direct source, always in sync)
   if (q.district) {
-    let hsQuery = sup
-      .from('hierarchy_summary')
+    let suQuery = sup
+      .from('survey_units')
       .select('uc_name')
       .eq('city_district', q.district)
-    if (q.tehsil) hsQuery = hsQuery.eq('tehsil', q.tehsil)
+      .not('uc_name', 'is', null)
+      .not('psid', 'is', null)
+    if (q.tehsil) suQuery = suQuery.eq('tehsil', q.tehsil)
 
-    const { data: ucRows } = await hsQuery
+    const { data: ucRows } = await suQuery
 
-    const ucNames = [...new Set((ucRows || []).map(r => r.uc_name))]
-    if (!ucNames.length) return { data: [] }
-    query = query.in('uc_name', ucNames)
+    const ucNames = [...new Set((ucRows || []).map(r => r.uc_name as string))]
+    if (ucNames.length) query = query.in('uc_name', ucNames)
   }
 
   const { data: assignments } = await query.order('created_at', { ascending: false })
@@ -167,6 +168,7 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
     .from('daily_assignments')
     .select('id')
     .eq('uc_name', q.uc)
+    .eq('bill_month', q.month)
 
   type ExDA = { id: string }
   const existingIds = ((existingAssignments || []) as ExDA[]).map((a) => a.id)
@@ -189,7 +191,7 @@ export async function getUnassignedBills(sup: SupabaseClient, q: AssignmentQuery
   if (q.tehsil) filterParts.push(`tehsil=eq.${encodeURIComponent(q.tehsil)}`)
   if (q.routeName) filterParts.push(`route_name=eq.${encodeURIComponent(q.routeName)}`)
   const sortOrder = q.routeName ? 'route_seq.asc.nullslast' : 'survey_id.asc'
-  const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent(PSID_COLS)}&${filterParts.join('&')}&order=${sortOrder}&limit=1000`
+  const url = `${supUrl}/rest/v1/survey_units?select=${encodeURIComponent(PSID_COLS)}&${filterParts.join('&')}&order=${sortOrder}`
 
   let data: any[]
   try {

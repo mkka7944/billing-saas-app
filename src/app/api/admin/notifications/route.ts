@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     if (all_staff) {
       const { data: staffList } = await (admin.from('staff') as any)
         .select('id')
-        .is('deleted_at', null)
+        .eq('is_active', true)
       targets = (staffList || []).map((s: any) => s.id)
     } else if (user_id) {
       targets = [user_id]

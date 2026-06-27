@@ -1,35 +1,27 @@
 {
-  "lastSession": "2026-06-27 — Auth system: middleware, login redesign, password change, single-session enforcement",
-  "currentPhase": "Pre-TestCity: JUN2026 data loaded + auth improvements deployed",
-  "currentStep": "All 4 auth steps complete: middleware wired up, login page redesigned, self-service password change, single-session enforcement on login.",
+  "lastSession": "2026-06-27 — Notification fixes + MC assignment bugs",
+  "currentPhase": "Pre-TestCity: JUN2026 data loaded + auth improvements deployed + bugfix batch",
+  "currentStep": "6 fixes: All Staff notifications, notification panel z-index/position/error-state, MC-1 unassigned bills limit removed, Manage tab switching from hierarchy_summary to survey_units",
   "filesModified": [
     ".opencode/context.json",
     "docs/SESSION.md",
-    "docs/MASTER.md",
-    "src/app/login/page.tsx",
-    "src/app/settings/page.tsx",
-    "src/stores/auth-store.ts"
-  ],
-  "filesCreated": [
-    "src/middleware.ts",
-    "src/app/api/auth/change-password/route.ts",
-    "src/app/api/auth/sign-out-other-sessions/route.ts"
-  ],
-  "filesDeleted": [
-    "src/proxy.ts"
+    "src/app/api/admin/notifications/route.ts",
+    "src/components/notifications/notifications-bell.tsx",
+    "src/lib/repositories/assignment-repository.ts",
+    "src/components/assignments/uc-detail-panel.tsx"
   ],
   "keyDecisions": [
-    "Middleware: proxy.ts renamed to middleware.ts with proper Next.js export — server-side route protection for all protected paths.",
-    "Login redesign: gradient background, pulsing logo loading state, error cards with icons, forgot password dialog, version footer.",
-    "Password change: own API route verifies current password by re-authenticating, then updates via supabase.auth.updateUser(). Settings → General → Account section.",
-    "Single session: admin.auth.admin.signOut(userId) called after every login, then re-authenticate — signs out all other devices.",
-    "Single-session UX: old device works until next action, then stale cookie redirects to login via middleware."
+    "All Staff notification filter: .is('deleted_at', null) was wrong — staff table has no deleted_at column. Changed to .eq('is_active', true).",
+    "Notification panel z-index raised to z-[1001]/z-[1002] — was hidden under sidebar (z-[1000]) and FloatingActions (z-[800]).",
+    "Desktop notification panel uses dynamic position (getBoundingClientRect on button click) instead of hardcoded top-[48px].",
+    "getUnassignedBills: removed &limit=1000 that broke fetchAllRows pagination. Added bill_month filter to daily_assignments subquery.",
+    "getAssignmentList: UC name filter now queries survey_units directly instead of hierarchy_summary — ensures UC names are always in sync."
   ],
   "nextActions": [
     "28 June: TestCity staff training — deliver repeatedly, harden photo queue, GPS enforcement",
     "After training: build route stabilization pipeline (GPS timestamps → route_seq)",
     "Deferred: auto-advance skip delivered items, parallel photo uploads, mark-queue, pull-to-refresh, admin review tab, Drive cleanup"
   ],
-  "gitCheckpoint": "a9c32ca",
-  "gitCurrentHead": "a9c32ca + auth + perf fixes (proxy rm, SW toast, limit 1000, estimated counts, incremental trigger)"
+  "gitCheckpoint": "b312301",
+  "gitCurrentHead": "b312301 + notification fixes + MC assignment bugfixes"
 }

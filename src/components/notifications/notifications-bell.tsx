@@ -18,6 +18,7 @@ export function NotificationsBell({ className }: NotificationsBellProps) {
   const router = useRouter()
   const desktopPanelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const panelPosRef = useRef({ top: 48, right: 8 })
 
   useEffect(() => {
     if (!open) return
@@ -35,11 +36,22 @@ export function NotificationsBell({ className }: NotificationsBellProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
 
+  const handleToggle = useCallback(() => {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      panelPosRef.current = {
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      }
+    }
+    setOpen((prev) => !prev)
+  }, [open])
+
   return (
     <div className="relative">
       <button
         ref={buttonRef}
-        onClick={() => setOpen(!open)}
+        onClick={handleToggle}
         className={cn('relative h-9 w-9 flex items-center justify-center rounded-lg border border-border hover:bg-muted cursor-pointer shrink-0', className)}
         title="Notifications"
       >
@@ -49,12 +61,12 @@ export function NotificationsBell({ className }: NotificationsBellProps) {
 
       {/* Mobile: backdrop */}
       {open && (
-        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)} />
+        <div className="fixed inset-0 z-[1001] bg-black/40 backdrop-blur-sm lg:hidden" onClick={() => setOpen(false)} />
       )}
 
       {/* Mobile: bottom sheet */}
       {open && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh] lg:hidden animate-in slide-in-from-bottom-2 duration-300 ease-out">
+        <div className="fixed bottom-0 left-0 right-0 z-[1002] bg-background rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh] lg:hidden animate-in slide-in-from-bottom-2 duration-300 ease-out">
           <div className="flex justify-center pt-2.5 pb-2 shrink-0">
             <div className="w-9 h-1 rounded-full bg-muted-foreground/20" />
           </div>
@@ -70,10 +82,11 @@ export function NotificationsBell({ className }: NotificationsBellProps) {
 
       {/* Desktop: dropdown panel */}
       {open && (
-        <div className="fixed inset-0 z-50 hidden lg:block" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-[1001] hidden lg:block" onClick={() => setOpen(false)}>
           <div
             ref={desktopPanelRef}
-            className="fixed top-[48px] right-2 w-[380px] bg-background rounded-xl shadow-2xl border border-border flex flex-col max-h-[600px] z-50 animate-in fade-in zoom-in-95 duration-150 origin-top-right"
+            className="fixed w-[380px] bg-background rounded-xl shadow-2xl border border-border flex flex-col max-h-[600px] z-[1002] animate-in fade-in zoom-in-95 duration-150 origin-top-right"
+            style={{ top: panelPosRef.current.top, right: panelPosRef.current.right }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0">
@@ -108,7 +121,7 @@ export function NotificationsPanelContent({
   onClose: () => void
   router?: ReturnType<typeof useRouter>
 }) {
-  const { data, isLoading } = useNotifications()
+  const { data, isLoading, error } = useNotifications()
   const markRead = useMarkNotificationRead()
   const markAllRead = useMarkAllNotificationsRead()
   const internalRouter = useRouter()
@@ -131,6 +144,15 @@ export function NotificationsPanelContent({
       onError: () => toast('Failed to mark all read', 'error'),
     })
   }, [markAllRead, toast])
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-12 text-destructive text-sm">
+        <AlertTriangle className="h-4 w-4 mr-2 shrink-0" />
+        Failed to load notifications
+      </div>
+    )
+  }
 
   if (isLoading) {
     return (
