@@ -1,5 +1,5 @@
-const CACHE_NAME = 'tmt-billing-v1'
-const STATIC_CACHE = 'tmt-static-v1'
+const CACHE_NAME = 'tmt-billing-v2'
+const STATIC_CACHE = 'tmt-static-v2'
 const OFFLINE_URL = '/offline.html'
 
 const BYPASS_HOSTS = [
@@ -50,16 +50,19 @@ self.addEventListener('fetch', (event) => {
   // 3. BYPASS — API routes (always fresh data)
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/image')) return
 
-  // 4. CacheFirst for static assets (hashed filenames are immutable)
+  // 4. StaleWhileRevalidate for static assets (dev has no hash, prod needs fresh)
   if (url.pathname.startsWith('/_next/static')) {
     event.respondWith(
-      caches.match(event.request).then((cached) => cached || fetch(event.request).then((res) => {
-        if (res.status === 200) {
-          const clone = res.clone()
-          caches.open(STATIC_CACHE).then((c) => c.put(event.request, clone))
-        }
-        return res
-      }))
+      caches.match(event.request).then((cached) => {
+        const fetchPromise = fetch(event.request).then((res) => {
+          if (res.status === 200) {
+            const clone = res.clone()
+            caches.open(STATIC_CACHE).then((c) => c.put(event.request, clone))
+          }
+          return res
+        })
+        return cached || fetchPromise
+      })
     )
     return
   }
