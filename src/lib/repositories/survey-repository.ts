@@ -5,6 +5,7 @@ const COLS = 'survey_id, consumer_name, address, lat, lng, city_district, tehsil
 const MAP_COLS = 'survey_id, consumer_name, address, lat, lng, city_district, tehsil, uc_name, surveyor_name, survey_date, survey_time, monthly_fee, billing_category, status, psid, arrears, route_name, route_seq, current_bill_month, image_urls'
 
 const BATCH_SIZE = 1000
+const MAX_PAGE_SIZE = 10_000
 
 export interface SurveyQuery {
   districts: string[]
@@ -55,6 +56,7 @@ export async function getSurveyById(sup: SupabaseClient, id: string) {
 }
 
 export async function getSurveys(sup: SupabaseClient, q: SurveyQuery) {
+  q.pageSize = Math.min(q.pageSize, MAX_PAGE_SIZE)
   const from = (q.page - 1) * q.pageSize
   const useCols = q.pageSize > BATCH_SIZE ? MAP_COLS : COLS
 

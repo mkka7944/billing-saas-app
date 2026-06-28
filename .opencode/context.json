@@ -1,27 +1,29 @@
 {
-  "lastSession": "2026-06-28 — Live monitoring fix: delivery-trail route rewrite + flicker fix",
-  "currentPhase": "Production day 1 — live monitoring critical fix",
-  "currentStep": "Rewrote delivery-trail query approach (staff→assignments→items→survey_units instead of all survey_units), added keepPreviousData, added selectedCity to offset reset",
+  "lastSession": "2026-06-28 — 4 egress fixes: uc-stats rewrite, MAP_PAGE_SIZE cap, lighter auth, GPS batching",
+  "currentPhase": "Egress optimization — keeping under 5 GB/month for 70 staff delivery",
+  "currentStep": "All 4 fixes implemented: uc-stats uses hierarchy + COUNT instead of 212K-row fetch, MAP_PAGE_SIZE reduced to 10K with server cap, deliveries/mark uses getSession() instead of getUser(), GPS reports batched client-side",
   "filesModified": [
     ".opencode/context.json",
     "docs/SESSION.md",
-    "src/app/api/live/delivery-trail/route.ts",
-    "src/hooks/use-delivery-trail.ts",
-    "src/components/live/live-activity-feed.tsx"
+    "AGENTS.md",
+    "src/app/api/uc-stats/route.ts",
+    "src/lib/queries/constants.ts",
+    "src/lib/repositories/survey-repository.ts",
+    "src/app/api/deliveries/mark/route.ts",
+    "src/hooks/use-user-location.ts",
+    "src/app/api/live/report-location/route.ts"
   ],
   "keyDecisions": [
-    "Old approach: fetch ALL survey_units in city (100K rows, capped at 1000 by PostgREST) → items by PSID (URL exceeded 300 limit). List showed/hid on every poll.",
-    "New approach: staff by city → daily_assignments → items (today's deliveries only, small set) → survey_units by PSID. No 1000-row limit, no 300-item URL limit.",
-    "total_items from daily_assignments replaces the expensive totalByAssignment query on assignment_items.",
-    "keepPreviousData prevents the list from wiping clean on every poll refetch.",
-    "selectedCity added to offset reset dependency so switching cities resets the feed.",
-    "Single-session enforcement made non-blocking: GoTrue Admin API DELETE failing was blocking login. Now best-effort — if revoke fails, session from sign-in is still valid."
+    "uc-stats: replaced 212K-row fetchAllRows with hierarchy reference table + per-UC COUNT queries (head:true). 4.2 MB → ~4 KB per call.",
+    "MAP_PAGE_SIZE reduced from 50000 to 10000 with server-side cap in survey-repository. Prevents unbounded batched fetches.",
+    "deliveries/mark: replaced sup.auth.getUser() (GoTrue API call) with sup.auth.getSession() (local cookie read). Saves 1 HTTP round-trip per delivery.",
+    "GPS batching: client buffers reports in array, flushes at 10 items or every 60s. Server accepts array of locations. Reduces Supabase queries from 4 per report to 3 per batch."
   ],
   "nextActions": [
-    "Push to Vercel — login no longer blocked by session revoke",
-    "Check Vercel Function Logs for sign-out-other-sessions errors to diagnose GoTrue issue",
-    "After deploy: verify login works without 'Failed to enforce single session' error"
+    "Deploy to Vercel — all 4 egress fixes go live",
+    "Monitor Supabase egress dashboard after 24 hours",
+    "Check Vercel function logs for any getSession() errors (report-location, deliveries/mark)"
   ],
-  "gitCheckpoint": "cd4ab8c",
-  "gitCurrentHead": "cd4ab8c + auth: non-blocking single-session enforcement"
+  "gitCheckpoint": "d83df19",
+  "gitCurrentHead": "d83df19 + 4 egress fixes"
 }

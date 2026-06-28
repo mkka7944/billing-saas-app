@@ -27,6 +27,16 @@ const listeners = new Set<Listener>()
 
 // GPS position reporting (staff phones → server)
 const MOVEMENT_THRESHOLD = 50  // 50 meters
+const BATCH_FLUSH_INTERVAL = 60_000  // flush buffer every 60s
+const BATCH_MAX_SIZE = 10
+
+interface PendingReport {
+  lat: number
+  lng: number
+  accuracy: number | null
+}
+
+const pendingReports: PendingReport[] = []
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000
@@ -37,15 +47,25 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-async function reportLocation(lat: number, lng: number, accuracy: number | null) {
+async function flushReports() {
+  if (pendingReports.length === 0) return
+  const batch = pendingReports.splice(0)
   try {
     await fetch('/api/live/report-location', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat, lng, accuracy }),
+      body: JSON.stringify({ locations: batch }),
     })
   } catch {
-    // Silently fail — offline or network error
+    // Silently fail — offline or network error.
+    // Batch is dropped (positions are ephemeral — stale data isn't useful)
+  }
+}
+
+function reportLocation(lat: number, lng: number, accuracy: number | null) {
+  pendingReports.push({ lat, lng, accuracy })
+  if (pendingReports.length >= BATCH_MAX_SIZE) {
+    flushReports()
   }
 }
 
@@ -150,7 +170,7 @@ export function useUserLocation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Periodically report GPS position to server (interval controlled by admin setting)
+  // Periodically decide whether to report GPS position
   useEffect(() => {
     if (!reportInterval || !sharedLocation) return
 
@@ -172,6 +192,12 @@ export function useUserLocation() {
 
     return () => clearInterval(id)
   }, [reportInterval])
+
+  // Flush GPS buffer periodically so reports reach the server even with low movement
+  useEffect(() => {
+    const id = setInterval(flushReports, BATCH_FLUSH_INTERVAL)
+    return () => clearInterval(id)
+  }, [])
 
   return { location: sharedLocation, isTracking: sharedIsTracking, error: sharedError }
 }

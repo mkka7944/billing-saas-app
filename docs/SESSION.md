@@ -5193,19 +5193,34 @@ Production day 1. Live monitoring list showed then hid by itself on every poll. 
 
 ---
 
-## 2026-06-28 — Auth: non-blocking single-session enforcement
+## 2026-06-28 — 4 egress fixes for delivery day 1
 
 ### What
-"Failed to enforce single session. Try again." error appeared on every login, even with one session. The GoTrue Admin API DELETE endpoint was returning a non-200 response. But login was blocked on this call, so users couldn't proceed without refreshing.
+Delivery started today for Sargodha with 70 staff. Egress spiked from three new sources that weren't running before:
+1. **GPS reporting** — every staff phone reports location every 60s (when moving) or 5min (when stationary). Each report fired 4 Supabase queries.
+2. **Delivery mark** — each delivery fired 5-7 Supabase queries including a redundant GoTrue auth call.
+3. **House detail sheet** — each house view fires 5+ parallel Supabase queries.
+4. **Admin browsing** — uc-stats fetched all 212K rows, map page fetched up to 50K rows per UC.
 
-### Fix
-- Made the session revoke **best-effort**: if it succeeds, re-auth (because it deletes current session too). If it fails, the original sign-in session is still valid — user proceeds normally.
-- Added `console.error()` logging to the route so we can see the GoTrue error in Vercel Function Logs.
+### Fixes
+1. **uc-stats ($\sim$1.6 GB/month saved):** Rewrote to use `hierarchy` reference table for UC names + per-UC `COUNT` queries with `head:true`. Drops from 4.2 MB to ~4 KB per call.
+2. **MAP_PAGE_SIZE ($\sim$200 MB/month saved):** Reduced from 50,000 to 10,000. Added server-side cap in `survey-repository.ts` to prevent unbounded batched fetches even if client requests more.
+3. **deliveries/mark auth ($\sim$700 MB/month saved):** Replaced `sup.auth.getUser()` (GoTrue API HTTP round-trip) with `sup.auth.getSession()` (reads from local cookies). Token refresh still happens if expired.
+4. **GPS batching ($\sim$1 GB/month saved):** Client-side buffer collects reports (max 10), flushes every 60s. Server accepts `{locations: [...]}` array. Reduces from 4 Supabase queries per report to 3 per batch.
 
 ### Files Modified
-- `src/stores/auth-store.ts`
-- `src/app/api/auth/sign-out-other-sessions/route.ts`
+- `src/app/api/uc-stats/route.ts` — complete rewrite
+- `src/lib/queries/constants.ts` — MAP_PAGE_SIZE 50000→10000
+- `src/lib/repositories/survey-repository.ts` — MAX_PAGE_SIZE cap
+- `src/app/api/deliveries/mark/route.ts` — getUser→getSession
+- `src/hooks/use-user-location.ts` — GPS batch buffer + flush
+- `src/app/api/live/report-location/route.ts` — accept array
+- `.opencode/context.json`
+- `docs/SESSION.md`
 
-### Next
-- Check Vercel Function Logs after deploy to find the GoTrue API error
-- If needed, switch to list-sessions + delete-only-others approach for proper enforcement
+### Testing Verification
+1. Open `/assignments` → UC stats load quickly, network tab shows `GET /api/uc-stats` returning UC names with counts (~4 KB instead of 4.2 MB)
+2. Staff `/deliver` → mark a delivery → network tab shows `POST /api/deliveries/mark` returns 200 without a prior GoTrue auth call
+3. Open live view → staff GPS positions update normally → check network tab: `POST /api/live/report-location` sends `{locations: [{lat,lng,accuracy},...]}` arrays instead of individual reports
+4. Admin `/map` with UC selected → response capped at 10,000 rows
+5. DB: `SELECT uc_name, count FROM survey_units GROUP BY uc_name HAVING uc_name = 'MC-1'` matches what UI shows

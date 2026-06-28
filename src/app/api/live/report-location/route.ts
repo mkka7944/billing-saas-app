@@ -4,10 +4,11 @@ import { createClient } from '@/lib/supabase/server'
 export async function POST(request: Request) {
   const sup = await createClient()
 
-  const { data: { user }, error: authError } = await sup.auth.getUser()
-  if (!user || authError) {
+  const { data: { session }, error: authError } = await sup.auth.getSession()
+  if (!session?.user || authError) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const user = session.user
 
   // Verify staff exists
   const { data: staff } = await sup
@@ -21,13 +22,13 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-  const { lat, lng, accuracy } = body
+  const locations = body.locations || [body]
 
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
-    return NextResponse.json({ error: 'lat and lng are required' }, { status: 400 })
+  if (!locations.length) {
+    return NextResponse.json({ error: 'No locations provided' }, { status: 400 })
   }
 
-  // Rate limit: check last report
+  // Rate limit: check last report against the batch's latest timestamp
   const { data: lastReport } = await sup
     .from('staff_locations')
     .select('captured_at')
@@ -43,20 +44,28 @@ export async function POST(request: Request) {
     }
   }
 
+  // Batch insert
+  const rows = locations.map((loc: any) => {
+    if (typeof loc.lat !== 'number' || typeof loc.lng !== 'number') {
+      throw new Error('lat and lng are required')
+    }
+    return {
+      staff_id: staff.id,
+      lat: loc.lat,
+      lng: loc.lng,
+      accuracy: typeof loc.accuracy === 'number' ? loc.accuracy : null,
+      source: 'gps',
+    }
+  })
+
   const { error: insertError } = await sup
     .from('staff_locations')
-    .insert({
-      staff_id: staff.id,
-      lat,
-      lng,
-      accuracy: typeof accuracy === 'number' ? accuracy : null,
-      source: 'gps',
-    })
+    .insert(rows)
 
   if (insertError) {
     console.error('report-location insert error:', insertError)
-    return NextResponse.json({ error: 'Failed to save location' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to save locations' }, { status: 500 })
   }
 
-  return NextResponse.json({ status: 'ok' })
+  return NextResponse.json({ status: 'ok', count: rows.length })
 }

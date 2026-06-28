@@ -7,7 +7,7 @@ export const STALE_TIMES = {
   DEFAULT: 0,
 } as const
 
-export const MAP_PAGE_SIZE = 50000
+export const MAP_PAGE_SIZE = 10000
 
 export const SURVEY_UNIT_COLS = [
   'survey_id',

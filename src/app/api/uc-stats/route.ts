@@ -1,28 +1,7 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 import { currentMonth } from '@/lib/constants'
 import { CITY_TEHSIL_MAP, type UCStatRow } from '@/lib/queries/hierarchy'
-
-async function fetchAllRows(url: string, batchSize = 1000): Promise<any[]> {
-  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-  const all: any[] = []
-  let offset = 0
-  while (true) {
-    const res = await fetch(url, {
-      headers: {
-        apikey: svcKey,
-        Authorization: `Bearer ${svcKey}`,
-        Range: `${offset}-${offset + batchSize - 1}`,
-      },
-    })
-    if (!res.ok) throw new Error(`PostgREST ${res.status}`)
-    const chunk = await res.json()
-    if (!chunk?.length) break
-    all.push(...chunk)
-    offset += chunk.length
-    if (chunk.length < batchSize) break
-  }
-  return all
-}
 
 export async function GET(request: Request) {
   try {
@@ -31,33 +10,49 @@ export async function GET(request: Request) {
     const month = sp.get('month') || currentMonth()
 
     const cfg = city ? CITY_TEHSIL_MAP[city] : null
-    const supUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const sup = await createClient()
 
-    // 1. Total per UC: fetch just uc_name column, count in JavaScript.
-    const filterParts = ['psid=not.is.null', 'or=(status.is.null,status.eq.ACTIVE)']
+    // 1. Get UC names from the hierarchy reference table (always < 500 rows)
+    let hierarchyQuery = sup.from('hierarchy').select('uc_name, tehsil')
     if (cfg) {
-      filterParts.push(`city_district=eq.${cfg.district}`)
-      filterParts.push(`tehsil=eq.${cfg.tehsil}`)
+      hierarchyQuery = hierarchyQuery
+        .eq('city_district', cfg.district)
+        .eq('tehsil', cfg.tehsil)
     }
-    const unitsUrl = `${supUrl}/rest/v1/survey_units?select=uc_name&${filterParts.join('&')}&order=uc_name.asc`
-    const allUcNames: { uc_name: string }[] = await fetchAllRows(unitsUrl)
+    const { data: hierarchy } = await hierarchyQuery
+    const ucNames = [...new Set((hierarchy || []).map((h: any) => h.uc_name))]
 
-    const ucTotal = new Map<string, number>()
-    for (const u of allUcNames) {
-      ucTotal.set(u.uc_name, (ucTotal.get(u.uc_name) || 0) + 1)
-    }
+    // 2. Count survey_units per UC (server-side aggregate queries)
+    const counts = await Promise.all(
+      ucNames.map(async (uc) => {
+        let query = sup
+          .from('survey_units')
+          .select('*', { count: 'exact', head: true })
+          .eq('uc_name', uc as string)
+          .not('psid', 'is', null)
+          .or('status.is.null,status.eq.ACTIVE')
+        if (cfg) {
+          query = query.eq('city_district', cfg.district).eq('tehsil', cfg.tehsil)
+        }
+        const { count } = await query
+        return { uc_name: uc as string, total: count ?? 0 }
+      })
+    )
 
-    // 2. Assigned per UC: sum daily_assignments.total_items (stored at creation time)
-    //    Cap at total to prevent cross-city same-name-UC collisions.
-    const assignUrl = `${supUrl}/rest/v1/daily_assignments?select=uc_name,total_items&bill_month=eq.${month}`
-    const allAssignments: { uc_name: string; total_items: number }[] = await fetchAllRows(assignUrl)
+    const ucTotal = new Map(counts.map((c) => [c.uc_name, c.total]))
+
+    // 3. Assigned per UC: sum daily_assignments.total_items for this month
+    const { data: assignments } = await sup
+      .from('daily_assignments')
+      .select('uc_name, total_items')
+      .eq('bill_month', month)
 
     const ucAssignedRaw = new Map<string, number>()
-    for (const a of allAssignments) {
+    for (const a of (assignments || []) as { uc_name: string; total_items: number }[]) {
       ucAssignedRaw.set(a.uc_name, (ucAssignedRaw.get(a.uc_name) || 0) + (a.total_items || 0))
     }
 
-    // 3. Build response: assigned = min(raw, total) to avoid >100% from same-name UCs across cities
+    // 4. Build response
     const data: UCStatRow[] = Array.from(ucTotal.entries())
       .map(([uc_name, total]) => {
         const raw = ucAssignedRaw.get(uc_name) || 0

@@ -44,12 +44,12 @@ export async function POST(request: Request) {
     const gps_lng = gpsLng ?? null
     const hasPhoto = !skipPhoto
 
-    // Auth — ownership check below is sufficient for authorization
     const sup = await createClient()
-    const { data: { user }, error: authError } = await sup.auth.getUser()
-    if (!user || authError) {
+    const { data: { session }, error: authError } = await sup.auth.getSession()
+    if (!session?.user || authError) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const user = session.user
 
     // Ownership + psid lookup
     const { data: ownership } = await sup
