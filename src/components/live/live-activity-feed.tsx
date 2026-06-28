@@ -36,10 +36,10 @@ export function LiveActivityFeed() {
     setMapZoom(18)
   }, [markerByPsid, setMapCenter, setMapZoom])
 
-  // Reset offset when date changes
+  // Reset offset when date or city changes
   useEffect(() => {
     setOffset(0)
-  }, [selectedDate])
+  }, [selectedDate, selectedCity])
 
   const handleLoadMore = useCallback(() => {
     setOffset((o) => o + 50)

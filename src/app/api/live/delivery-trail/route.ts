@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { CITY_TEHSIL_MAP } from '@/lib/queries/hierarchy'
 import { pktDayRange } from '@/lib/pkt'
 
 function dayRange(dateStr?: string | null): { start: string; end: string } {
@@ -25,33 +24,43 @@ export async function GET(request: Request) {
   const date = sp.get('date')
   const limit = Math.min(parseInt(sp.get('limit') || '50', 10), 200)
   const offset = parseInt(sp.get('offset') || '0', 10)
-  const cfg = CITY_TEHSIL_MAP[city]
 
-  if (!cfg) {
+  if (!city) {
     return NextResponse.json({ error: 'Invalid city' }, { status: 400 })
   }
 
   const { start, end } = dayRange(date)
 
-  // 1. Query survey_units first — scoped to city, returns only matching PSIDs + coords
-  const { data: units } = await sup
-    .from('survey_units')
-    .select('psid, consumer_name, lat, lng')
-    .eq('city_district', cfg.district)
-    .eq('tehsil', cfg.tehsil)
-    .not('psid', 'is', null)
+  // 1. Get staff in this city
+  const { data: staffList } = await sup
+    .from('staff')
+    .select('id')
+    .eq('assigned_city', city)
 
-  if (!units?.length) {
+  if (!staffList?.length) {
     return NextResponse.json({ markers: [], activities: [] })
   }
 
-  // 2. Query assignment_items by PSIDs + date range
-  const psids = units.map((u: any) => u.psid)
+  const staffIds = staffList.map((s: any) => s.id)
+
+  // 2. Get daily assignments for these staff
+  const { data: assignments } = await sup
+    .from('daily_assignments')
+    .select('id, staff_id, total_items, staff:staff_id(full_name), uc_name')
+    .in('staff_id', staffIds)
+
+  if (!assignments?.length) {
+    return NextResponse.json({ markers: [], activities: [] })
+  }
+
+  const assignmentIds = assignments.map((a: any) => a.id)
+
+  // 3. Get assignment_items for these assignments in the date range
   const { data: items } = await sup
     .from('assignment_items')
     .select('assignment_id, psid, status, delivered_at')
+    .in('assignment_id', assignmentIds)
     .in('status', ['delivered', 'missed', 'processing'])
-    .in('psid', psids)
     .gte('delivered_at', start)
     .lte('delivered_at', end)
 
@@ -59,25 +68,27 @@ export async function GET(request: Request) {
     return NextResponse.json({ markers: [], activities: [] })
   }
 
-  // 3. Query daily_assignments for staff names + UC
-  const assignmentIds = [...new Set(items.map((i: any) => i.assignment_id))]
-  const { data: assignments } = await sup
-    .from('daily_assignments')
-    .select('id, staff_id, staff:staff_id(full_name), uc_name')
-    .in('id', assignmentIds)
+  // 4. Get survey_unit data for matching PSIDs
+  const psids = [...new Set(items.map((i: any) => i.psid))]
+  const { data: units } = await sup
+    .from('survey_units')
+    .select('psid, consumer_name, lat, lng')
+    .in('psid', psids)
 
+  const unitByPsid = new Map((units || []).map((u: any) => [u.psid, u]))
+
+  // 5. Build staff + UC lookup by assignment_id
   const staffMap = new Map(
-    (assignments || []).map((a: any) => [a.id, { name: a.staff?.full_name || 'Unknown', id: a.staff_id }])
+    assignments.map((a: any) => [a.id, { name: a.staff?.full_name || 'Unknown', id: a.staff_id }])
   )
   const ucMap = new Map(
-    (assignments || []).map((a: any) => [a.id, a.uc_name || ''])
+    assignments.map((a: any) => [a.id, a.uc_name || ''])
+  )
+  const totalItemsByAssignment = new Map(
+    assignments.map((a: any) => [a.id, a.total_items || 0])
   )
 
-  // 4. Build maps for fast lookup
-  const unitByPsid = new Map(units.map((u: any) => [u.psid, u]))
-
-  // 5. Staff summary — accurate per-staff counts from the full items array.
-  //    This is the authoritative source, not derived from markers or activities.
+  // 6. Staff summary
   const staffSummary: Record<string, {
     staff_id: string
     total_actioned: number
@@ -90,14 +101,17 @@ export async function GET(request: Request) {
   for (const item of items) {
     const staffInfo = staffMap.get(item.assignment_id) || { name: 'Unknown', id: null }
     const name = staffInfo.name
-    if (!staffSummary[name]) staffSummary[name] = {
-      staff_id: staffInfo.id || name,
-      total_actioned: 0,
-      delivered: 0,
-      missed: 0,
-      processing: 0,
-      assigned: 0,
-      pending: 0,
+    if (!staffSummary[name]) {
+      const assigned = totalItemsByAssignment.get(item.assignment_id) || 0
+      staffSummary[name] = {
+        staff_id: staffInfo.id || name,
+        total_actioned: 0,
+        delivered: 0,
+        missed: 0,
+        processing: 0,
+        assigned,
+        pending: assigned,
+      }
     }
     staffSummary[name].total_actioned++
     if (item.status === 'delivered') staffSummary[name].delivered++
@@ -105,35 +119,12 @@ export async function GET(request: Request) {
     else if (item.status === 'processing') staffSummary[name].processing++
   }
 
-  // 6. Get total assigned items per assignment (includes pending) so we can show
-  //    "Assigned (A)" and "Pending (P)" per the live monitoring plan.
-  if (assignmentIds.length > 0) {
-    const { data: totalByAssignment } = await sup
-      .from('assignment_items')
-      .select('assignment_id')
-      .in('assignment_id', assignmentIds)
-    if (totalByAssignment) {
-      // Count items per assignment_id
-      const perAssignment: Record<string, number> = {}
-      for (const row of totalByAssignment) {
-        const aid = row.assignment_id
-        perAssignment[aid] = (perAssignment[aid] || 0) + 1
-      }
-      // Map each staff_summary entry to its assignment to get total assigned count
-      const assignmentsList = assignments || []
-      for (const [staffName, entry] of Object.entries(staffSummary)) {
-        const match = assignmentsList.find(
-          (a: any) => a.staff_id === entry.staff_id || a.staff?.full_name === staffName
-        )
-        if (match) {
-          entry.assigned = perAssignment[match.id] || 0
-          entry.pending = Math.max(0, entry.assigned - entry.total_actioned)
-        }
-      }
-    }
+  // Recalculate pending after counting actioned
+  for (const entry of Object.values(staffSummary)) {
+    entry.pending = Math.max(0, entry.assigned - entry.total_actioned)
   }
 
-  // Deduplicate items by PSID for markers — keep highest-priority status, then latest timestamp
+  // 7. Deduplicate items by PSID for markers
   const statusRank: Record<string, number> = { delivered: 0, missed: 1, processing: 2 }
   const bestItemByPsid = new Map<string, any>()
   for (const item of items) {
@@ -155,7 +146,6 @@ export async function GET(request: Request) {
   const markers: any[] = []
   const activities: any[] = []
 
-  // Use deduplicated items for markers, original items for activities
   for (const item of bestItemByPsid.values()) {
     const unit = unitByPsid.get(item.psid)
     if (!unit) continue
@@ -177,7 +167,6 @@ export async function GET(request: Request) {
     }
   }
 
-  // Activities keep all events (not deduplicated) so all staff actions are visible
   for (const item of items) {
     const unit = unitByPsid.get(item.psid)
     if (!unit) continue

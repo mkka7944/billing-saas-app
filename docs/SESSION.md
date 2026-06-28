@@ -5168,3 +5168,25 @@ Egress hit 1GB in 1 hour of deliveries. Audit revealed notification polling was 
 - Notification polling stop: ~80-90% of idle-time egress eliminated
 - Per-delivery cache: ~30% reduction in per-action queries
 - Combined: ~50-70% overall per-session egress reduction
+
+---
+
+## 2026-06-28 — Live monitoring fix: delivery-trail rewrite + flicker fix
+
+### What
+Production day 1. Live monitoring list showed then hid by itself on every poll. Root cause: `delivery-trail/route.ts` fetched ALL survey_units in city (100K rows, PostgREST capped at 1000), then `in('psid', 1000 PSIDs)` exceeded 300-item URL limit → silent 500 → empty results. No `keepPreviousData` made every refetch wipe the UI.
+
+### Changes
+1. **`delivery-trail/route.ts`** — Complete rewrite. Old: survey_units (100K) → items. New: staff by `assigned_city` → daily_assignments → items (today only) → survey_units by PSID. Uses `total_items` from daily_assignments instead of counting assignment_items. No 1000-row limit, no 300-item URL limit, deterministic results.
+
+2. **`use-delivery-trail.ts`** — Added `placeholderData: keepPreviousData` so the list stays visible during refetches instead of flickering to empty.
+
+3. **`live-activity-feed.tsx`** — Added `selectedCity` to offset reset `useEffect` dependency so switching cities resets the activity feed.
+
+### Files Modified
+- `src/app/api/live/delivery-trail/route.ts`
+- `src/hooks/use-delivery-trail.ts`
+- `src/components/live/live-activity-feed.tsx`
+
+### Egress per poll
+~2 MB/hr for monitoring dashboard (polling 60s, showing active deliveries). Negligible compared to staff session egress.

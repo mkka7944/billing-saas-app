@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 
 export interface DeliveryMarker {
   psid: string
@@ -61,6 +61,7 @@ export function useDeliveryTrail(city: string, date?: string | null, limit?: num
       if (!res.ok) return { markers: [], activities: [] }
       return res.json()
     },
+    placeholderData: keepPreviousData,
     refetchInterval: enabled && shouldPoll ? interval : false,
     staleTime: Math.max(interval - 5000, 5000),
     enabled: !!city,
