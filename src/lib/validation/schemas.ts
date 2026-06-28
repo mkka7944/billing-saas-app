@@ -86,4 +86,5 @@ export const assignmentQuerySchema = z.object({
   route_name: z.string().default(''),
   month: z.string().default(''),
   mode: z.coerce.number().int().min(1).max(4).default(1),
+  ids_only: z.union([z.boolean(), z.string()]).transform(v => v === true || v === 'true').default(false),
 })

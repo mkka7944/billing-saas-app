@@ -1,27 +1,27 @@
 {
-  "lastSession": "2026-06-27 — Notification fixes + MC assignment bugs",
-  "currentPhase": "Pre-TestCity: JUN2026 data loaded + auth improvements deployed + bugfix batch",
-  "currentStep": "6 fixes: All Staff notifications, notification panel z-index/position/error-state, MC-1 unassigned bills limit removed, Manage tab switching from hierarchy_summary to survey_units",
+  "lastSession": "2026-06-28 — Egress emergency fixes",
+  "currentPhase": "Pre-TestCity: egress emergency — delivery egress optimization",
+  "currentStep": "3 egress fixes: removed photo queue invalidateQueries, staleTime 30s→5min + refetchOnWindowFocus:false, lightweight visibility sync (IDs only)",
   "filesModified": [
     ".opencode/context.json",
     "docs/SESSION.md",
-    "src/app/api/admin/notifications/route.ts",
-    "src/components/notifications/notifications-bell.tsx",
-    "src/lib/repositories/assignment-repository.ts",
-    "src/components/assignments/uc-detail-panel.tsx"
+    "src/hooks/use-photo-queue.ts",
+    "src/hooks/use-assignments.ts",
+    "src/hooks/use-assignment-realtime.ts",
+    "src/app/api/assignments/route.ts",
+    "src/lib/validation/schemas.ts"
   ],
   "keyDecisions": [
-    "All Staff notification filter: .is('deleted_at', null) was wrong — staff table has no deleted_at column. Changed to .eq('is_active', true).",
-    "Notification panel z-index raised to z-[1001]/z-[1002] — was hidden under sidebar (z-[1000]) and FloatingActions (z-[800]).",
-    "Desktop notification panel uses dynamic position (getBoundingClientRect on button click) instead of hardcoded top-[48px].",
-    "getUnassignedBills: removed &limit=1000 that broke fetchAllRows pagination. Added bill_month filter to daily_assignments subquery.",
-    "getAssignmentList: UC name filter now queries survey_units directly instead of hierarchy_summary — ensures UC names are always in sync."
+    "Photo queue: removed invalidateQueries(['staff-assignment']) after every queue drain — was the #1 egress source missed in June 26 fix.",
+    "useStaffAssignment: staleTime 30s→5min + refetchOnWindowFocus:false + refetchOnReconnect:false — eliminates ~80% of refetches.",
+    "useAssignmentRealtime: sync now fetches only item IDs via ?ids_only=true (~1KB) instead of full assignment payload (~15-333KB).",
+    "New API mode: GET /api/assignments?staff_id=X&ids_only=true returns just {items: [{id}]} for lightweight sync checks."
   ],
   "nextActions": [
-    "28 June: TestCity staff training — deliver repeatedly, harden photo queue, GPS enforcement",
-    "After training: build route stabilization pipeline (GPS timestamps → route_seq)",
-    "Deferred: auto-advance skip delivered items, parallel photo uploads, mark-queue, pull-to-refresh, admin review tab, Drive cleanup"
+    "Monitor egress dashboard after deploy — expect 80-90% reduction in staff session egress",
+    "Consider: batch flagged_psids and portal_images queries if egress still too high",
+    "After training: build route stabilization pipeline (GPS timestamps → route_seq)"
   ],
-  "gitCheckpoint": "b312301",
-  "gitCurrentHead": "b312301 + notification fixes + MC assignment bugfixes"
+  "gitCheckpoint": "4468b97",
+  "gitCurrentHead": "4468b97 + egress emergency fixes (photo queue, staleTime, lightweight sync)"
 }

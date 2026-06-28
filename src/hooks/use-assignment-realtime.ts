@@ -26,7 +26,7 @@ export function useAssignmentRealtime(userId: string | null) {
 
     const sync = async () => {
       try {
-        const res = await fetch(`/api/assignments?staff_id=${userId}`)
+        const res = await fetch(`/api/assignments?staff_id=${userId}&ids_only=true`)
         if (!res.ok) return
         const { items }: { items: { id: string }[] } = await res.json()
         const currentIds = items.map((i) => i.id)

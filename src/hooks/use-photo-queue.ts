@@ -131,7 +131,6 @@ export function usePhotoQueue() {
       setUploadSpeed('')
 
       queryClient.invalidateQueries({ queryKey: ['delivery-photos'] })
-      queryClient.invalidateQueries({ queryKey: ['staff-assignment'] })
       queryClient.invalidateQueries({ queryKey: ['assignment-totals'] })
       queryClient.invalidateQueries({ queryKey: ['staff-stats'] })
     } finally {

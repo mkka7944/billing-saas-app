@@ -44,6 +44,25 @@ export async function GET(request: Request) {
     return NextResponse.json(result)
   }
 
+  if (params.ids_only && params.staff_id) {
+    const { data: assignments } = await sup
+      .from('daily_assignments')
+      .select('id')
+      .eq('staff_id', params.staff_id)
+      .eq('bill_month', month)
+
+    const ids = (assignments || []).map((a: any) => a.id)
+    let items: { id: string }[] = []
+    if (ids.length) {
+      const { data: itemRows } = await sup
+        .from('assignment_items')
+        .select('id')
+        .in('assignment_id', ids)
+      items = (itemRows || []) as { id: string }[]
+    }
+    return NextResponse.json({ items })
+  }
+
   if (params.staff_id) {
     const result = await getStaffAssignment(sup, assignmentParams)
     if ('error' in result) return NextResponse.json({ error: result.error }, { status: 500 })

@@ -5088,3 +5088,38 @@ All 4 steps require zero DB migrations — only API routes, store changes, and c
 
 ### Verification
 - `npx tsc --noEmit` — zero errors
+
+---
+
+## 2026-06-28 — Egress emergency fixes (Staff delivery consuming ~700MB)
+
+### Context
+First day of TestCity delivery (June 28). 600 test deliveries on June 27 consumed ~700MB egress. With 1000 bills already distributed today and 5000 expected, the 5GB free tier is at risk. Egress is from staff devices, not admin monitoring.
+
+### Root cause analysis
+Three major sources identified:
+
+1. **Photo queue post-processing** (`use-photo-queue.ts:134`): `invalidateQueries(['staff-assignment'])` was still present — missed in the June 26 egress fix. Every photo upload completion triggered a full assignment refetch (~15-333KB). 1000 deliveries × ~15KB = ~15MB just from this.
+
+2. **StaleTime 30s + refetchOnWindowFocus** (`use-assignments.ts:131`): Default React Query behavior refetched on every tab focus (camera, WhatsApp, phone dialer). 30+ visibility changes per 3-hour session × ~15KB each = wasted egress.
+
+3. **Visibility sync fetched full payload** (`use-assignment-realtime.ts:29`): The `sync()` function was calling `GET /api/assignments?staff_id=X` which returns all items + units, even though it only needed `items[].id` for change detection. Each visibility change triggered the full ~15-333KB download.
+
+### Fixes
+
+1. **Removed `invalidateQueries(['staff-assignment'])`** from `use-photo-queue.ts` — eliminates the biggest single refetch source.
+
+2. **Changed `useStaffAssignment`** (`use-assignments.ts`): `staleTime` 30s → 5min (`STALE_TIMES.BILLING`), added `refetchOnWindowFocus: false`, `refetchOnReconnect: false`. Eliminates ~80% of refetches during a session.
+
+3. **New `ids_only=true` mode** for assignments API + updated `useAssignmentRealtime`: Visibility change sync now fetches `&ids_only=true` — returns just `{items: [{id}]}` (~1KB) instead of full items + units (~15-333KB).
+
+### Files Modified
+- `src/hooks/use-photo-queue.ts`
+- `src/hooks/use-assignments.ts`
+- `src/hooks/use-assignment-realtime.ts`
+- `src/app/api/assignments/route.ts`
+- `src/lib/validation/schemas.ts`
+
+### Estimated impact
+- Per-session egress for staff: ~80-90% reduction
+- Projected: ~700MB → ~50-100MB per day

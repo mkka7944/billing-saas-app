@@ -128,7 +128,9 @@ export function useStaffAssignment(staffId: string | null) {
       return res.json()
     },
     enabled: !!staffId,
-    staleTime: STALE_TIMES.DELIVERY,
+    staleTime: STALE_TIMES.BILLING,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
 }
 
