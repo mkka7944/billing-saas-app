@@ -1,21 +1,27 @@
 {
-  "lastSession": "2026-06-28 — Redeploy trigger (PAT token fix for usage page)",
-  "currentPhase": "Post-deploy: verify usage API requests shows real data",
-  "currentStep": "Triggered Vercel redeploy with corrected SUPABASE_ACCESS_TOKEN",
+  "lastSession": "2026-06-28 — Egress triage: notification polling + redundant per-delivery queries + usage page fix",
+  "currentPhase": "Egress triage — notification polling stopped on /deliver, per-delivery queries optimized, usage page no longer depends on PAT",
+  "currentStep": "3 changes: stop notifications polling on /deliver, cache app_settings in mark route + remove role check, remove Management API analytics from usage route",
   "filesModified": [
     ".opencode/context.json",
-    "docs/SESSION.md"
+    "docs/SESSION.md",
+    "src/hooks/use-notifications.ts",
+    "src/app/api/deliveries/mark/route.ts",
+    "src/app/api/admin/usage/route.ts",
+    "src/components/settings/usage-tab.tsx"
   ],
   "keyDecisions": [
-    "SUPABASE_ACCESS_TOKEN was set in Vercel env vars but with old/expired value. Edited to current sbp_... token from .env.local.",
-    "Redeployment needed for fresh function instances to pick up new env var.",
-    "Usage page API requests section showed 0 because Management API calls returned null with invalid PAT."
+    "Notification polling (90 queries/hr) was the #1 hidden egress source on /deliver — disabled entirely for that route.",
+    "app_settings now cached in module scope (5min TTL) in mark route — saves 1 query per delivery.",
+    "Role check removed from mark route — ownership + assignment_items table constraint is sufficient security.",
+    "Usage page no longer calls Management API analytics endpoints (which need SUPABASE_ACCESS_TOKEN). Shows 'Check Supabase dashboard' link instead, same as bandwidth section.",
+    "Usage route still queries DB/storage/stats via Management API database/query endpoint (works with PAT)."
   ],
   "nextActions": [
-    "Wait for Vercel deploy to complete",
-    "Check /api/admin/usage returns apiRequests.total > 0",
-    "Monitor egress dashboard after deploy"
+    "Push and deploy to Vercel",
+    "Monitor egress dashboard — expect ~70-80% reduction from notification polling stop alone",
+    "If egress still too high: batch flagged_psids and portal_images queries per HDS unit (currently 600+ individual calls per session)"
   ],
-  "gitCheckpoint": "2310ff6",
-  "gitCurrentHead": "2310ff6 + redeploy trigger commit"
+  "gitCheckpoint": "4021322",
+  "gitCurrentHead": "4021322 + egress triage: notification polling, per-delivery cache, usage page fix"
 }

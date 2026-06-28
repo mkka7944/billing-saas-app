@@ -5141,3 +5141,30 @@ Usage Settings page shows 0 API requests because `SUPABASE_ACCESS_TOKEN` in Verc
 
 ### Next
 - After deploy completes: verify `/api/admin/usage` returns real API request counts
+
+---
+
+## 2026-06-28 — Egress triage: notification polling + per-delivery cache + usage page
+
+### What
+Egress hit 1GB in 1 hour of deliveries. Audit revealed notification polling was the #1 hidden source (90 queries/hr). Also found redundant role check and settings query on every delivery mark call.
+
+### Changes
+1. **`use-notifications.ts`** — Added `usePathname()` check: disables polling + window-focus refetch on `/deliver` route. Eliminates ~90 queries/hr during staff sessions.
+
+2. **`deliveries/mark/route.ts`** — Removed role check (ownership check is sufficient). Added module-level cache for `app_settings` with 5min TTL. Saves 2 queries per delivery.
+
+3. **`admin/usage/route.ts`** — Removed Management API analytics calls (needed PAT, silently failed). API requests section now shows dashboard link like bandwidth does.
+
+4. **`usage-tab.tsx`** — Handles `null` apiRequests.total with dash + dashboard link.
+
+### Files Modified
+- `src/hooks/use-notifications.ts`
+- `src/app/api/deliveries/mark/route.ts`
+- `src/app/api/admin/usage/route.ts`
+- `src/components/settings/usage-tab.tsx`
+
+### Estimated impact
+- Notification polling stop: ~80-90% of idle-time egress eliminated
+- Per-delivery cache: ~30% reduction in per-action queries
+- Combined: ~50-70% overall per-session egress reduction

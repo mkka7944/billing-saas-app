@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { usePathname } from 'next/navigation'
 import type { Notification } from '@/types'
 
 interface NotificationsResponse {
@@ -12,8 +13,10 @@ interface NotificationsResponse {
 import { useSettings } from '@/hooks/use-settings'
 
 export function useNotifications() {
+  const pathname = usePathname()
+  const isDeliver = pathname?.startsWith('/deliver')
   const { data: settings } = useSettings()
-  const enabled = settings?.notifications_polling_enabled !== false
+  const enabled = settings?.notifications_polling_enabled !== false && !isDeliver
   const interval = Math.max(30000, (settings?.notifications_poll_interval || 120) * 1000)
 
   return useQuery<NotificationsResponse>({
@@ -24,7 +27,8 @@ export function useNotifications() {
       return res.json()
     },
     refetchInterval: enabled ? interval : false,
-    staleTime: Math.max(interval - 10000, 10000),
+    refetchOnWindowFocus: !isDeliver,
+    staleTime: enabled ? Math.max(interval - 10000, 10000) : 5 * 60 * 1000,
   })
 }
 

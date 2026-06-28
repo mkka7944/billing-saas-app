@@ -18,7 +18,7 @@ interface UsageData {
   plan: string
   billingCycle: { start: string; end: string }
   bandwidth: { usedMb: number | null; limitMb: number; estimated: boolean }
-  apiRequests: { total: number; hourly: { timestamp: string; rest: number; auth: number; realtime: number; storage: number }[] }
+  apiRequests: { total: number | null; hourly: { timestamp: string; rest: number; auth: number; realtime: number; storage: number }[] }
   database: { totalMb: number; tables: TableInfo[] }
   storage: { totalMb: number; buckets: { name: string; sizeMb: number; count: number }[] }
   kpis: {
@@ -165,9 +165,15 @@ export function UsageTab() {
             <div className="pt-1 space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium text-muted-foreground">API Requests</span>
-                <span className="font-semibold tabular-nums">{data.apiRequests.total.toLocaleString()}</span>
+                <span className="font-semibold tabular-nums">
+                  {data.apiRequests.total != null ? data.apiRequests.total.toLocaleString() : '—'}
+                </span>
               </div>
-              <p className="text-[10px] text-muted-foreground">Free plan has unlimited API requests</p>
+              <p className="text-[10px] text-muted-foreground">
+                {data.apiRequests.total != null
+                  ? 'Free plan has unlimited API requests'
+                  : <>Exact request counts available on <a href="https://supabase.com/dashboard/project/qrxbsoqepfaryolwcedk/usage/api" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">Supabase dashboard</a></>}
+              </p>
             </div>
 
             <CollapsibleTable title="Table Sizes" tables={data.database.tables} />

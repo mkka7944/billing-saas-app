@@ -4,18 +4,11 @@ const PROJECT_REF = 'qrxbsoqepfaryolwcedk'
 const MGMT_API = 'https://api.supabase.com/v1'
 const PAT = process.env.SUPABASE_ACCESS_TOKEN || ''
 
-interface TableInfo {
-  name: string
-  schema: string
-  sizeBytes: number
-  rowEstimate: number
-}
-
 interface UsageData {
   plan: string
   billingCycle: { start: string; end: string }
   bandwidth: { usedMb: number | null; limitMb: number; estimated: boolean }
-  apiRequests: { total: number; hourly: { timestamp: string; rest: number; auth: number; realtime: number; storage: number }[] }
+  apiRequests: { total: number | null; hourly: { timestamp: string; rest: number; auth: number; realtime: number; storage: number }[] }
   database: { totalMb: number; tables: { name: string; sizeMb: number; rows: number }[] }
   storage: { totalMb: number; buckets: { name: string; sizeMb: number; count: number }[] }
   kpis: {
@@ -46,43 +39,16 @@ async function queryDb(sql: string): Promise<any[]> {
   return res.json()
 }
 
-async function fetchMgmt(path: string): Promise<any> {
-  const res = await fetch(`${MGMT_API}${path}`, {
-    headers: { 'Authorization': `Bearer ${PAT}` },
-  })
-  if (!res.ok) return null
-  return res.json()
-}
-
 export async function GET() {
   try {
-    const orgId = 'egcdeijulodqozlinrum'
-    const plan = 'free'
     const bandwidthLimitMb = 5 * 1024
-    const dbLimitMb = 500
-    const storageLimitMb = 1024
 
-    const [orgInfo, apiRequestsRes, apiCountsRes, dbSizeRows, tableRows, storageRows, kpiRows] = await Promise.all([
-      fetchMgmt(`/organizations/${orgId}`).catch(() => null),
-      fetchMgmt(`/projects/${PROJECT_REF}/analytics/endpoints/usage.api-requests-count`).catch(() => null),
-      fetchMgmt(`/projects/${PROJECT_REF}/analytics/endpoints/usage.api-counts?interval=1day`).catch(() => null),
+    const [dbSizeRows, tableRows, storageRows, kpiRows] = await Promise.all([
       queryDb("SELECT pg_database_size(current_database()) as size_bytes").catch(() => [{ size_bytes: 0 }]),
       queryDb("SELECT schemaname, relname, pg_total_relation_size(quote_ident(schemaname)||'.'||quote_ident(relname)) as size_bytes, n_live_tup as row_estimate FROM pg_stat_user_tables ORDER BY size_bytes DESC LIMIT 20").catch(() => []),
       queryDb("SELECT bucket_id, COUNT(*) as object_count, COALESCE(SUM((metadata->>'contentLength')::bigint), 0) as total_bytes FROM storage.objects GROUP BY bucket_id").catch(() => []),
       queryDb("SELECT (SELECT COUNT(*) FROM assignment_items WHERE delivered_at::date = CURRENT_DATE) as deliveries_today, (SELECT COUNT(*) FROM delivery_photos WHERE captured_at >= date_trunc('month', now())) as photos_this_month, (SELECT COUNT(*) FROM delivery_photos) as photos_total, (SELECT COUNT(DISTINCT d.staff_id) FROM daily_assignments d WHERE d.created_at >= date_trunc('month', now())) as active_staff, (SELECT COUNT(*) FROM daily_assignments WHERE created_at >= date_trunc('month', now())) as assignments_this_month, (SELECT COUNT(*) FROM survey_units WHERE status IS NULL OR status = 'ACTIVE') as units_active, (SELECT COUNT(*) FROM survey_units) as units_total, (SELECT COALESCE(SUM(amount_paid), 0) FROM payment_history WHERE paid_date >= date_trunc('month', now())::date) as collection_this_month").catch(() => [{ deliveries_today: 0, photos_this_month: 0, photos_total: 0, active_staff: 0, assignments_this_month: 0, units_active: 0, units_total: 0, collection_this_month: 0 }]),
     ])
-
-    const actualPlan = (orgInfo?.plan || plan) as string
-
-    const apiTotal = apiRequestsRes?.result?.[0]?.count ?? 0
-
-    const hourly = (apiCountsRes?.result || []).map((r: any) => ({
-      timestamp: r.timestamp,
-      rest: r.total_rest_requests ?? 0,
-      auth: r.total_auth_requests ?? 0,
-      realtime: r.total_realtime_requests ?? 0,
-      storage: r.total_storage_requests ?? 0,
-    }))
 
     const dbTotalBytes = dbSizeRows[0]?.size_bytes ?? 0
 
@@ -110,7 +76,7 @@ export async function GET() {
     billEnd.setMonth(billEnd.getMonth() + 1)
 
     const usage: UsageData = {
-      plan: actualPlan,
+      plan: 'free',
       billingCycle: {
         start: billStart.toISOString().slice(0, 10),
         end: billEnd.toISOString().slice(0, 10),
@@ -121,8 +87,8 @@ export async function GET() {
         estimated: true,
       },
       apiRequests: {
-        total: apiTotal,
-        hourly,
+        total: null,
+        hourly: [],
       },
       database: {
         totalMb: Math.round((dbTotalBytes / (1024 * 1024)) * 100) / 100,
