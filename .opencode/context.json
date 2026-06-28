@@ -1,27 +1,21 @@
 {
-  "lastSession": "2026-06-28 — Egress emergency fixes",
-  "currentPhase": "Pre-TestCity: egress emergency — delivery egress optimization",
-  "currentStep": "3 egress fixes: removed photo queue invalidateQueries, staleTime 30s→5min + refetchOnWindowFocus:false, lightweight visibility sync (IDs only)",
+  "lastSession": "2026-06-28 — Redeploy trigger (PAT token fix for usage page)",
+  "currentPhase": "Post-deploy: verify usage API requests shows real data",
+  "currentStep": "Triggered Vercel redeploy with corrected SUPABASE_ACCESS_TOKEN",
   "filesModified": [
     ".opencode/context.json",
-    "docs/SESSION.md",
-    "src/hooks/use-photo-queue.ts",
-    "src/hooks/use-assignments.ts",
-    "src/hooks/use-assignment-realtime.ts",
-    "src/app/api/assignments/route.ts",
-    "src/lib/validation/schemas.ts"
+    "docs/SESSION.md"
   ],
   "keyDecisions": [
-    "Photo queue: removed invalidateQueries(['staff-assignment']) after every queue drain — was the #1 egress source missed in June 26 fix.",
-    "useStaffAssignment: staleTime 30s→5min + refetchOnWindowFocus:false + refetchOnReconnect:false — eliminates ~80% of refetches.",
-    "useAssignmentRealtime: sync now fetches only item IDs via ?ids_only=true (~1KB) instead of full assignment payload (~15-333KB).",
-    "New API mode: GET /api/assignments?staff_id=X&ids_only=true returns just {items: [{id}]} for lightweight sync checks."
+    "SUPABASE_ACCESS_TOKEN was set in Vercel env vars but with old/expired value. Edited to current sbp_... token from .env.local.",
+    "Redeployment needed for fresh function instances to pick up new env var.",
+    "Usage page API requests section showed 0 because Management API calls returned null with invalid PAT."
   ],
   "nextActions": [
-    "Monitor egress dashboard after deploy — expect 80-90% reduction in staff session egress",
-    "Consider: batch flagged_psids and portal_images queries if egress still too high",
-    "After training: build route stabilization pipeline (GPS timestamps → route_seq)"
+    "Wait for Vercel deploy to complete",
+    "Check /api/admin/usage returns apiRequests.total > 0",
+    "Monitor egress dashboard after deploy"
   ],
-  "gitCheckpoint": "4468b97",
-  "gitCurrentHead": "4468b97 + egress emergency fixes (photo queue, staleTime, lightweight sync)"
+  "gitCheckpoint": "2310ff6",
+  "gitCurrentHead": "2310ff6 + redeploy trigger commit"
 }

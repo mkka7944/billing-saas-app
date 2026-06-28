@@ -5123,3 +5123,21 @@ Three major sources identified:
 ### Estimated impact
 - Per-session egress for staff: ~80-90% reduction
 - Projected: ~700MB → ~50-100MB per day
+
+---
+
+## 2026-06-28 — Redeploy trigger: PAT token for usage page
+
+### What
+Usage Settings page shows 0 API requests because `SUPABASE_ACCESS_TOKEN` in Vercel env was old/expired. Management API calls silently returned null → `apiTotal = 0`, `hourly = []`.
+
+### Fix
+- Edited Vercel env var `SUPABASE_ACCESS_TOKEN` to the current token from `.env.local`
+- Triggered empty commit to force redeployment
+
+### Files Modified
+- `.opencode/context.json`
+- `docs/SESSION.md`
+
+### Next
+- After deploy completes: verify `/api/admin/usage` returns real API request counts
