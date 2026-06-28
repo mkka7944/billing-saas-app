@@ -5190,3 +5190,22 @@ Production day 1. Live monitoring list showed then hid by itself on every poll. 
 
 ### Egress per poll
 ~2 MB/hr for monitoring dashboard (polling 60s, showing active deliveries). Negligible compared to staff session egress.
+
+---
+
+## 2026-06-28 — Auth: non-blocking single-session enforcement
+
+### What
+"Failed to enforce single session. Try again." error appeared on every login, even with one session. The GoTrue Admin API DELETE endpoint was returning a non-200 response. But login was blocked on this call, so users couldn't proceed without refreshing.
+
+### Fix
+- Made the session revoke **best-effort**: if it succeeds, re-auth (because it deletes current session too). If it fails, the original sign-in session is still valid — user proceeds normally.
+- Added `console.error()` logging to the route so we can see the GoTrue error in Vercel Function Logs.
+
+### Files Modified
+- `src/stores/auth-store.ts`
+- `src/app/api/auth/sign-out-other-sessions/route.ts`
+
+### Next
+- Check Vercel Function Logs after deploy to find the GoTrue API error
+- If needed, switch to list-sessions + delete-only-others approach for proper enforcement

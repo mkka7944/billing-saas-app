@@ -22,6 +22,7 @@ export async function POST() {
 
   if (!res.ok) {
     const body = await res.text()
+    console.error(`sign-out-other-sessions: GoTrue DELETE returned ${res.status}: ${body}`)
     return NextResponse.json({ error: `Failed to revoke sessions: ${res.status} ${body}` }, { status: 500 })
   }
 

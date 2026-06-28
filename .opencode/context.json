@@ -14,13 +14,14 @@
     "New approach: staff by city → daily_assignments → items (today's deliveries only, small set) → survey_units by PSID. No 1000-row limit, no 300-item URL limit.",
     "total_items from daily_assignments replaces the expensive totalByAssignment query on assignment_items.",
     "keepPreviousData prevents the list from wiping clean on every poll refetch.",
-    "selectedCity added to offset reset dependency so switching cities resets the feed."
+    "selectedCity added to offset reset dependency so switching cities resets the feed.",
+    "Single-session enforcement made non-blocking: GoTrue Admin API DELETE failing was blocking login. Now best-effort — if revoke fails, session from sign-in is still valid."
   ],
   "nextActions": [
-    "Commit and push to Vercel",
-    "Verify live monitoring works on /stats page for Sargodha",
-    "After deploy: check the routes/route.ts .range() bug and assignment-repository.ts chunking bugs"
+    "Push to Vercel — login no longer blocked by session revoke",
+    "Check Vercel Function Logs for sign-out-other-sessions errors to diagnose GoTrue issue",
+    "After deploy: verify login works without 'Failed to enforce single session' error"
   ],
-  "gitCheckpoint": "f33384e",
-  "gitCurrentHead": "f33384e + live monitoring fix: delivery-trail rewrite, keepPreviousData, offset reset"
+  "gitCheckpoint": "cd4ab8c",
+  "gitCurrentHead": "cd4ab8c + auth: non-blocking single-session enforcement"
 }

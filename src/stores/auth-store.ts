@@ -79,13 +79,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return { error: error.message }
 
-    // Revoke all other sessions so only this device stays logged in
+    // Revoke all other sessions (best-effort — don't block login).
+    // If it succeeds, our session was also deleted so re-auth.
+    // If it fails, the session from the initial sign-in is still valid.
     const revokeRes = await fetch('/api/auth/sign-out-other-sessions', { method: 'POST' })
-    if (!revokeRes.ok) return { error: 'Failed to enforce single session. Try again.' }
-
-    // Re-authenticate because the sign-out above revoked all sessions (including current)
-    const { error: reAuthError } = await supabase.auth.signInWithPassword({ email, password })
-    if (reAuthError) return { error: reAuthError.message }
+    if (revokeRes.ok) {
+      await supabase.auth.signInWithPassword({ email, password })
+    }
 
     const { data: { session } } = await supabase.auth.getSession()
     const user = session?.user ?? null
@@ -93,7 +93,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     const profile = await fetchProfile()
 
-    // fetchProfile handles frozen/deleted check via the API route
     if (!profile.displayName) {
       await supabase.auth.signOut()
       return { error: 'Account not found or frozen' }
