@@ -4,6 +4,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 
 export interface DeliveryMarker {
   psid: string
+  survey_id: string | null
   status: 'delivered' | 'missed' | 'processing'
   delivered_at: string | null
   lat: number
@@ -16,6 +17,7 @@ export interface DeliveryMarker {
 
 export interface ActivityEvent {
   staff_name: string
+  survey_id: string | null
   psid: string
   status: 'delivered' | 'missed' | 'processing'
   delivered_at: string
@@ -30,6 +32,16 @@ export interface StaffSummaryEntry {
   processing: number
   assigned: number
   pending: number
+  target_per_day: number | null
+}
+
+export interface UCStat {
+  uc_name: string
+  delivered: number
+  missed: number
+  processing: number
+  total_assigned: number
+  rate: number
 }
 
 interface DeliveryTrailResponse {
@@ -37,6 +49,7 @@ interface DeliveryTrailResponse {
   activities: ActivityEvent[]
   total?: number
   staffSummary?: Record<string, StaffSummaryEntry>
+  ucSummary?: UCStat[]
 }
 
 import { useSettings } from '@/hooks/use-settings'

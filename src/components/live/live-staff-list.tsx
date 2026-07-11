@@ -25,7 +25,7 @@ export function LiveStaffList() {
       assigned: s.assigned || s.total_actioned,
       pending: s.pending,
       total_actioned: s.total_actioned,
-      rate: s.assigned > 0 ? Math.round((s.delivered / s.assigned) * 100) : 0,
+      rate: (s.assigned || s.total_actioned) > 0 ? Math.round((s.delivered / (s.assigned || s.total_actioned)) * 100) : 0,
     })).sort((a, b) => b.rate - a.rate)
   }, [trail])
 

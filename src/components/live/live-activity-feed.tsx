@@ -12,14 +12,14 @@ export function LiveActivityFeed() {
   const selectedDate = useLiveStore((s) => s.selectedDate)
   const setMapCenter = useBillingStore((s) => s.setMapCenter)
   const setMapZoom = useBillingStore((s) => s.setMapZoom)
-  const [offset, setOffset] = useState(0)
+  const [visibleCount, setVisibleCount] = useState(20)
   const date = selectedDate !== pktToday() ? selectedDate : null
-  const { data } = useDeliveryTrail(selectedCity, date, 50, offset)
+  const { data } = useDeliveryTrail(selectedCity, date)
   const topRef = useRef<HTMLDivElement>(null)
-  const prevCount = useRef(0)
 
-  const activities = useMemo(() => data?.activities || [], [data])
-  const total = data?.total ?? 0
+  const allActivities = useMemo(() => data?.activities || [], [data])
+  const total = allActivities.length
+  const activities = useMemo(() => allActivities.slice(0, visibleCount), [allActivities, visibleCount])
 
   const markerByPsid = useMemo(() => {
     const map = new Map<string, { lat: number; lng: number }>()
@@ -36,13 +36,13 @@ export function LiveActivityFeed() {
     setMapZoom(18)
   }, [markerByPsid, setMapCenter, setMapZoom])
 
-  // Reset offset when date or city changes
+  // Reset visible count when date or city changes
   useEffect(() => {
-    setOffset(0)
+    setVisibleCount(20)
   }, [selectedDate, selectedCity])
 
   const handleLoadMore = useCallback(() => {
-    setOffset((o) => o + 50)
+    setVisibleCount((c) => c + 20)
   }, [])
 
   if (!activities.length) {
@@ -88,12 +88,12 @@ export function LiveActivityFeed() {
           <span className="text-muted-foreground truncate">{a.psid}</span>
         </div>
       ))}
-      {total > offset + 50 && (
+      {total > visibleCount && (
         <button
           onClick={handleLoadMore}
           className="w-full text-center text-xs text-muted-foreground py-2 hover:text-foreground hover:bg-muted/30 rounded-lg transition-colors cursor-pointer shrink-0"
         >
-          Show older ({total - offset - 50} more)
+          Show older ({total - visibleCount} more)
         </button>
       )}
     </div>

@@ -13,6 +13,74 @@ export async function GET(request: Request) {
   const staffId = sp.get('staff_id') || ''
   const fromDate = sp.get('from') || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
   const toDate = sp.get('to') || new Date().toISOString().slice(0, 10)
+  const view = sp.get('view') || 'staff'
+
+  if (view === 'uc') {
+    const { data: assignments } = await sup
+      .from('daily_assignments')
+      .select('id, staff_id, uc_name, total_items')
+      .gte('issued_at', fromDate)
+      .lte('issued_at', toDate)
+
+    if (!assignments?.length) {
+      return NextResponse.json({ data: [] })
+    }
+
+    const ucInfo = new Map<string, { total_assigned: number; staff_set: Set<string> }>()
+    for (const a of assignments) {
+      const uc = a.uc_name || 'Unknown'
+      if (!ucInfo.has(uc)) ucInfo.set(uc, { total_assigned: 0, staff_set: new Set() })
+      const info = ucInfo.get(uc)!
+      info.total_assigned += a.total_items || 0
+      info.staff_set.add(a.staff_id)
+    }
+
+    const aIds = assignments.map((a: any) => a.id)
+    const allUcItems: any[] = []
+    const BATCH = 1000
+    let rangeFrom = 0
+    while (true) {
+      const { data: batch, error } = await sup
+        .from('assignment_items')
+        .select('assignment_id, status')
+        .in('assignment_id', aIds)
+        .range(rangeFrom, rangeFrom + BATCH - 1)
+      if (error) throw error
+      if (!batch?.length) break
+      allUcItems.push(...batch)
+      rangeFrom += batch.length
+      if (batch.length < BATCH) break
+    }
+    const items = allUcItems
+
+    const assignmentUc = new Map(assignments.map((a: any) => [a.id, a.uc_name || 'Unknown']))
+
+    const ucCounts = new Map<string, { delivered: number; missed: number; processing: number }>()
+    for (const item of items || []) {
+      const uc = assignmentUc.get(item.assignment_id) || 'Unknown'
+      if (!ucCounts.has(uc)) ucCounts.set(uc, { delivered: 0, missed: 0, processing: 0 })
+      const c = ucCounts.get(uc)!
+      if (item.status === 'delivered') c.delivered++
+      else if (item.status === 'missed') c.missed++
+      else if (item.status === 'processing') c.processing++
+    }
+
+    const data = Array.from(ucInfo.entries()).map(([uc_name, info]) => {
+      const counts = ucCounts.get(uc_name) || { delivered: 0, missed: 0, processing: 0 }
+      return {
+        uc_name,
+        total_assigned: info.total_assigned,
+        staff_count: info.staff_set.size,
+        delivered: counts.delivered,
+        missed: counts.missed,
+        processing: counts.processing,
+        pending: info.total_assigned - counts.delivered - counts.missed - counts.processing,
+        rate: info.total_assigned > 0 ? Math.round((counts.delivered / info.total_assigned) * 100) : 0,
+      }
+    })
+
+    return NextResponse.json({ data })
+  }
 
   let q = sup
     .from('staff_daily_stats')
@@ -56,10 +124,22 @@ export async function GET(request: Request) {
     }
 
     const aIds = assignments.map((a: any) => a.id)
-    const { data: items } = await sup
-      .from('assignment_items')
-      .select('assignment_id, status')
-      .in('assignment_id', aIds)
+    const allStatsItems: any[] = []
+    const BATCH = 1000
+    let rangeFrom = 0
+    while (true) {
+      const { data: batch, error } = await sup
+        .from('assignment_items')
+        .select('assignment_id, status')
+        .in('assignment_id', aIds)
+        .range(rangeFrom, rangeFrom + BATCH - 1)
+      if (error) throw error
+      if (!batch?.length) break
+      allStatsItems.push(...batch)
+      rangeFrom += batch.length
+      if (batch.length < BATCH) break
+    }
+    const items = allStatsItems
 
     const itemCounts = new Map<string, { delivered: number; missed: number; processing: number; pending: number }>()
     for (const item of items || []) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { pktDayRange } from '@/lib/pkt'
+import { chunkArray } from '@/lib/utils'
 
 function dayRange(dateStr?: string | null): { start: string; end: string } {
   const d = dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : null
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
   // 2. Get daily assignments for these staff
   const { data: assignments } = await sup
     .from('daily_assignments')
-    .select('id, staff_id, total_items, staff:staff_id(full_name), uc_name')
+    .select('id, staff_id, total_items, target_per_day, staff:staff_id(full_name), uc_name')
     .in('staff_id', staffIds)
 
   if (!assignments?.length) {
@@ -55,27 +56,49 @@ export async function GET(request: Request) {
 
   const assignmentIds = assignments.map((a: any) => a.id)
 
-  // 3. Get assignment_items for these assignments in the date range
-  const { data: items } = await sup
-    .from('assignment_items')
-    .select('assignment_id, psid, status, delivered_at')
-    .in('assignment_id', assignmentIds)
-    .in('status', ['delivered', 'missed', 'processing'])
-    .gte('delivered_at', start)
-    .lte('delivered_at', end)
-
-  if (!items?.length) {
-    return NextResponse.json({ markers: [], activities: [] })
+  // 3. Get assignment_items for these assignments in the date range (batched to bypass 1000-row limit)
+  const allItems: any[] = []
+  const BATCH = 1000
+  let rangeFrom = 0
+  while (true) {
+    const { data: batch, error } = await sup
+      .from('assignment_items')
+      .select('assignment_id, psid, survey_id, status, delivered_at')
+      .in('assignment_id', assignmentIds)
+      .in('status', ['delivered', 'missed', 'processing'])
+      .gte('delivered_at', start)
+      .lte('delivered_at', end)
+      .range(rangeFrom, rangeFrom + BATCH - 1)
+    if (error) throw error
+    if (!batch?.length) break
+    allItems.push(...batch)
+    rangeFrom += batch.length
+    if (batch.length < BATCH) break
   }
 
-  // 4. Get survey_unit data for matching PSIDs
-  const psids = [...new Set(items.map((i: any) => i.psid))]
-  const { data: units } = await sup
-    .from('survey_units')
-    .select('psid, consumer_name, lat, lng')
-    .in('psid', psids)
+  if (!allItems.length) {
+    return NextResponse.json({ markers: [], activities: [] })
+  }
+  const items = allItems
 
-  const unitByPsid = new Map((units || []).map((u: any) => [u.psid, u]))
+  // 4. Get survey_unit data for matching PSIDs (for markers only)
+  const psids = [...new Set(items.map((i: any) => i.psid))]
+  const unitByPsid = new Map<string, any>()
+  if (psids.length > 0) {
+    const chunks = chunkArray(psids, 300)
+    const results = await Promise.all(
+      chunks.map((chunk) =>
+        sup.from('survey_units').select('psid, consumer_name, lat, lng').in('psid', chunk)
+      )
+    )
+    for (const { data: chunkUnits } of results) {
+      if (chunkUnits) {
+        for (const u of chunkUnits) {
+          unitByPsid.set(u.psid, u)
+        }
+      }
+    }
+  }
 
   // 5. Build staff + UC lookup by assignment_id
   const staffMap = new Map(
@@ -87,6 +110,9 @@ export async function GET(request: Request) {
   const totalItemsByAssignment = new Map(
     assignments.map((a: any) => [a.id, a.total_items || 0])
   )
+  const targetPerDayByStaff = new Map<string, number | null>(
+    assignments.map((a: any) => [a.staff_id, a.target_per_day])
+  )
 
   // 6. Staff summary
   const staffSummary: Record<string, {
@@ -97,6 +123,7 @@ export async function GET(request: Request) {
     processing: number
     assigned: number
     pending: number
+    target_per_day: number | null
   }> = {}
   for (const item of items) {
     const staffInfo = staffMap.get(item.assignment_id) || { name: 'Unknown', id: null }
@@ -111,6 +138,7 @@ export async function GET(request: Request) {
         processing: 0,
         assigned,
         pending: assigned,
+        target_per_day: staffInfo.id ? (targetPerDayByStaff.get(staffInfo.id) ?? null) : null,
       }
     }
     staffSummary[name].total_actioned++
@@ -124,9 +152,34 @@ export async function GET(request: Request) {
     entry.pending = Math.max(0, entry.assigned - entry.total_actioned)
   }
 
-  // 7. Deduplicate items by PSID for markers
-  const statusRank: Record<string, number> = { delivered: 0, missed: 1, processing: 2 }
+  // 7. UC-level summary
+  const ucAgg = new Map<string, { delivered: number; missed: number; processing: number; total_assigned: number }>()
+  for (const a of assignments) {
+    const uc = a.uc_name || 'Unknown'
+    const s = ucAgg.get(uc) || { delivered: 0, missed: 0, processing: 0, total_assigned: 0 }
+    s.total_assigned += a.total_items || 0
+    ucAgg.set(uc, s)
+  }
+  for (const item of items) {
+    const uc = ucMap.get(item.assignment_id) || 'Unknown'
+    const s = ucAgg.get(uc) || { delivered: 0, missed: 0, processing: 0, total_assigned: 0 }
+    if (!ucAgg.has(uc)) ucAgg.set(uc, s)
+    if (item.status === 'delivered') s.delivered++
+    else if (item.status === 'missed') s.missed++
+    else if (item.status === 'processing') s.processing++
+  }
+  const ucSummary = Array.from(ucAgg.entries()).map(([uc_name, s]) => ({
+    uc_name,
+    delivered: s.delivered,
+    missed: s.missed,
+    processing: s.processing,
+    total_assigned: s.total_assigned,
+    rate: s.total_assigned > 0 ? Math.round((s.delivered / s.total_assigned) * 100) : 0,
+  }))
+
+  // 8. Deduplicate items by PSID for markers
   const bestItemByPsid = new Map<string, any>()
+  const statusRank: Record<string, number> = { delivered: 0, missed: 1, processing: 2 }
   for (const item of items) {
     const existing = bestItemByPsid.get(item.psid)
     if (!existing) {
@@ -168,8 +221,6 @@ export async function GET(request: Request) {
   }
 
   for (const item of items) {
-    const unit = unitByPsid.get(item.psid)
-    if (!unit) continue
     const staffInfo = staffMap.get(item.assignment_id) || { name: 'Unknown', id: null }
     if (item.delivered_at) {
       activities.push({
@@ -186,5 +237,5 @@ export async function GET(request: Request) {
   const total = activities.length
   const paginatedActivities = activities.slice(offset, offset + limit)
 
-  return NextResponse.json({ markers, activities: paginatedActivities, total, staffSummary })
+  return NextResponse.json({ markers, activities: paginatedActivities, total, staffSummary, ucSummary })
 }

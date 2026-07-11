@@ -20,27 +20,14 @@ export function LiveUcCards({ onUcClick }: { onUcClick?: (ucName: string) => voi
   const [expanded, setExpanded] = useState(false)
 
   const ucStats = useMemo(() => {
-    const markers = data?.markers || []
-    const map = new Map<string, { delivered: number; processing: number }>()
+    const ucSummary = data?.ucSummary || []
 
-    for (const m of markers) {
-      if (m.status === 'missed') continue
-      const uc = m.uc_name || 'Unknown'
-      const stat = map.get(uc) || { delivered: 0, processing: 0 }
-      if (m.status === 'delivered') stat.delivered++
-      else stat.processing++
-      map.set(uc, stat)
-    }
-
-    return Array.from(map.entries()).map(([uc_name, s]) => {
-      const total = s.delivered + s.processing
-      return {
-        uc_name,
-        delivered: s.delivered,
-        total,
-        rate: total > 0 ? Math.round((s.delivered / total) * 100) : 0,
-      }
-    }).sort((a, b) => b.total - a.total)
+    return ucSummary.map((u) => ({
+      uc_name: u.uc_name,
+      delivered: u.delivered,
+      total: u.total_assigned,
+      rate: u.rate,
+    })).sort((a, b) => b.total - a.total)
   }, [data])
 
   if (!ucStats.length) return null

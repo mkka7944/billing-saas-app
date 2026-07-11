@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBillingUIStore } from '@/stores/billing-ui-store'
-import { useStaffStats } from '@/hooks/use-staff-stats'
+import { useStaffStats, useUCStats } from '@/hooks/use-staff-stats'
 import { useStaffList, useStaffAssignment } from '@/hooks/use-assignments'
 import { useStaffPerformance, useSavePerformance } from '@/hooks/use-staff-performance'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, CheckCircle2, XCircle, TrendingUp, Star, FileText, CameraOff, Info } from 'lucide-react'
+import { Users, CheckCircle2, XCircle, TrendingUp, Star, FileText, CameraOff, Info, Building2 } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import type { StaffMember } from '@/hooks/use-assignments'
 
@@ -18,6 +18,7 @@ export function StatsClient({ initialStaffList }: { initialStaffList: StaffMembe
   const setPageIdentity = useBillingUIStore((s) => s.setPageIdentity)
   const [selectedStaff, setSelectedStaff] = useState<string>('')
   const [dateRange, setDateRange] = useState<'7' | '30' | '90'>('7')
+  const [viewMode, setViewMode] = useState<'staff' | 'uc'>('staff')
   const [modalStaff, setModalStaff] = useState<{ id: string; name: string } | null>(null)
   const [perfRating, setPerfRating] = useState<number>(3)
   const [perfNotes, setPerfNotes] = useState('')
@@ -28,7 +29,14 @@ export function StatsClient({ initialStaffList }: { initialStaffList: StaffMembe
 
   const { data: liveStaffList } = useStaffList()
   const staffList = liveStaffList || initialStaffList
-  const { data: stats, isLoading } = useStaffStats(selectedStaff || undefined, fromDate, toDate)
+  const { data: stats, isLoading } = useStaffStats(
+    viewMode === 'staff' ? (selectedStaff || undefined) : undefined,
+    fromDate, toDate
+  )
+  const { data: ucStats, isLoading: ucLoading } = useUCStats(
+    viewMode === 'uc' ? fromDate : undefined,
+    viewMode === 'uc' ? toDate : undefined
+  )
   const { data: perfRecords } = useStaffPerformance(modalStaff?.id || undefined, fromDate, toDate)
   const savePerf = useSavePerformance()
 
@@ -70,17 +78,39 @@ export function StatsClient({ initialStaffList }: { initialStaffList: StaffMembe
   return (
     <AppShell>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="flex flex-wrap gap-3">
-          <select
-            value={selectedStaff}
-            onChange={(e) => setSelectedStaff(e.target.value)}
-            className="h-9 px-3 rounded-lg border border-border bg-background text-xs font-medium outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="">All Staff</option>
-            {staffList?.map((s) => (
-              <option key={s.id} value={s.id}>{s.full_name || s.id}</option>
-            ))}
-          </select>
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            <button
+              onClick={() => setViewMode('staff')}
+              className={`px-3 h-9 text-xs font-medium cursor-pointer transition-colors flex items-center gap-1.5 ${
+                viewMode === 'staff' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'
+              }`}
+            >
+              <Users className="h-3.5 w-3.5" />
+              By Staff
+            </button>
+            <button
+              onClick={() => setViewMode('uc')}
+              className={`px-3 h-9 text-xs font-medium cursor-pointer transition-colors flex items-center gap-1.5 ${
+                viewMode === 'uc' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'
+              }`}
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              By UC
+            </button>
+          </div>
+          {viewMode === 'staff' && (
+            <select
+              value={selectedStaff}
+              onChange={(e) => setSelectedStaff(e.target.value)}
+              className="h-9 px-3 rounded-lg border border-border bg-background text-xs font-medium outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">All Staff</option>
+              {staffList?.map((s) => (
+                <option key={s.id} value={s.id}>{s.full_name || s.id}</option>
+              ))}
+            </select>
+          )}
           <div className="flex rounded-lg border border-border overflow-hidden">
             {(['7', '30', '90'] as const).map((d) => (
               <button
@@ -96,7 +126,7 @@ export function StatsClient({ initialStaffList }: { initialStaffList: StaffMembe
           </div>
         </div>
 
-        {totals && (
+        {viewMode === 'staff' && totals && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Assigned</CardTitle><div className="p-1 rounded bg-blue-100 dark:bg-blue-900/30"><Users className="h-4 w-4 text-blue-600 dark:text-blue-300" /></div></CardHeader>
@@ -116,8 +146,28 @@ export function StatsClient({ initialStaffList }: { initialStaffList: StaffMembe
             </Card>
           </div>
         )}
+        {viewMode === 'uc' && ucStats && ucStats.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">UCs</CardTitle><div className="p-1 rounded bg-blue-100 dark:bg-blue-900/30"><Building2 className="h-4 w-4 text-blue-600 dark:text-blue-300" /></div></CardHeader>
+              <CardContent><p className="text-xl font-bold">{ucStats.length}</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Total Assigned</CardTitle><div className="p-1 rounded bg-blue-100 dark:bg-blue-900/30"><Users className="h-4 w-4 text-blue-600 dark:text-blue-300" /></div></CardHeader>
+              <CardContent><p className="text-xl font-bold">{ucStats.reduce((s, u) => s + u.total_assigned, 0)}</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Delivered</CardTitle><div className="p-1 rounded bg-green-100 dark:bg-green-900/30"><CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-300" /></div></CardHeader>
+              <CardContent><p className="text-xl font-bold text-green-600 dark:text-green-300">{ucStats.reduce((s, u) => s + u.delivered, 0)}</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-xs text-muted-foreground">Rate</CardTitle><div className="p-1 rounded bg-purple-100 dark:bg-purple-900/30"><TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-300" /></div></CardHeader>
+              <CardContent><p className="text-xl font-bold">{Math.round((ucStats.reduce((s, u) => s + u.delivered, 0) / ucStats.reduce((s, u) => s + u.total_assigned, 0)) * 100)}%</p></CardContent>
+            </Card>
+          </div>
+        )}
 
-        {isLoading ? (
+        {viewMode === 'staff' && (isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
           </div>
@@ -153,7 +203,44 @@ export function StatsClient({ initialStaffList }: { initialStaffList: StaffMembe
               </tbody>
             </table>
           </div>
-        )}
+        ))}
+        {viewMode === 'uc' && (ucLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="text-left font-semibold px-3 py-2">UC</th>
+                  <th className="text-right font-semibold px-3 py-2">Staff</th>
+                  <th className="text-right font-semibold px-3 py-2">Assigned</th>
+                  <th className="text-right font-semibold px-3 py-2">Delivered</th>
+                  <th className="text-right font-semibold px-3 py-2">Missed</th>
+                  <th className="text-right font-semibold px-3 py-2">Pending</th>
+                  <th className="text-right font-semibold px-3 py-2">Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ucStats?.map((u) => (
+                  <tr key={u.uc_name} className="border-b border-border last:border-0 hover:bg-muted/30 cursor-pointer">
+                    <td className="px-3 py-2 font-medium">{u.uc_name}</td>
+                    <td className="px-3 py-2 text-right">{u.staff_count}</td>
+                    <td className="px-3 py-2 text-right">{u.total_assigned}</td>
+                    <td className="px-3 py-2 text-right text-green-600 dark:text-green-300 font-medium">{u.delivered}</td>
+                    <td className="px-3 py-2 text-right text-red-600 dark:text-red-300">{u.missed}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">{u.pending}</td>
+                    <td className="px-3 py-2 text-right font-bold">{u.rate}%</td>
+                  </tr>
+                ))}
+                {(!ucStats || ucStats.length === 0) && (
+                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No UC data for this period</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
 
       {modalStaff && (
